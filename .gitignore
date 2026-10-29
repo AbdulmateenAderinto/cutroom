@@ -1,0 +1,7 @@
+node_modules/
+build/
+out/
+tests/.fixtures/
+tests/.output/
+*.mp4.partial
+.DS_Store

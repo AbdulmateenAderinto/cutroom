@@ -1,0 +1,87 @@
+/**
+ * The bridge between the UI (renderer) and the main process. Types only — shared by preload.ts
+ * (implementation) and the renderer (window.cutroom).
+ */
+import type { ExportSettings } from '../shared/exportPlan';
+import type { MediaInfo, Project } from '../shared/model';
+
+export type ProbeResult = { ok: true; info: MediaInfo; warnings: string[] } | { ok: false; error: string };
+
+export interface FfmpegStatus {
+  ok: boolean;
+  ffmpeg: string | null;
+  ffprobe: string | null;
+  version: string | null;
+  hasLibx264: boolean;
+  hasAac: boolean;
+  message: string | null;
+}
+
+export interface ExportProgress {
+  fraction: number;
+  outTimeSeconds: number;
+  speed: string | null;
+}
+
+export type ExportResult =
+  | {
+      status: 'done';
+      output: {
+        path: string;
+        sizeBytes: number;
+        durationSeconds: number;
+        width: number;
+        height: number;
+        videoCodec: string;
+        frameRate: string;
+        videoBitrateMbps: number | null;
+        audioCodec: string | null;
+        audioSampleRate: number | null;
+      };
+    }
+  | { status: 'cancelled' }
+  | { status: 'failed'; message: string; details: string };
+
+export type SaveResult = { ok: true; path: string } | { ok: false; cancelled: boolean; error?: string };
+export type OpenResult =
+  | { ok: true; path: string; project: Project; missingMediaIds: string[] }
+  | { ok: false; cancelled: boolean; error?: string };
+
+export interface RecoveryEntry {
+  projectId: string;
+  projectName: string;
+  projectPath: string | null;
+  savedAt: string;
+}
+
+export type MenuAction =
+  | 'new' | 'open' | 'save' | 'saveAs' | 'import' | 'export'
+  | 'undo' | 'redo' | 'split' | 'delete' | 'deleteLeaveGap' | 'duplicate'
+  | 'playPause' | 'toggleSnapping' | 'zoomIn' | 'zoomOut' | 'zoomFit' | 'shortcuts';
+
+export interface CutroomApi {
+  platform: string;
+  checkFfmpeg(): Promise<FfmpegStatus>;
+  pickMediaFiles(): Promise<string[]>;
+  pathForFile(file: File): string;
+  probeMedia(path: string): Promise<ProbeResult>;
+  thumbnail(path: string, atSeconds: number): Promise<string | null>;
+  filesExist(paths: string[]): Promise<boolean[]>;
+  mediaUrl(path: string): string;
+  saveProject(project: Project, path: string | null): Promise<SaveResult>;
+  openProject(path?: string): Promise<OpenResult>;
+  pickRelinkFile(originalName: string): Promise<string | null>;
+  chooseExportPath(defaultName: string): Promise<string | null>;
+  startExport(project: Project, settings: ExportSettings): Promise<ExportResult>;
+  cancelExport(): Promise<void>;
+  onExportProgress(cb: (p: ExportProgress) => void): () => void;
+  showInFolder(path: string): Promise<void>;
+  writeRecovery(project: Project, projectPath: string | null): Promise<void>;
+  clearRecovery(projectId: string): Promise<void>;
+  listRecovery(): Promise<RecoveryEntry[]>;
+  loadRecovery(projectId: string): Promise<{ project: Project; projectPath: string | null; missingMediaIds: string[] } | null>;
+  setDirty(dirty: boolean): void;
+  onMenu(cb: (action: MenuAction) => void): () => void;
+  onCloseRequested(cb: () => void): () => void;
+  closeNow(): void;
+}
