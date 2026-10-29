@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { MenuAction, RecoveryEntry } from '../preload/api';
+import { AiControlDialog } from './components/AiControlDialog';
 import { ExportDialog } from './components/ExportDialog';
+import { installControlBridge } from './control/rendererTools';
 import { Inspector } from './components/Inspector';
 import { MediaBin } from './components/MediaBin';
 import { PreviewPanel } from './components/PreviewPanel';
@@ -82,6 +84,7 @@ export function App() {
       if (await A.saveProject()) api.closeNow();
     });
     window.addEventListener('keydown', onKeyDown);
+    const offControl = installControlBridge();
 
     // Tell the main process about unsaved changes (window close prompt, macOS title-bar dot).
     let lastDirty = false;
@@ -99,6 +102,7 @@ export function App() {
     return () => {
       offMenu();
       offClose();
+      offControl();
       offStore();
       clearInterval(timer);
       window.removeEventListener('keydown', onKeyDown);
@@ -121,6 +125,7 @@ export function App() {
       <Timeline />
       {dialog === 'export' && <ExportDialog />}
       {dialog === 'shortcuts' && <ShortcutsDialog />}
+      {dialog === 'ai' && <AiControlDialog />}
       {recovery.length > 0 && (
         <div className="modal-backdrop">
           <div className="modal small" role="dialog" aria-label="Recover unsaved work">

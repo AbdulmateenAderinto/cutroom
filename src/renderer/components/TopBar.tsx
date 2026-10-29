@@ -60,6 +60,19 @@ export function CanvasControl() {
   );
 }
 
+function AiControlButton() {
+  const [on, setOn] = useState<boolean | null>(null);
+  const dialog = useStore((s) => s.dialog);
+  useEffect(() => {
+    window.cutroom.aiStatus().then((st) => setOn(st.running));
+  }, [dialog]);
+  return (
+    <button className="btn ghost ai-btn" onClick={() => store.set({ dialog: 'ai' })} title="Let Claude edit with you through MCP">
+      <span className={`ai-dot${on ? ' on' : ''}`} /> AI control{on ? ': on' : ''}
+    </button>
+  );
+}
+
 export function TopBar() {
   const name = useStore((s) => s.project.name);
   const path = useStore((s) => s.projectPath);
@@ -88,6 +101,7 @@ export function TopBar() {
       </div>
       <div className="spacer" />
       <CanvasControl />
+      <AiControlButton />
       <button className="btn ghost" onClick={() => store.set({ dialog: 'shortcuts' })} title="Keyboard shortcuts (?)">
         Shortcuts
       </button>

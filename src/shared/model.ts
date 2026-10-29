@@ -41,6 +41,18 @@ export interface MediaInfo {
   audioChannels: number | null;
 }
 
+/** Speech-to-text result for a media file. Word times are SOURCE time (they follow every edit). */
+export interface TranscriptWord {
+  start: Ticks;
+  end: Ticks;
+  text: string;
+}
+export interface Transcript {
+  language: string;
+  model: string;
+  words: TranscriptWord[];
+}
+
 export interface MediaRef {
   id: string;
   name: string;
@@ -48,6 +60,7 @@ export interface MediaRef {
   relativePath?: string; // relative to the project file, used to find media after moving folders
   info: MediaInfo;
   warnings: string[];
+  transcript?: Transcript;
 }
 
 export type FramingMode = 'fit' | 'fill' | 'manual';

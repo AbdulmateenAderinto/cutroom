@@ -10,7 +10,7 @@ import type { FfmpegStatus } from '../../preload/api';
 import { type Project, createProject } from '../../shared/model';
 
 export type Selection = { kind: 'item'; id: string } | { kind: 'media'; id: string } | null;
-export type DialogName = 'export' | 'shortcuts' | null;
+export type DialogName = 'export' | 'shortcuts' | 'ai' | null;
 
 export interface Toast {
   id: number;

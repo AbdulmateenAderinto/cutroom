@@ -8,7 +8,8 @@ import { BrowserWindow, Menu, type MenuItemConstructorOptions, app, dialog, ipcM
 import type { MenuAction } from '../preload/api';
 import type { ExportSettings } from '../shared/exportPlan';
 import { type Project, PROJECT_EXTENSION } from '../shared/model';
-import { runExport } from './export/exportRunner';
+import { setupAiControl } from './control/aiControl';
+import { cancelExport, startExport } from './export/exportJobs';
 import { checkFfmpeg, resolveBinaries } from './media/ffbin';
 import { SUPPORTED_EXTENSIONS, probeMedia } from './media/probe';
 import { thumbnailDataUrl } from './media/thumbnails';
@@ -23,7 +24,6 @@ if (process.env.CUTROOM_USER_DATA) app.setPath('userData', process.env.CUTROOM_U
 let win: BrowserWindow | null = null;
 let dirty = false;
 let closing = false;
-let exportAbort: AbortController | null = null;
 let autosavedProjectId: string | null = null;
 const recovery = () => new RecoveryStore(path.join(app.getPath('userData'), 'recovery'));
 
@@ -209,19 +209,10 @@ function registerIpc() {
     return r.filePath.toLowerCase().endsWith('.mp4') ? r.filePath : `${r.filePath}.mp4`;
   });
 
-  ipcMain.handle('export:start', async (_e, project: Project, settings: ExportSettings) => {
-    if (exportAbort) return { status: 'failed', message: 'An export is already running.', details: '' };
-    exportAbort = new AbortController();
-    try {
-      return await runExport(project, settings, {
-        signal: exportAbort.signal,
-        onProgress: (p) => win?.webContents.send('export:progress', p),
-      });
-    } finally {
-      exportAbort = null;
-    }
-  });
-  ipcMain.handle('export:cancel', () => exportAbort?.abort());
+  ipcMain.handle('export:start', (_e, project: Project, settings: ExportSettings) =>
+    startExport(project, settings, 'user', (p) => win?.webContents.send('export:progress', p)),
+  );
+  ipcMain.handle('export:cancel', () => cancelExport());
 
   ipcMain.handle('shell:showInFolder', (_e, p: string) => shell.showItemInFolder(p));
 
@@ -253,6 +244,7 @@ app.whenReady().then(() => {
   resolveBinaries(app.isPackaged ? [path.join(process.resourcesPath, 'bin')] : []);
   handleMediaProtocol();
   registerIpc();
+  setupAiControl(() => win);
   buildMenu();
   createWindow();
   app.on('activate', () => {
@@ -261,6 +253,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  exportAbort?.abort();
+  cancelExport();
   app.quit(); // single-window app: quit on close, on macOS too
 });

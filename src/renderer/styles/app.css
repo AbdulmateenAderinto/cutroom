@@ -243,3 +243,13 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .anim-zone.out { right: 0; background: linear-gradient(to left, rgba(242, 160, 61, 0.45), rgba(242, 160, 61, 0.05)); }
 .anim-motion { position: absolute; right: 12px; top: 3px; font-size: 11px; color: var(--accent); pointer-events: none; }
 .kf-mark { position: absolute; bottom: 6px; width: 8px; height: 8px; background: var(--accent); transform: rotate(45deg); border: 1px solid #000; pointer-events: none; }
+
+/* AI control */
+.capturing .frame-overlay { display: none; }
+.ai-btn { display: inline-flex; align-items: center; gap: 6px; }
+.ai-dot { width: 8px; height: 8px; border-radius: 50%; background: #59606d; }
+.ai-dot.on { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.code { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; background: #0f1114; border: 1px solid var(--line-2); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-all; user-select: text; max-height: 180px; overflow: auto; }
+.steps { margin: 6px 0; padding-left: 20px; }
+.steps li { margin: 4px 0; }
+.tool-list { columns: 2; font-size: 11.5px; color: var(--muted); margin: 4px 0; padding-left: 16px; }

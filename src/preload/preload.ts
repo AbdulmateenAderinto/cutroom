@@ -32,6 +32,11 @@ const api: CutroomApi = {
   onMenu: (cb) => on('menu', cb),
   onCloseRequested: (cb) => on('app:closeRequested', cb),
   closeNow: () => ipcRenderer.send('app:closeNow'),
+  aiStatus: () => ipcRenderer.invoke('ai:status'),
+  setAiEnabled: (enabled) => ipcRenderer.invoke('ai:setEnabled', enabled),
+  onControlRequest: (cb) => on('control:request', cb),
+  respondControl: (id, result) => ipcRenderer.send('control:response', { id, result }),
+  onAiNotify: (cb) => on('ai:notify', cb),
 };
 
 contextBridge.exposeInMainWorld('cutroom', api);

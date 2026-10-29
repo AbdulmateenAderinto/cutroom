@@ -59,6 +59,20 @@ export type MenuAction =
   | 'undo' | 'redo' | 'split' | 'delete' | 'deleteLeaveGap' | 'duplicate'
   | 'playPause' | 'toggleSnapping' | 'zoomIn' | 'zoomOut' | 'zoomFit' | 'shortcuts';
 
+export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
+export interface ToolResult {
+  content: ToolContent[];
+  isError?: boolean;
+}
+
+export interface AiControlStatus {
+  enabled: boolean;
+  running: boolean;
+  calls: number;
+  error: string | null;
+  setup: { command: string; args: string[]; env: Record<string, string>; desktopConfig: string; claudeCodeCommand: string };
+}
+
 export interface CutroomApi {
   platform: string;
   checkFfmpeg(): Promise<FfmpegStatus>;
@@ -84,4 +98,10 @@ export interface CutroomApi {
   onMenu(cb: (action: MenuAction) => void): () => void;
   onCloseRequested(cb: () => void): () => void;
   closeNow(): void;
+  // AI control (MCP)
+  aiStatus(): Promise<AiControlStatus>;
+  setAiEnabled(enabled: boolean): Promise<AiControlStatus>;
+  onControlRequest(cb: (req: { id: number; name: string; args: Record<string, unknown> }) => void): () => void;
+  respondControl(id: number, result: ToolResult): void;
+  onAiNotify(cb: (text: string) => void): () => void;
 }
