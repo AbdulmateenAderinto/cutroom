@@ -10,12 +10,19 @@ import type { FfmpegStatus } from '../../preload/api';
 import { type Project, createProject } from '../../shared/model';
 
 export type Selection = { kind: 'item'; id: string } | { kind: 'media'; id: string } | null;
-export type DialogName = 'export' | 'shortcuts' | 'ai' | null;
+export type DialogName = 'export' | 'shortcuts' | 'ai' | 'speech' | null;
 
 export interface Toast {
   id: number;
   kind: 'info' | 'warn' | 'error';
   text: string;
+}
+
+export interface Review {
+  clipId: string;
+  kind: 'silence' | 'scenes' | 'fillers';
+  ranges: { start: number; end: number }[]; // source ticks (silence, fillers)
+  times: number[]; // source ticks (scene changes)
 }
 
 export interface AppState {
@@ -34,6 +41,10 @@ export interface AppState {
   toasts: Toast[];
   dialog: DialogName;
   ffmpeg: FfmpegStatus | null;
+  /** Detected ranges/times awaiting review in the Smart tools section (source time). */
+  review: Review | null;
+  /** Transcription progress per media id (0..1). */
+  transcribing: Record<string, number>;
   /** Transient visual offset while trimming a clip's start (see Timeline). */
   trimPreview: { id: string; offset: number } | null;
 }
@@ -76,6 +87,8 @@ export const store = createStore<AppState>({
   dialog: null,
   ffmpeg: null,
   trimPreview: null,
+  review: null,
+  transcribing: {},
 });
 
 export function useStore<R>(selector: (s: AppState) => R): R {
@@ -152,7 +165,7 @@ export function loadProject(project: Project, projectPath: string | null, opts: 
   const saved = opts.savedClean === false ? createProject() : project;
   store.set({
     project, projectPath, savedProject: saved, past: [], future: [], selection: null,
-    previewMediaId: null, missing, thumbs: {}, trimPreview: null,
+    previewMediaId: null, missing, thumbs: {}, trimPreview: null, review: null,
   });
 }
 

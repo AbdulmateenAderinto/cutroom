@@ -7,6 +7,7 @@ import { Inspector } from './components/Inspector';
 import { MediaBin } from './components/MediaBin';
 import { PreviewPanel } from './components/PreviewPanel';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
+import { SpeechSetupDialog } from './components/SpeechSetupDialog';
 import { Timeline } from './components/Timeline';
 import { Toasts } from './components/Toasts';
 import { TopBar } from './components/TopBar';
@@ -126,6 +127,7 @@ export function App() {
       {dialog === 'export' && <ExportDialog />}
       {dialog === 'shortcuts' && <ShortcutsDialog />}
       {dialog === 'ai' && <AiControlDialog />}
+      {dialog === 'speech' && <SpeechSetupDialog />}
       {recovery.length > 0 && (
         <div className="modal-backdrop">
           <div className="modal small" role="dialog" aria-label="Recover unsaved work">

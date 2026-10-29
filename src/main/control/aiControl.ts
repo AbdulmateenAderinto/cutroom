@@ -6,6 +6,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { type BrowserWindow, app, ipcMain } from 'electron';
 import type { ToolDef } from '../../shared/controlTools';
+import { type CaptionTrack, type ExportSettings, canvasInOutput } from '../../shared/exportPlan';
+import type { Project } from '../../shared/model';
 import { allowMediaPath } from '../mediaProtocol';
 import { ControlServer, type ToolResult, textResult } from './controlServer';
 import { type MainToolDeps, runMainTool } from './mainTools';
@@ -137,7 +139,17 @@ export function setupAiControl(getWin: () => BrowserWindow | null) {
 
   if (readSettings().aiControl || process.env.CUTROOM_AI_CONTROL === '1') void start();
   app.on('will-quit', () => void server?.stop());
-  return { stop: () => server?.stop() };
+  /** Caption images for an export, drawn by the window at the canvas-in-output size. */
+  const renderCaptions = async (project: Project, settings: ExportSettings): Promise<CaptionTrack | null> => {
+    const { bw, bh } = canvasInOutput(project, settings);
+    const r = await callRenderer('__render_captions', { project, width: bw, height: bh });
+    if (r.isError) throw new Error((r.content[0] as { text: string }).text);
+    const text = (r.content[0] as { text: string }).text;
+    return text === 'null' ? null : (JSON.parse(text) as CaptionTrack);
+  };
+  deps.renderCaptions = renderCaptions;
+
+  return { stop: () => server?.stop(), callRenderer, renderCaptions };
 }
 
 /** For tests: is the control file present (server announced)? */

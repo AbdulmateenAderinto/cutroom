@@ -11,14 +11,17 @@ import {
   type Framing,
   type MediaRef,
   type Project,
+  type Transcript,
   evenDim,
   findMedia,
   isHexColor,
   layoutSequence,
   newId,
 } from '../../shared/model';
+import { buildCues, fillerRanges } from '../../shared/captions';
 import * as ops from '../../shared/ops';
 import { COMMON_FRAME_RATES, type Rational, frameDuration, rateLabel, secondsToTicks, ticksToSeconds } from '../../shared/time';
+import { renderCaptionTrack } from '../captions/draw';
 import { engine } from '../preview/engine';
 import * as A from '../state/actions';
 import { playhead } from '../state/playhead';
@@ -69,6 +72,24 @@ function rateFromFps(fps: number): Rational {
   return { num: Math.round(fps * 1000), den: 1000 };
 }
 
+/** Group words into sentences (by punctuation or pauses) for an AI-friendly transcript. */
+export function sentences(words: { start: number; end: number; text: string }[]) {
+  const out: { start: number; end: number; text: string }[] = [];
+  let cur: typeof words = [];
+  const flush = () => {
+    if (cur.length) out.push({ start: cur[0].start, end: cur[cur.length - 1].end, text: cur.map((w) => w.text).join(' ') });
+    cur = [];
+  };
+  for (const w of words) {
+    const prev = cur[cur.length - 1];
+    if (prev && w.start - prev.end > 0.8 * 705_600_000) flush();
+    cur.push(w);
+    if (/[.!?]$/.test(w.text) || cur.length >= 40) flush();
+  }
+  flush();
+  return out;
+}
+
 export function projectSummary(p: Project) {
   const lay = layoutSequence(p);
   const s = store.get();
@@ -79,6 +100,7 @@ export function projectSummary(p: Project) {
     duration_s: sec(lay.duration),
     playhead_s: sec(playhead.get().time),
     saved: s.project === s.savedProject,
+    captions: p.captions ?? { enabled: false },
     media: p.media.map((m) => ({
       id: m.id,
       name: m.name,
@@ -158,12 +180,89 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         const r = document.querySelector('.stage')!.getBoundingClientRect();
         return ok({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) });
       }
+      case '__render_captions': {
+        const track = await renderCaptionTrack(args.project as Project, args.width, args.height);
+        return ok(track ? JSON.stringify(track) : 'null');
+      }
       case '__end_capture':
         document.body.classList.remove('capturing');
         return ok('ok');
       case '__save': {
         if (!store.get().projectPath) return fail('This project has never been saved. Ask the person to save it once (⌘S) to choose a location.');
         return (await A.saveProject()) ? ok({ saved: store.get().projectPath }) : fail('Saving failed.');
+      }
+
+      case '__remove_ranges_batch': {
+        let removedTotal = 0;
+        let parts = 0;
+        let next = p;
+        for (const it of args.items as { clip_id: string; ranges: { start: number; end: number }[] }[]) {
+          const r = ops.removeSourceRanges(next, it.clip_id, it.ranges.map((x) => ({ start: T(x.start), end: T(x.end) })), { padding: T(args.padding ?? 0) });
+          next = r.project;
+          removedTotal += r.removed;
+          parts += r.parts;
+        }
+        if (next === p) return ok({ removed_s: 0, message: 'Nothing to remove.' });
+        edit(`${args.label ?? 'removed ranges'} (${sec(removedTotal)} s)`, () => next, { selection: null });
+        return ok({ removed_s: sec(removedTotal), clips_now: parts, timeline: projectSummary(store.get().project).timeline });
+      }
+      case '__split_source_times': {
+        const c = clipOrThrow(p, args.clip_id);
+        const r = ops.splitAtSourceTimes(p, c.id, (args.times as number[]).map(T));
+        if (r.parts <= 1) return ok({ parts: 1, message: 'No scene changes inside this clip.' });
+        edit(`split into ${r.parts} scenes`, () => r.project);
+        return ok({ parts: r.parts, timeline: projectSummary(store.get().project).timeline });
+      }
+      case 'remove_ranges': {
+        clipOrThrow(p, args.clip_id);
+        return runRendererTool('__remove_ranges_batch', { items: [{ clip_id: args.clip_id, ranges: args.ranges }], padding: args.padding ?? 0, label: 'cut ranges' });
+      }
+
+      case '__set_transcript': {
+        mediaOrThrow(p, args.media_id);
+        edit('added a transcript', (pr) => ops.setTranscript(pr, args.media_id, args.transcript as Transcript));
+        return ok('ok');
+      }
+
+      // ---- speech ----
+      case 'get_transcript': {
+        const m = mediaOrThrow(p, args.media_id);
+        if (!m.transcript) throw new ToolError(`${m.name} has no transcript yet. Call transcribe first.`);
+        return ok({
+          media: m.name,
+          language: m.transcript.language,
+          sentences: sentences(m.transcript.words).map((x) => ({ start_s: sec(x.start), end_s: sec(x.end), text: x.text })),
+          ...(args.words ? { words: m.transcript.words.map((w) => ({ t: sec(w.start), e: sec(w.end), w: w.text })) } : {}),
+        });
+      }
+      case 'set_captions': {
+        if (args.color !== undefined && !isHexColor(args.color)) throw new ToolError('color must look like #ffffff.');
+        if (args.highlight && !isHexColor(args.highlight)) throw new ToolError('highlight must look like #ffd23f or null.');
+        edit('updated captions', (pr) =>
+          ops.setCaptions(pr, (c) => ({
+            ...c,
+            enabled: args.enabled ?? true,
+            look: args.look ?? c.look,
+            fontSize: args.font_size !== undefined ? Math.min(15, Math.max(1.5, args.font_size)) : c.fontSize,
+            position: args.position !== undefined ? Math.min(0.97, Math.max(0.03, args.position)) : c.position,
+            color: args.color ?? c.color,
+            highlight: args.highlight === undefined ? c.highlight : args.highlight,
+            uppercase: args.uppercase ?? c.uppercase,
+          })),
+        );
+        const np = store.get().project;
+        const missingTranscripts = np.media.filter((m) => !m.transcript && np.sequence.items.some((i) => i.kind === 'clip' && i.mediaId === m.id)).map((m) => m.name);
+        return ok({ captions: np.captions, cues: buildCues(np).length, untranscribed_media_on_timeline: missingTranscripts });
+      }
+      case 'remove_filler_words': {
+        const items = p.sequence.items.filter((i): i is ClipItem => i.kind === 'clip' && (!args.clip_id || i.id === args.clip_id));
+        if (args.clip_id && !items.length) throw new ToolError(`No clip with id ${args.clip_id}.`);
+        const batch = items.map((c) => ({
+          clip_id: c.id,
+          ranges: fillerRanges(findMedia(p, c.mediaId)?.transcript?.words ?? []).map((r) => ({ start: ticksToSeconds(r.start), end: ticksToSeconds(r.end) })),
+        })).filter((b) => b.ranges.length);
+        if (!batch.length) return ok({ removed_s: 0, message: 'No filler words found (or no transcripts yet).' });
+        return runRendererTool('__remove_ranges_batch', { items: batch, padding: 0, label: 'removed filler words' });
       }
 
       // ---- inspect ----

@@ -56,6 +56,8 @@ export function makeCoded(spec: CodedSpec): string {
     '-f', 'lavfi', '-i', vf,
     '-f', 'lavfi', '-i', `sine=f=${spec.freq}:r=48000:d=${spec.seconds}`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '8', '-g', '12', '-pix_fmt', 'yuv420p',
+    // Tagged BT.709 so the exporter passes the YUV values through untouched (they encode frame numbers).
+    '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
     '-c:a', 'aac', '-b:a', '128k', '-shortest', out,
   ]);
   return out;

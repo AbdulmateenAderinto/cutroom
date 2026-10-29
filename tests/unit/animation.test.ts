@@ -83,14 +83,14 @@ describe('animation ops', () => {
     // the same source moment (3 s) is now at timeline 2 s
     expect(evalAnimation(c.animation, 2 * S, c.sourceOut - c.sourceIn, c.sourceIn).scale).toBe(before);
   });
-  it('saves as format v2 and still opens v1 files', () => {
+  it('saves as the current format and still opens v1 files', () => {
     let p = proj();
     p = ops.setAnimation(p, p.sequence.items[0].id, (a) => ({ ...a, in: { preset: 'pop', duration: S } }));
     const text = serializeProject(p);
-    expect(JSON.parse(text).version).toBe(2);
+    expect(JSON.parse(text).version).toBe(3);
     expect(parseProject(text).sequence.items[0]).toEqual(p.sequence.items[0]);
     const v1 = JSON.parse(serializeProject(proj()));
     v1.version = 1;
-    expect(parseProject(JSON.stringify(v1)).version).toBe(2);
+    expect(parseProject(JSON.stringify(v1)).version).toBe(3);
   });
 });

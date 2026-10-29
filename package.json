@@ -14,8 +14,9 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:export": "vitest run tests/integration",
-    "test:e2e": "npm run build && node tests/e2e/smoke.mjs",
-    "test:mcp": "npm run build && node tests/e2e/mcp.mjs"
+    "test:e2e": "npm run build && node tests/e2e/smoke.mjs && node tests/e2e/smart.mjs",
+    "test:mcp": "npm run build && node tests/e2e/mcp.mjs",
+    "test:all": "npm run typecheck && npm test && npm run test:e2e && node tests/e2e/mcp.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

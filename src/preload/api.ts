@@ -3,7 +3,7 @@
  * (implementation) and the renderer (window.cutroom).
  */
 import type { ExportSettings } from '../shared/exportPlan';
-import type { MediaInfo, Project } from '../shared/model';
+import type { MediaInfo, Project, Transcript } from '../shared/model';
 
 export type ProbeResult = { ok: true; info: MediaInfo; warnings: string[] } | { ok: false; error: string };
 
@@ -73,6 +73,16 @@ export interface AiControlStatus {
   setup: { command: string; args: string[]; env: Record<string, string>; desktopConfig: string; claudeCodeCommand: string };
 }
 
+export interface WhisperStatus {
+  binary: string | null;
+  models: { id: string; label: string; sizeMB: number; installed: boolean }[];
+  selected: string;
+  customPath: string | null;
+  language: string;
+  ready: boolean;
+  modelFile: string | null;
+}
+
 export interface CutroomApi {
   platform: string;
   checkFfmpeg(): Promise<FfmpegStatus>;
@@ -98,6 +108,19 @@ export interface CutroomApi {
   onMenu(cb: (action: MenuAction) => void): () => void;
   onCloseRequested(cb: () => void): () => void;
   closeNow(): void;
+  // Analysis (local FFmpeg)
+  detectSilence(path: string, durationSec: number, opts?: { noiseDb?: number; minDuration?: number }): Promise<{ start: number; end: number }[]>;
+  detectScenes(path: string, threshold?: number): Promise<number[]>;
+  // Speech-to-text (local whisper.cpp)
+  whisperStatus(): Promise<WhisperStatus>;
+  whisperSetOptions(o: { model?: string; language?: string }): Promise<WhisperStatus>;
+  whisperDownload(id: string): Promise<{ ok: boolean; error?: string }>;
+  whisperCancelDownload(): Promise<void>;
+  whisperChooseModel(): Promise<{ ok: boolean; error?: string }>;
+  transcribe(mediaId: string, path: string): Promise<{ ok: true; transcript: Transcript } | { ok: false; error: string }>;
+  cancelTranscribe(path: string): Promise<void>;
+  onWhisperProgress(cb: (p: { mediaId: string; fraction: number }) => void): () => void;
+  onDownloadProgress(cb: (p: { id: string; fraction: number }) => void): () => void;
   // AI control (MCP)
   aiStatus(): Promise<AiControlStatus>;
   setAiEnabled(enabled: boolean): Promise<AiControlStatus>;

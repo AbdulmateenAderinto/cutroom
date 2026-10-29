@@ -2,7 +2,7 @@
  * One export at a time, shared by the Export dialog and AI control.
  */
 import type { Project } from '../../shared/model';
-import type { ExportSettings } from '../../shared/exportPlan';
+import type { CaptionTrack, ExportSettings } from '../../shared/exportPlan';
 import { type ExportProgress, type ExportResult, runExport } from './exportRunner';
 
 export interface JobState {
@@ -33,13 +33,24 @@ export async function startExport(
   settings: ExportSettings,
   startedBy: JobState['startedBy'],
   onProgress?: (p: ExportProgress) => void,
+  getCaptions?: () => Promise<CaptionTrack | null>,
 ): Promise<ExportResult> {
   if (abort) return { status: 'failed', message: 'An export is already running. Wait for it to finish or cancel it.', details: '' };
   abort = new AbortController();
   const job: JobState = { outputPath: settings.outputPath, startedAt: Date.now(), progress: null, result: null, startedBy };
   last = job;
   try {
+    let captions: CaptionTrack | null = null;
+    if (project.captions?.enabled && getCaptions) {
+      try {
+        captions = await getCaptions();
+      } catch (e) {
+        job.result = { status: 'failed', message: `Could not render captions: ${(e as Error).message}`, details: '' };
+        return job.result;
+      }
+    }
     job.result = await runExport(project, settings, {
+      captions,
       signal: abort.signal,
       onProgress: (p) => {
         job.progress = p;

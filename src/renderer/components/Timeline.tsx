@@ -313,9 +313,27 @@ function ClipBlock(props: {
         <span className="clip-dur">{formatDuration(props.l.end - props.l.start)}{audio}</span>
       </div>
  {item.kind === 'clip' && item.animation && <AnimationMarks clip={item} pps={props.pps} width={props.w} />}
+      {item.kind === 'clip' && <ReviewMarks clip={item} pps={props.pps} />}
       <div className="trim-handle left" onPointerDown={(e) => props.onEdge(e, 'start')} title="Drag to trim the start" />
       <div className="trim-handle right" onPointerDown={(e) => props.onEdge(e, 'end')} title="Drag to trim the end" />
     </div>
+  );
+}
+
+/** Detected pauses / filler words (red) and scene changes (yellow) awaiting review. */
+function ReviewMarks({ clip, pps }: { clip: ClipItem; pps: number }) {
+  const review = useStore((s) => (s.review?.clipId === clip.id ? s.review : null));
+  if (!review) return null;
+  const px = (t: Ticks) => ticksToSeconds(t - clip.sourceIn) * pps;
+  return (
+    <>
+      {review.ranges.map((r, i) => {
+        const a = Math.max(r.start, clip.sourceIn);
+        const b = Math.min(r.end, clip.sourceOut);
+        return b > a ? <div key={i} className="review-zone" style={{ left: px(a), width: Math.max(2, px(b) - px(a)) }} /> : null;
+      })}
+      {review.times.map((t) => <div key={t} className="review-cut" style={{ left: px(t) }} />)}
+    </>
   );
 }
 

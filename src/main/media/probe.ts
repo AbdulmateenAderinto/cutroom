@@ -91,6 +91,13 @@ export async function probeMedia(file: string): Promise<ProbeResult> {
   const isHDR = ['smpte2084', 'arib-std-b67'].includes(colorTransfer);
   if (isHDR) warnings.push('HDR video: no tone mapping yet, so colours will look washed out or wrong in the export.');
   const pixFmt: string = v.pix_fmt ?? '';
+  const cs: string = v.color_space ?? '';
+  const colorMatrix: MediaInfo['colorMatrix'] =
+    cs === 'bt709' ? 'bt709'
+      : ['smpte170m', 'bt470bg', 'bt601', 'fcc'].includes(cs) ? 'bt601'
+        : cs && cs !== 'unknown' && cs !== 'reserved' ? 'other'
+          : height < 720 && width < 1280 ? 'bt601' : 'bt709';
+  const colorRange: MediaInfo['colorRange'] = v.color_range === 'pc' || /^yuvj/.test(pixFmt) ? 'pc' : 'tv';
   if (/10|12/.test(pixFmt)) warnings.push('10/12-bit video: exported as 8-bit.');
   if (v.field_order && !['progressive', 'unknown'].includes(v.field_order)) warnings.push('Interlaced video: not deinterlaced.');
 
@@ -127,6 +134,8 @@ export async function probeMedia(file: string): Promise<ProbeResult> {
       pixFmt,
       colorTransfer,
       isHDR,
+      colorMatrix,
+      colorRange,
       hasAudio: !!a,
       audioCodec,
       audioSampleRate: a ? Number(a.sample_rate) || null : null,

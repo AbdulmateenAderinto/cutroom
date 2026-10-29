@@ -14,6 +14,7 @@ import {
   type MediaRef,
   type Project,
   type TrackItem,
+  type Transcript,
   DEFAULT_FRAMING,
   findMedia,
   itemDuration,
@@ -21,6 +22,7 @@ import {
   newId,
 } from './model';
 import { type AnimProperty, type ClipAnimation, type Easing, clampAnimValue, removeKeyframeAt, upsertKeyframe } from './animation';
+import { type CaptionSettings, DEFAULT_CAPTIONS } from './captions';
 import { type Rational, type Ticks, frameDuration, snapToFrame } from './time';
 
 function withItems(project: Project, items: TrackItem[]): Project {
@@ -243,6 +245,82 @@ export function setKeyframe(project: Project, clipId: string, prop: AnimProperty
 
 export function removeKeyframe(project: Project, clipId: string, prop: AnimProperty, at: Ticks): Project {
   return setAnimation(project, clipId, (a) => ({ ...a, keyframes: { ...a.keyframes, [prop]: removeKeyframeAt(a.keyframes?.[prop], at) } }));
+}
+
+/**
+ * Cut source ranges (e.g. silences, filler words) out of a clip. The clip is replaced by the
+ * parts that remain, in order, as one edit. `padding` keeps a little of each removed range at
+ * both ends so speech is not clipped. Parts shorter than `minKeep` are dropped.
+ */
+export function removeSourceRanges(
+  project: Project,
+  clipId: string,
+  ranges: { start: Ticks; end: Ticks }[],
+  opts: { padding?: Ticks; minKeep?: Ticks } = {},
+): { project: Project; parts: number; removed: Ticks } {
+  const clip = getItem(project, clipId);
+  if (!clip || clip.kind !== 'clip') return { project, parts: 0, removed: 0 };
+  const media = findMedia(project, clip.mediaId);
+  if (!media) return { project, parts: 0, removed: 0 };
+  const pf = frameDuration(project.frameRate);
+  const padding = opts.padding ?? 0;
+  const minKeep = Math.max(pf, opts.minKeep ?? 2 * pf);
+  const cut = ranges
+    .map((r) => ({ start: r.start + padding, end: r.end - padding }))
+    .filter((r) => r.end > r.start && r.end > clip.sourceIn && r.start < clip.sourceOut)
+    .sort((a, b) => a.start - b.start);
+  const keep: { start: Ticks; end: Ticks }[] = [];
+  let cursor = clip.sourceIn;
+  for (const r of cut) {
+    if (r.start > cursor) keep.push({ start: cursor, end: Math.min(r.start, clip.sourceOut) });
+    cursor = Math.max(cursor, r.end);
+  }
+  if (cursor < clip.sourceOut) keep.push({ start: cursor, end: clip.sourceOut });
+  const parts = keep.filter((k) => k.end - k.start >= minKeep);
+  if (parts.length === 1 && parts[0].start === clip.sourceIn && parts[0].end === clip.sourceOut) return { project, parts: 1, removed: 0 };
+  const anim = clip.animation;
+  const newClips: ClipItem[] = parts.map((k, i) => {
+    const c: ClipItem = { ...clip, id: i === 0 ? clip.id : newId('clip'), ...legalRange(project, media, k.start, k.end, 'in') };
+    if (anim) {
+      // In-animation stays on the first part, out-animation on the last; keyframes follow the footage.
+      const a: ClipAnimation = { ...anim, in: i === 0 ? anim.in : undefined, out: i === parts.length - 1 ? anim.out : undefined };
+      if (!a.in) delete a.in;
+      if (!a.out) delete a.out;
+      c.animation = a;
+    }
+    return c;
+  });
+  const items = project.sequence.items.flatMap((it) => (it.id === clipId ? newClips : [it]));
+  const kept = newClips.reduce((s, c) => s + (c.sourceOut - c.sourceIn), 0);
+  return { project: withItems(project, items), parts: newClips.length, removed: clip.sourceOut - clip.sourceIn - kept };
+}
+
+/** Split a clip at the given SOURCE times (e.g. detected scene changes). */
+export function splitAtSourceTimes(project: Project, clipId: string, times: Ticks[]): { project: Project; parts: number } {
+  let p = project;
+  let current = clipId;
+  let parts = 1;
+  for (const s of [...times].sort((a, b) => a - b)) {
+    const clip = getItem(p, current);
+    if (!clip || clip.kind !== 'clip' || s <= clip.sourceIn || s >= clip.sourceOut) continue;
+    const l = layoutSequence(p).items.find((x) => x.item.id === current)!;
+    const r = splitAt(p, l.start + (s - clip.sourceIn));
+    if (!r) continue;
+    p = r.project;
+    current = r.rightId;
+    parts++;
+  }
+  return { project: p, parts };
+}
+
+export function setTranscript(project: Project, mediaId: string, transcript: Transcript | undefined): Project {
+  return { ...project, media: project.media.map((m) => (m.id === mediaId ? { ...m, transcript } : m)) };
+}
+
+export function setCaptions(project: Project, fn: (c: CaptionSettings) => CaptionSettings | undefined): Project {
+  const next = fn(project.captions ?? { ...DEFAULT_CAPTIONS, enabled: false });
+  const { captions: _old, ...rest } = project;
+  return next ? { ...rest, captions: next } : rest;
 }
 
 export function setClipAudio(project: Project, clipId: string, audio: { volume?: number; muted?: boolean }): Project {

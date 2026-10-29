@@ -16,6 +16,8 @@ import { COMMON_FRAME_RATES, formatDuration, formatTimecode, frameDuration, rate
 import * as A from '../state/actions';
 import { beginGesture, commit, endGesture, gestureActive, store, updateGesture, useStore } from '../state/store';
 import { AnimationSection } from './AnimationSection';
+import { CaptionsSection } from './CaptionsSection';
+import { SmartTools } from './SmartTools';
 import { CanvasControl } from './TopBar';
 import { Disclosure, NumberField, Section, Segmented, TimecodeField, formatBytes } from './controls';
 
@@ -195,6 +197,8 @@ function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) 
 
       <AnimationSection clip={clip} project={project} />
 
+      <SmartTools clip={clip} project={project} />
+
       <Section title="Audio">
         {media.info.hasAudio ? (
           <>
@@ -306,6 +310,7 @@ function ProjectSettings({ project }: { project: Project }) {
           </span>
         </label>
       </Section>
+      <CaptionsSection project={project} />
       <Section title="Timing">
         <label className="field" title="All cuts snap to this frame grid. Export can use a different rate.">
           <span className="field-label">Frame rate</span>

@@ -8,7 +8,9 @@ import { BrowserWindow, Menu, type MenuItemConstructorOptions, app, dialog, ipcM
 import type { MenuAction } from '../preload/api';
 import type { ExportSettings } from '../shared/exportPlan';
 import { type Project, PROJECT_EXTENSION } from '../shared/model';
+import { setupAnalysis } from './analysis/analysisTools';
 import { setupAiControl } from './control/aiControl';
+import { setupTranscription } from './transcribe/transcribeService';
 import { cancelExport, startExport } from './export/exportJobs';
 import { checkFfmpeg, resolveBinaries } from './media/ffbin';
 import { SUPPORTED_EXTENSIONS, probeMedia } from './media/probe';
@@ -25,6 +27,7 @@ let win: BrowserWindow | null = null;
 let dirty = false;
 let closing = false;
 let autosavedProjectId: string | null = null;
+let ai: ReturnType<typeof setupAiControl>;
 const recovery = () => new RecoveryStore(path.join(app.getPath('userData'), 'recovery'));
 
 function sendMenu(action: MenuAction) {
@@ -210,7 +213,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('export:start', (_e, project: Project, settings: ExportSettings) =>
-    startExport(project, settings, 'user', (p) => win?.webContents.send('export:progress', p)),
+    startExport(project, settings, 'user', (p) => win?.webContents.send('export:progress', p), () => ai.renderCaptions(project, settings)),
   );
   ipcMain.handle('export:cancel', () => cancelExport());
 
@@ -243,8 +246,10 @@ function registerIpc() {
 app.whenReady().then(() => {
   resolveBinaries(app.isPackaged ? [path.join(process.resourcesPath, 'bin')] : []);
   handleMediaProtocol();
+  ai = setupAiControl(() => win);
   registerIpc();
-  setupAiControl(() => win);
+  setupAnalysis(() => ai);
+  setupTranscription(() => win, () => ai);
   buildMenu();
   createWindow();
   app.on('activate', () => {

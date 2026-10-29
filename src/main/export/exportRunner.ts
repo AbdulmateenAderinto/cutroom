@@ -7,11 +7,12 @@
  * or cancel the partial file is deleted, so an unfinished export never looks like a finished video.
  */
 import { execFile, spawn } from 'node:child_process';
-import { accessSync, constants, existsSync, renameSync, statSync, unlinkSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdtempSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { MediaRef, Project } from '../../shared/model';
-import { type ExportSettings, buildExportPlan, validateExportSettings } from '../../shared/exportPlan';
-import { parseRational, rateToFloat } from '../../shared/time';
+import { type CaptionTrack, type ExportSettings, buildExportPlan, canvasInOutput, validateExportSettings } from '../../shared/exportPlan';
+import { type Rational, parseRational, rateToFloat } from '../../shared/time';
 import { ffmpegPath, ffprobePath } from '../media/ffbin';
 
 export interface ExportProgress {
@@ -75,6 +76,37 @@ export interface RunExportOptions {
   signal?: AbortSignal;
   onProgress?: (p: ExportProgress) => void;
   mediaPath?: (m: MediaRef) => string;
+  captions?: CaptionTrack | null;
+}
+
+/**
+ * Write caption PNGs and an ffconcat list that shows each image for its time span (blank between).
+ * Span boundaries are rounded to output frames, and each image is read at the output frame rate
+ * (`option framerate`) so its timestamps are exact; FFmpeg's default 1/25 s image timebase would
+ * shift captions by up to 20 ms.
+ */
+export function writeCaptionTrack(dir: string, track: CaptionTrack, totalFrames: number, rate: Rational): string {
+  writeFileSync(path.join(dir, 'blank.png'), Buffer.from(track.blank, 'base64'));
+  const fps = rate.num / rate.den;
+  const lines = ['ffconcat version 1.0'];
+  let frame = 0;
+  const entry = (file: string, untilFrame: number) => {
+    const until = Math.min(untilFrame, totalFrames + 1);
+    if (until <= frame) return;
+    lines.push(`file '${file}'`, `option framerate ${rate.num}/${rate.den}`, `duration ${((until - frame) / fps).toFixed(6)}`);
+    frame = until;
+  };
+  track.segments.forEach((seg, i) => {
+    const name = `cap${i}.png`;
+    writeFileSync(path.join(dir, name), Buffer.from(seg.png, 'base64'));
+    entry('blank.png', Math.round(seg.start * fps));
+    entry(name, Math.round(seg.end * fps));
+  });
+  entry('blank.png', totalFrames + 1);
+  lines.push(`file 'blank.png'`, `option framerate ${rate.num}/${rate.den}`); // the last file is repeated so its duration applies
+  const list = path.join(dir, 'captions.ffconcat');
+  writeFileSync(list, lines.join('\n') + '\n');
+  return list;
 }
 
 export async function runExport(project: Project, settings: ExportSettings, opts: RunExportOptions = {}): Promise<ExportResult> {
@@ -94,7 +126,23 @@ export async function runExport(project: Project, settings: ExportSettings, opts
 
   const partial = partialPathFor(settings.outputPath);
   tryUnlink(partial);
-  const plan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path));
+  let captionDir: string | null = null;
+  let captionTrack: string | undefined;
+  if (opts.captions) {
+    const { bw, bh } = canvasInOutput(project, settings);
+    if (opts.captions.width !== bw || opts.captions.height !== bh) return fail('Internal error: caption images have the wrong size.');
+    captionDir = mkdtempSync(path.join(os.tmpdir(), 'cutroom-captions-'));
+    const probePlan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path));
+    captionTrack = writeCaptionTrack(captionDir, opts.captions, probePlan.totalFrames, settings.frameRate);
+  }
+  try {
+    return await encode();
+  } finally {
+    if (captionDir) rmSync(captionDir, { recursive: true, force: true });
+  }
+
+  async function encode(): Promise<ExportResult> {
+  const plan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path), { captionTrack });
 
   let bin: string;
   try { bin = ffmpegPath(); } catch (e) { return fail((e as Error).message); }
@@ -192,4 +240,5 @@ export async function runExport(project: Project, settings: ExportSettings, opts
       audioSampleRate: a ? Number(a.sample_rate) : null,
     },
   };
+  }
 }

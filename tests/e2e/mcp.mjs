@@ -6,7 +6,7 @@
  * Run: npm run test:mcp   (Linux without a display: xvfb-run -a npm run test:mcp)
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +34,24 @@ function fixture(name, w, h, seconds, freq) {
 }
 const A = fixture('mcp landscape.mp4', 1280, 720, 6, 440);
 const B = fixture('mcp portrait.mp4', 720, 1280, 5, 660);
+const TALK = path.join(fixtures, 'mcp talk.mp4');
+if (!existsSync(TALK)) {
+  ff(['-f', 'lavfi', '-i', 'testsrc2=s=640x360:r=30:d=8', '-f', 'lavfi', '-i', "aevalsrc='0.5*sin(2*PI*300*t)*(lt(t,2)+between(t,3,5)+gte(t,6))':s=48000:d=8",
+    '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', TALK]);
+}
+const SHOTS = path.join(fixtures, 'mcp shots.mp4');
+if (!existsSync(SHOTS)) {
+  ff(['-f', 'lavfi', '-i', 'color=c=red:s=320x240:r=30:d=1.5', '-f', 'lavfi', '-i', 'color=c=white:s=320x240:r=30:d=1.5', '-f', 'lavfi', '-i', 'color=c=black:s=320x240:r=30:d=1',
+    '-f', 'lavfi', '-i', 'sine=d=4', '-filter_complex', '[0][1][2]concat=n=3:v=1:a=0[v]', '-map', '[v]', '-map', '3:a', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', SHOTS]);
+}
+// Speech: the whisper.cpp stand-in plus a file that passes the model check.
+mkdirSync(path.join(userData, 'models'), { recursive: true });
+writeFileSync(path.join(userData, 'models', 'ggml-base.en.bin'), Buffer.concat([Buffer.from('lmgg', 'latin1'), Buffer.alloc(2_000_000)]));
+const wordsFile = path.join(out, 'words.json');
+writeFileSync(wordsFile, JSON.stringify([
+  { text: ' So', from: 200, to: 500 }, { text: ' um', from: 600, to: 900 }, { text: ',', from: 900, to: 920 }, { text: ' welcome', from: 1000, to: 1500 }, { text: '.', from: 1500, to: 1550 },
+  { text: ' Today', from: 3100, to: 3500 }, { text: ' we', from: 3500, to: 3700 }, { text: ' edit', from: 3700, to: 4100 }, { text: '.', from: 4100, to: 4150 },
+]));
 
 const results = [];
 async function step(name, fn) {
@@ -52,7 +70,10 @@ console.log('Cutroom MCP test');
 const app = await electron.launch({
   executablePath: electronPath,
   args: ['--no-sandbox', root],
-  env: { ...process.env, CUTROOM_USER_DATA: userData, CUTROOM_AI_CONTROL: '1' },
+  env: {
+    ...process.env, CUTROOM_USER_DATA: userData, CUTROOM_AI_CONTROL: '1',
+    CUTROOM_WHISPER: path.join(root, 'tests/helpers/fake-whisper.mjs'), FAKE_WHISPER_WORDS: wordsFile,
+  },
 });
 const page = await app.firstWindow();
 page.on('dialog', (d) => d.accept());
@@ -199,6 +220,43 @@ await step('export_video via MCP, poll status, verify the file', async () => {
   const again = await client.callTool({ name: 'export_video', arguments: { path: target } });
   assert(again.isError && again.content[0].text.includes('already exists'), 'overwrite protection missing');
   await page.screenshot({ path: path.join(out, 'after-mcp.png') });
+});
+
+let talkId;
+await step('analysis tools: detect_silence, remove_silence (one undo step), detect_scenes, split_at_scenes', async () => {
+  const r = await call('import_media', { paths: [TALK, SHOTS] });
+  [talkId] = r.json.imported.map((m) => m.id);
+  const shotsId = r.json.imported[1].id;
+  const sil = (await call('detect_silence', { media_id: talkId })).json;
+  assert(sil.silences.length === 2 && Math.abs(sil.silences[0].start_s - 2) < 0.15, JSON.stringify(sil));
+  await call('build_timeline', { clips: [{ media_id: talkId, source_in: 0, source_out: 8 }] });
+  const rs = (await call('remove_silence', {})).json;
+  assert(rs.removed_s > 1.3 && rs.clips_now === 3, JSON.stringify(rs));
+  await call('undo');
+  assert((await call('get_project')).json.timeline.length === 1, 'undo did not restore');
+  const sc = (await call('detect_scenes', { media_id: shotsId })).json;
+  assert(sc.count === 2, JSON.stringify(sc));
+  const add = await call('add_clip', { media_id: shotsId });
+  const sp = (await call('split_at_scenes', { clip_id: add.json.clip_id })).json;
+  assert(sp.parts === 3, JSON.stringify(sp));
+  await call('undo');
+  await call('undo');
+});
+
+await step('speech tools: transcribe, get_transcript, set_captions, remove_filler_words', async () => {
+  const t = (await call('transcribe', { media_id: talkId })).json;
+  assert(t.status === 'done' && t.words === 6, JSON.stringify(t));
+  const tr = (await call('get_transcript', { media_id: talkId })).json;
+  assert(tr.sentences.length === 2 && tr.sentences[1].text === 'Today we edit.' && Math.abs(tr.sentences[1].start_s - 3.1) < 0.01, JSON.stringify(tr.sentences));
+  const cap = (await call('set_captions', { enabled: true, look: 'box', highlight: '#ff0000', uppercase: true })).json;
+  assert(cap.cues === 2 && cap.captions.look === 'box', JSON.stringify(cap));
+  const fill = (await call('remove_filler_words', {})).json;
+  assert(fill.removed_s > 0.25 && fill.removed_s < 0.4, JSON.stringify(fill));
+  const img = await call('get_frame', { time: 3.0 });
+  assert(img.content.some((c) => c.type === 'image'), 'no frame');
+  const st = await appState();
+  assert(st.captions.enabled && st.media.find((m) => m.id === talkId).transcript.words.length === 6, 'app state not updated');
+  await page.screenshot({ path: path.join(out, 'captions-by-ai.png') });
 });
 
 await step('turning AI control off disconnects the bridge', async () => {

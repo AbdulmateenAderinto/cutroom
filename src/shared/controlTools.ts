@@ -170,6 +170,76 @@ export const CONTROL_TOOLS: ToolDef[] = [
     inputSchema: obj({ clip_id: str('clip id'), property: str('property', { enum: ['scale', 'x', 'y', 'opacity'] }), time: num('timeline seconds') }, ['clip_id']),
   },
 
+  // ---- Analysis (local FFmpeg, nothing uploaded) ----
+  {
+    name: 'detect_silence',
+    runs: 'main',
+    description: 'Find pauses in a media file\'s audio. Returns silent ranges in SOURCE seconds. Defaults: quieter than -35 dB for at least 0.6 s.',
+    inputSchema: obj({ media_id: str('media id'), threshold_db: num('silence level in dB, e.g. -35 (higher = more aggressive)'), min_duration: num('shortest pause to report, seconds') }, ['media_id']),
+  },
+  {
+    name: 'remove_silence',
+    runs: 'main',
+    description: 'Cut the pauses out of one clip (clip_id) or every clip, as ONE undoable edit. Keeps `padding` seconds (default 0.12) at each side so words are not clipped.',
+    inputSchema: obj({ clip_id: str('clip id (omit for all clips)'), threshold_db: num('dB, default -35'), min_duration: num('seconds, default 0.6'), padding: num('seconds kept at each edge, default 0.12') }),
+  },
+  {
+    name: 'detect_scenes',
+    runs: 'main',
+    description: 'Find shot changes (cuts) in a media file. Returns SOURCE seconds. threshold 0.1–0.6 (default 0.3; lower finds more).',
+    inputSchema: obj({ media_id: str('media id'), threshold: num('scene-change sensitivity') }, ['media_id']),
+  },
+  {
+    name: 'split_at_scenes',
+    runs: 'main',
+    description: 'Split a clip at every detected shot change (one undoable edit).',
+    inputSchema: obj({ clip_id: str('clip id'), threshold: num('scene-change sensitivity, default 0.3') }, ['clip_id']),
+  },
+  {
+    name: 'remove_ranges',
+    runs: 'renderer',
+    description: 'Cut arbitrary SOURCE-time ranges out of a clip (e.g. off-topic sentences found in the transcript). The rest of the clip is kept in order. One undoable edit.',
+    inputSchema: obj({
+      clip_id: str('clip id'),
+      ranges: { type: 'array', items: obj({ start: num('source seconds'), end: num('source seconds') }, ['start', 'end']) },
+      padding: num('seconds kept at each edge (default 0)'),
+    }, ['clip_id', 'ranges']),
+  },
+
+  // ---- Speech (local whisper.cpp) ----
+  {
+    name: 'transcribe',
+    runs: 'main',
+    description: 'Transcribe a media file\'s speech locally (word timestamps). Waits up to 90 s; if still running, call again with the same media_id. Requires the person to have set up a speech model once.',
+    inputSchema: obj({ media_id: str('media id'), redo: bool('transcribe again even if a transcript exists') }, ['media_id']),
+  },
+  {
+    name: 'get_transcript',
+    runs: 'renderer',
+    description: 'Read a media file\'s transcript as sentences with SOURCE start/end seconds (use them with add_clip / build_timeline / remove_ranges). words=true also returns every word with times.',
+    inputSchema: obj({ media_id: str('media id'), words: bool('include word-level timing') }, ['media_id']),
+  },
+  {
+    name: 'set_captions',
+    runs: 'renderer',
+    description: 'Turn burned-in captions on/off and style them. Captions come from transcripts and follow all edits. look: outline | box | plain; font_size: % of canvas height (default 4.8); position: 0 top … 1 bottom (default 0.78); highlight: colour for the word being spoken, or null.',
+    inputSchema: obj({
+      enabled: bool('show captions'),
+      look: str('style', { enum: ['outline', 'box', 'plain'] }),
+      font_size: num('percent of canvas height'),
+      position: num('0..1 vertical position'),
+      color: str('#rrggbb text colour'),
+      highlight: { anyOf: [{ type: 'null' }, { type: 'string' }], description: '#rrggbb or null' },
+      uppercase: bool('ALL CAPS'),
+    }),
+  },
+  {
+    name: 'remove_filler_words',
+    runs: 'renderer',
+    description: 'Cut filler words (um, uh, er, hmm…) found in the transcripts out of one clip or all clips, as ONE undoable edit.',
+    inputSchema: obj({ clip_id: str('clip id (omit for all clips)') }),
+  },
+
   // ---- Project ----
   {
     name: 'set_canvas',

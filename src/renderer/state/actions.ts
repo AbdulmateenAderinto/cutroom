@@ -244,3 +244,32 @@ export function zoomToFit(viewportPx: number) {
   const d = ticksToSeconds(layoutSequence(store.get().project).duration);
   if (d > 0) store.set({ pxPerSecond: Math.max(2, Math.min(600, (viewportPx - 80) / d)) });
 }
+
+// ---------------------------------------------------------------------------------------------
+// Speech
+
+export async function transcribeMedia(mediaId: string) {
+  const m = findMedia(store.get().project, mediaId);
+  if (!m || store.get().transcribing[mediaId] !== undefined) return;
+  const st = await api().whisperStatus();
+  if (!st.ready) {
+    store.set({ dialog: 'speech' });
+    return;
+  }
+  store.set((s) => ({ transcribing: { ...s.transcribing, [mediaId]: 0 } }));
+  const off = api().onWhisperProgress((p) => {
+    if (p.mediaId === mediaId) store.set((s) => ({ transcribing: { ...s.transcribing, [mediaId]: p.fraction } }));
+  });
+  try {
+    const r = await api().transcribe(mediaId, m.path);
+    if (!r.ok) return toast(`Transcription of ${m.name} failed: ${r.error}`, 'error');
+    commit((p) => ops.setTranscript(p, mediaId, r.transcript));
+    toast(r.transcript.words.length ? `Transcribed ${m.name}: ${r.transcript.words.length} words.` : `No speech found in ${m.name}.`);
+  } finally {
+    off();
+    store.set((s) => {
+      const { [mediaId]: _done, ...rest } = s.transcribing;
+      return { transcribing: rest };
+    });
+  }
+}

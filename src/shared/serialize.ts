@@ -34,6 +34,8 @@ export function parseProject(text: string): Project {
 function migrate(data: any): Project {
   // v1 → v2: clip animations were added as an optional field; nothing to convert.
   if (data.version === 1) data.version = 2;
+  // v2 → v3: transcripts and captions were added as optional fields; nothing to convert.
+  if (data.version === 2) data.version = 3;
   return data as Project;
 }
 
@@ -54,6 +56,9 @@ function validate(p: Project) {
   for (const m of p.media) {
     check(typeof m.id === 'string' && typeof m.path === 'string' && m.info, `bad media entry ${m.name ?? ''}`);
     check(isInt(m.info.duration), `bad media duration for ${m.name}`);
+    if (m.transcript) {
+      check(Array.isArray(m.transcript.words) && m.transcript.words.every((w) => isInt(w.start) && isInt(w.end) && typeof w.text === 'string'), `bad transcript for ${m.name}`);
+    }
     mediaIds.add(m.id);
   }
   const ids = new Set<string>();

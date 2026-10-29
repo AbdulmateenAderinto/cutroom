@@ -19,6 +19,7 @@ export interface MainToolDeps {
   captureStage: (time: number) => Promise<string | null>; // base64 JPEG of the preview canvas
   allowMediaPath: (p: string) => void;
   notify: (text: string) => void;
+  renderCaptions?: (project: Project, settings: ExportSettings) => Promise<import('../../shared/exportPlan').CaptionTrack | null>;
   /** Extra main-side tools (analysis, transcription) registered by other modules. */
   extra?: Map<string, (args: Record<string, unknown>) => Promise<ToolResult>>;
 }
@@ -119,7 +120,7 @@ export async function runMainTool(tool: ToolDef, args: Record<string, any>, deps
         audioBitrateKbps: 192,
       };
       deps.notify(`AI started an export to ${path.basename(out)}`);
-      void startExport(project, settings, 'ai').then((r) => {
+      void startExport(project, settings, 'ai', undefined, deps.renderCaptions && (() => deps.renderCaptions!(project, settings))).then((r) => {
         deps.notify(r.status === 'done' ? `Export finished: ${path.basename(out)}` : r.status === 'cancelled' ? 'Export cancelled.' : `Export failed: ${r.message}`);
       });
       return textResult({ started: true, path: out, width, height, frame_rate: `${frameRate.num}/${frameRate.den}`, bitrate_mbps: settings.videoBitrateMbps, next: 'Poll get_export_status.' });

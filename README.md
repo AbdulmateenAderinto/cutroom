@@ -4,7 +4,14 @@ A lightweight desktop video editor for people who find Premiere too much: import
 arrange them on one timeline, reframe for landscape/portrait/square, and export an MP4 with exact
 control over resolution, frame rate and bitrate. Everything runs locally, with no accounts or uploads.
 
-Status: **first milestone**. The import → edit → save → export workflow works and is tested.
+Status: the core workflow (import → edit → save → export) works and is tested, plus:
+
+- **Animations:** in/out presets (fade, zoom, pop, slides), whole-clip motion (slow zoom, pan) and
+  keyframes for zoom, position and opacity with easing.
+- **Smart tools (local):** remove pauses, split at scene changes, transcribe speech (whisper.cpp),
+  remove filler words, and burned-in captions that follow every edit.
+- **AI control (MCP):** let Claude Desktop or Claude Code edit with you. See [docs/AI.md](docs/AI.md).
+
 See [docs/STATUS.md](docs/STATUS.md) for what works, what's planned and the known limitations.
 
 ## Requirements (macOS)
@@ -12,6 +19,7 @@ See [docs/STATUS.md](docs/STATUS.md) for what works, what's planned and the know
 - macOS 12+ (Apple Silicon or Intel)
 - [Node.js](https://nodejs.org) 20 or newer (22 LTS recommended): `brew install node`
 - FFmpeg with libx264 (used for inspecting media, thumbnails and export): `brew install ffmpeg`
+- Optional, for transcripts and captions: `brew install whisper-cpp` (a speech model is downloaded in the app)
 
 Cutroom looks for `ffmpeg`/`ffprobe` in `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` and your
 `PATH`. To use a specific build, set `CUTROOM_FFMPEG` and `CUTROOM_FFPROBE` to their full paths.
@@ -50,6 +58,10 @@ npm start
 8. **Save** (⌘S) creates a `.cutroom` file; **Open…** reopens it.
 9. **Export…**: choose a file, resolution, frame rate and target bitrate in Mb/s, then **Export**.
 
+More, with a clip selected: the **Animation** section (presets and keyframes) and **Smart tools**
+(pauses, scenes, transcription, filler words, captions). Caption style is in **Project settings**
+(deselect with Esc).
+
 Every action has a button or menu item. Keyboard shortcuts are a convenience; see **Shortcuts** in the top bar.
 
 ## Tests
@@ -66,8 +78,19 @@ It needs `ffmpeg`/`ffprobe` on your PATH.
 npm run test:e2e
 ```
 
-This launches the real app and clicks through the whole workflow (native file dialogs are stubbed).
-Screenshots go to `tests/.output/e2e/`. On a Linux machine without a display, use `xvfb-run -a npm run test:e2e`.
+This launches the real app and clicks through the editing workflow and the Smart tools / captions
+workflow (native file dialogs are stubbed). Screenshots go to `tests/.output/`. On a Linux machine
+without a display, use `xvfb-run -a npm run test:e2e`.
+
+```bash
+npm run test:mcp
+```
+
+This connects the official MCP client to the app through the `cutroom-mcp` bridge and drives an edit
+with tools, the way Claude does.
+
+The speech tests use a stand-in for whisper.cpp (`tests/helpers/fake-whisper.mjs`), so they check
+everything around recognition but not recognition itself.
 
 ```bash
 npm run typecheck
@@ -76,12 +99,14 @@ npm run typecheck
 ## Project layout
 
 ```
-src/shared/     Project model, timebase, editing operations, export plan (pure TypeScript, no I/O)
-src/main/       Electron main process: windows, menus, dialogs, ffprobe, thumbnails, export, project files
+src/shared/     Project model, timebase, editing operations, animation, captions, export plan, AI tool list (pure TS)
+src/main/       Electron main process: windows, menus, dialogs, ffprobe, thumbnails, export, project files,
+                analysis (silence/scenes), whisper.cpp, AI control server
+src/mcp/        cutroom-mcp: the stdio MCP bridge Claude launches
 src/preload/    The small, typed API the UI may call (window.cutroom)
 src/renderer/   React UI: panels, timeline, preview engine, export dialog
 tests/          unit/, integration/ (real FFmpeg), e2e/ (drives the app), helpers/ (synthetic media)
-docs/           ARCHITECTURE.md, STATUS.md (feature checklist + known limitations)
+docs/           ARCHITECTURE.md, AI.md (Smart tools + MCP), STATUS.md (feature checklist + known limitations)
 ```
 
 ## Packaging

@@ -32,22 +32,36 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Size estimate, progress, cancel, readable errors | ✅ | |
 | Safe export (`.partial` → verify → rename) | ✅ | |
 
+## Animation, Smart tools and AI
+
+| Feature | Status | Notes |
+|---|---|---|
+| In/out presets: fade, zoom, pop, slide ×4; motion: slow zoom in/out, pan | ✅ | Opacity curve and position measured per exported frame |
+| Keyframes: zoom, X/Y, opacity; easing; on the timeline; follow trims/splits | ✅ | Preview vs export compared at animated frames |
+| Remove pauses (silence detection) with review | ✅ | |
+| Split at scene changes with review | ✅ | Brightness-based; see limitations |
+| Transcribe (whisper.cpp, local) | ☑️ | Pipeline tested with a stand-in; **real recognition not tested here** |
+| Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
+| Filler-word removal | ✅ | Uses the transcript |
+| Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 32 tools; official MCP client test drives a full edit |
+
 ## Planned, in this order
 
 1. 🔜 Music tracks, waveforms, volume above 100%, audio fades
 2. 🔜 Photos with adjustable duration
 3. 🔜 Text and simple overlays
 4. 🔜 Exposure, contrast, saturation, temperature
-5. 🔜 Keyframes (position, scale, opacity) with easing
+5. ✅ Keyframes (position, scale, opacity) with easing, done
 6. 🔜 Constant-speed changes
 7. 🔜 Proxies; hardware encoding (VideoToolbox); constant-quality (CRF) export; export a marked range; saved export presets; `.app`/`.dmg` packaging
 
-Not planned yet: AI captions, generative tools, background removal, motion tracking, optical flow,
+Not planned yet: generative tools, background removal, motion tracking, optical flow,
 plugins, complex compositing, transitions (cuts are hard cuts for now).
 
 ## Verification
 
-**Automated (`npm test`, 45 tests, about 30 s):**
+**Automated (`npm test`, 69 tests, about 40 s):**
 - Timebase: exact frame and sample maths at 23.976–60 fps, no drift over 10 h, timecode round trips.
 - Editing operations: split, trim clamps, ripple, frame-grid snapping, delete modes, gap merging,
   reorder, duplicate, inputs never mutated (undo safety), frame-rate change.
@@ -67,6 +81,14 @@ plugins, complex compositing, transitions (cuts are hard cuts for now).
 - Export filter graph: 2,000 randomised framings / canvas / output sizes; crop regions always stay
   inside the source frame (regression for a real rounding bug found by the UI test).
 - Colour: background/padding colour decodes as the exact RGB value (BT.709), not shifted.
+- Animation: fade curve within 6/255 per frame; keyframed position/size within 2 px per frame;
+  keyframes follow splits; easing and preset maths.
+- Smart tools: silence ranges found within 0.1 s; pause removal leaves no pause longer than the kept
+  padding; scene cuts found and each shot exported in the right order.
+- Speech: audio extraction to 16 kHz mono, whisper.cpp arguments and JSON parsing (punctuation
+  merged, `[BLANK_AUDIO]` skipped), captions following trim/split/reorder, filler removal.
+- Captions in export: each caption image appears on exactly the right frames, at the right place, in the right colour.
+- Colour: untagged SD/HD, tagged BT.601 and full-range sources all export pure green as pure green.
 - Project files: save/load round trip, relative-path recovery, damaged/foreign/newer files rejected,
   a failed save leaves the old file intact.
 
@@ -78,6 +100,15 @@ timeline), save, reopen, missing-media relink, three exports (one cancelled), th
 prompt, and a preview-vs-export pixel comparison of a rotated, manually framed clip on a red
 background (mean difference 3.3/255; an unframed control scores 119/255).
 
+**Smart tools / captions UI run (`npm run test:e2e`, second script, 8 steps):** pause review and
+removal plus undo, speech setup dialog, transcription via the stand-in, caption editing, filler removal,
+caption styling, and preview vs export at two captioned moments.
+
+**MCP run (`npm run test:mcp`, 12 steps):** security checks (no token, wrong token, browser origin
+all refused), tool listing, import, contact sheet and frames, `build_timeline`, editing plus undo/redo,
+readable errors for bad input, timeline frame capture, export with polling, analysis tools, speech
+and caption tools, and disconnecting when AI control is turned off.
+
 **Checked by looking at screenshots (not asserted):** layout of all panels, the export dialog,
 progress/result screens, missing-media state and the gap rendering.
 
@@ -88,6 +119,11 @@ progress/result screens, missing-media state and the gap rendering.
 - Playback smoothness with real camera footage (4K, long GOP, high bitrate) and long timelines.
 - Real phone footage (VFR, HDR, Dolby Vision, rotation variants), MOV files from cameras, 44.1 kHz or 5.1 audio.
 - Listening tests for audio quality, and volume levels in the export.
+- **Speech recognition quality.** whisper.cpp and its models couldn't be downloaded in this
+  environment, so a stand-in replaced it in tests. Verify on a Mac: `brew install whisper-cpp`,
+  download a model in the app, and transcribe a real clip.
+- Model download from Hugging Face (same reason).
+- Using the MCP bridge from the real Claude Desktop / Claude Code apps (it was tested with the official MCP client library).
 
 ## Known limitations
 
@@ -95,9 +131,9 @@ progress/result screens, missing-media state and the gap rendering.
   MKV/WebM, images and audio-only files are rejected for now.
 - **Variable frame rate:** export conforms to the project frame rate. A frame can occasionally differ
   from the preview. In-points are snapped to the file's nominal (`r_frame_rate`) grid.
-- **HDR / colour:** no tone mapping or colour management. HDR files are flagged and will look wrong.
-  YUV values are passed through and tagged BT.709. That's correct for typical HD/phone footage; SD
-  BT.601 sources will look slightly off. 10-bit sources are exported as 8-bit.
+- **HDR / colour:** no tone mapping. HDR files are flagged and will look wrong. Sources are
+  interpreted like the preview (tag, else BT.601 below 720 lines) and exported as BT.709. 10-bit
+  sources are exported as 8-bit. Other matrices (e.g. BT.2020 SDR) are passed through unconverted.
 - **Rotation:** 0/90/180/270° metadata is handled (verified for 90°). Mirrored display matrices are not.
 - **Files with a non-zero video start time** (some edited or camera MOVs) may be offset by that amount in export.
 - **Mismatched frame rates** (e.g. 25 fps clip in a 30 fps project): splitting can shift the
@@ -109,3 +145,13 @@ progress/result screens, missing-media state and the gap rendering.
   Each clip opens its own decoder in one FFmpeg process, which is fine for dozens of clips; very
   long timelines (hundreds of clips) may need segment-by-segment rendering.
 - **Packaging:** no signed `.app` yet; FFmpeg must be installed separately.
+- **Animation:** no rotation keyframes yet; position is rounded to whole output pixels per frame
+  (sub-pixel drift is not visible at normal speeds). An animated clip is scaled from the full
+  frame each output frame; extreme zooms (> 8192 px) are clamped.
+- **Scene detection** uses brightness changes: cuts between shots of similar brightness and colour
+  can be missed. Lower the sensitivity to find more.
+- **Captions:** one caption track for the whole project; per-word timing comes from whisper.cpp and can be
+  off by ~0.1–0.3 s; editing a line's text spreads the new words evenly across its time span.
+  Right-to-left and complex scripts are untested.
+- **AI control** works with one Cutroom window and one AI client at a time; large transcripts are
+  returned whole (very long files may be slow for the AI to read).

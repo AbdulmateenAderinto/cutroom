@@ -10,11 +10,12 @@
  *   - timeline time: a position in the edited sequence (derived by layoutSequence)
  */
 import { type AnimState, type ClipAnimation } from './animation';
+import type { CaptionSettings } from './captions';
 import type { Rational, Ticks } from './time';
 
 export const PROJECT_FORMAT = 'cutroom-project';
-/** v2: clip animations (keyframes and presets). */
-export const PROJECT_VERSION = 2;
+/** v2: clip animations (keyframes and presets). v3: transcripts and captions. */
+export const PROJECT_VERSION = 3;
 export const PROJECT_EXTENSION = 'cutroom';
 
 export interface MediaInfo {
@@ -34,6 +35,9 @@ export interface MediaInfo {
   pixFmt: string;
   colorTransfer: string;
   isHDR: boolean;
+  /** YUV matrix of the source (from its tag, else by size: < 720 lines = BT.601, as players and Chromium assume). */
+  colorMatrix?: 'bt709' | 'bt601' | 'other';
+  colorRange?: 'tv' | 'pc';
   // Audio
   hasAudio: boolean;
   audioCodec: string | null;
@@ -109,6 +113,8 @@ export interface Project {
   media: MediaRef[];
   /** A single magnetic video track: items play back-to-back in array order. */
   sequence: { items: TrackItem[] };
+  /** Burned-in captions built from media transcripts (absent = off). */
+  captions?: CaptionSettings;
 }
 
 export const DEFAULT_FRAMING: Framing = { mode: 'fit', scale: 1, x: 0, y: 0 };
@@ -240,6 +246,11 @@ export function evenDim(n: number): number {
 }
 
 export const MAX_DIMENSION = 7680;
+
+/** Colour matrix to assume for a source (older projects lack the probed value). */
+export function sourceMatrix(info: MediaInfo): 'bt709' | 'bt601' | 'other' {
+  return info.colorMatrix ?? (info.height < 720 && info.width < 1280 ? 'bt601' : 'bt709');
+}
 
 export function isHexColor(s: string): boolean {
   return /^#[0-9a-fA-F]{6}$/.test(s);

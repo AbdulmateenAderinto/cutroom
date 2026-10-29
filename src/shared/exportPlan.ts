@@ -19,6 +19,7 @@ import {
   type Rect,
   animateRect,
   computeClipRect,
+  sourceMatrix,
   evenDim,
   findMedia,
   layoutSequence,
@@ -128,7 +129,28 @@ function intersect(a: Rect, w: number, h: number): Rect | null {
   return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
 }
 
-export function buildExportPlan(project: Project, s: ExportSettings, outputFile: string, mediaPath: (m: MediaRef) => string): ExportPlan {
+/** How the project canvas maps into the output frame: scale k and the canvas size in output pixels. */
+export function canvasInOutput(project: Project, s: Pick<ExportSettings, 'width' | 'height' | 'canvasMapping'>) {
+  const cw = project.canvas.width;
+  const ch = project.canvas.height;
+  const k = s.canvasMapping === 'fill' ? Math.max(s.width / cw, s.height / ch) : Math.min(s.width / cw, s.height / ch);
+  return { k, bw: Math.max(2, Math.round(cw * k)), bh: Math.max(2, Math.round(ch * k)) };
+}
+
+/** Caption images rendered by the app for one export (base64 PNGs of the canvas-in-output size). */
+export interface CaptionTrack {
+  width: number;
+  height: number;
+  blank: string;
+  segments: { start: number; end: number; png: string }[]; // timeline seconds
+}
+
+export interface ExportExtras {
+  /** ffconcat file listing caption PNGs (canvas-in-output size) with durations; see exportRunner. */
+  captionTrack?: string;
+}
+
+export function buildExportPlan(project: Project, s: ExportSettings, outputFile: string, mediaPath: (m: MediaRef) => string, extras: ExportExtras = {}): ExportPlan {
   const rate = s.frameRate;
   const sr = project.audio.sampleRate;
   const { items } = layoutSequence(project);
@@ -136,9 +158,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   const ch = project.canvas.height;
 
   // How the project canvas maps into the output frame (identity when sizes match).
-  const k = s.canvasMapping === 'fill' ? Math.max(s.width / cw, s.height / ch) : Math.min(s.width / cw, s.height / ch);
-  const bw = Math.max(2, Math.round(cw * k));
-  const bh = Math.max(2, Math.round(ch * k));
+  const { k, bw, bh } = canvasInOutput(project, s);
   const rateStr = `${rate.num}/${rate.den}`;
   const bg = hexColor(project.background);
 
@@ -175,6 +195,10 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     }
     const media = findMedia(project, item.mediaId)!;
     const info = media.info;
+    // Convert the source's colour matrix/range to the BT.709 limited-range output, the same
+    // interpretation the preview (Chromium) uses, so colours match.
+    const matrix = sourceMatrix(info);
+    const colour = `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${info.colorRange === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
     // Start decoding half a source frame early so the frame at sourceIn is kept even if its
     // timestamp is a hair below sourceIn; the audio is then trimmed back by exactly that amount.
     const half = Math.floor(frameDuration(info.frameRate) / 2);
@@ -222,7 +246,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       filters.push(
         // Pixel format is converted BEFORE the resizing scale: a format filter after it would
         // stop size changes from reaching the overlay (verified with FFmpeg 6.1).
-        `[${i}:v:0]setpts=PTS-STARTPTS,format=yuv420p,${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic,setsar=1[fg${n}]`,
+        `[${i}:v:0]setpts=PTS-STARTPTS,format=yuv420p,${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic${colour},setsar=1[fg${n}]`,
       );
       if (fade) filters.push(`[bg${n}]split[bga${n}][bgb${n}]`);
       const base = fade ? `bga${n}` : `bg${n}`;
@@ -258,7 +282,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
         const chei = Math.max(1, Math.min((oh / R.h) * fh, fh - cy));
         chain.push(`crop=w=${trunc3(cwid)}:h=${trunc3(chei)}:x=${trunc3(cx)}:y=${trunc3(cy)}:exact=1`);
       }
-      chain.push(`scale=w=${ow}:h=${oh}:flags=bicubic`, 'format=yuv420p', 'setsar=1');
+      chain.push(`scale=w=${ow}:h=${oh}:flags=bicubic${colour}`, 'format=yuv420p', 'setsar=1');
       filters.push(`[${i}:v:0]${chain.join(',')}[fg${n}]`);
       // overlay keeps going while the clip input lasts, so cut back to exactly N frames.
       filters.push(`[bg${n}][fg${n}]overlay=x=${ox}:y=${oy}:eof_action=repeat:format=auto,trim=end_frame=${frames},format=yuv420p[${v}]`);
@@ -276,7 +300,17 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     concatPads.push(`[${v}][${a}]`);
   });
 
-  filters.push(`${concatPads.join('')}concat=n=${concatPads.length}:v=1:a=1[vcat][acat]`);
+  filters.push(`${concatPads.join('')}concat=n=${concatPads.length}:v=1:a=1[vcat0][acat]`);
+  if (extras.captionTrack) {
+    // Caption images (drawn by the app, so they match the preview) as one timed PNG stream.
+    // RGB → YUV with BT.709, like the backgrounds, so coloured text keeps its colour.
+    inputs.push('-f', 'concat', '-safe', '0', '-i', extras.captionTrack);
+    filters.push(`[${inputIndex}:v:0]format=rgba,scale=out_color_matrix=bt709:out_range=tv,format=yuva420p[cap]`);
+    filters.push(`[vcat0][cap]overlay=x=0:y=0:format=auto:eof_action=pass,format=yuv420p[vcat]`);
+    inputIndex++;
+  } else {
+    filters.push('[vcat0]null[vcat]');
+  }
   if (bw === s.width && bh === s.height) {
     filters.push('[vcat]setsar=1,format=yuv420p[vout]');
   } else if (s.canvasMapping === 'fill') {
