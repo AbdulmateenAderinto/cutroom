@@ -301,7 +301,7 @@ await step('save project', async () => {
   await page.click('.topbar button:has-text("Save")');
   await page.waitForFunction(() => window.__cutroom.store.get().projectPath !== null);
   const saved = JSON.parse(readFileSync(projectFile, 'utf8'));
-  assert(saved.format === 'cutroom-project' && saved.version === 1, 'bad header');
+  assert(saved.format === 'cutroom-project' && saved.version === 2, 'bad header');
   assert(saved.sequence.items.length === 3 && saved.media.every((m) => m.relativePath), 'bad content');
   assert(!(await state()).dirty, 'still dirty after save');
 });
@@ -457,6 +457,64 @@ await step('preview matches export (rotated clip, manual framing, padding colour
   console.log(`      preview vs export: ${diff.toFixed(2)} / 255 (control, unframed source: ${control.toFixed(2)}); video element ${v[0]}×${v[1]}`);
   assert(diff < 6, `preview and export differ (mean abs diff ${diff.toFixed(2)})`);
   assert(control > 30, 'comparison is not sensitive enough');
+});
+
+await step('animation: presets and keyframes via the UI; animated preview matches export', async () => {
+  // Continues with the rotated, manually framed clip from the previous step (2 s long, red background).
+  await page.click('.tl-track .clip >> nth=0');
+  await page.selectOption('select[aria-label="In animation"]', 'zoom');
+  await page.selectOption('select[aria-label="Motion over the whole clip"]', 'panRight');
+  await page.evaluate(() => window.__cutroom.engine.seek(30 * 705_600_000 / 30));
+  const setField = async (label, value) => {
+    const input = page.locator(`.inspector .kf-row label:has-text("${label}") input`);
+    await input.fill(value);
+    await input.press('Enter');
+  };
+  await setField('Move X', '-120');
+  await page.evaluate(() => window.__cutroom.engine.seek(50 * 705_600_000 / 30));
+  await setField('Move X', '60');
+  await setField('Opacity', '70');
+  const anim = await page.evaluate(() => window.__cutroom.store.get().project.sequence.items[0].animation);
+  assert(anim.in?.preset === 'zoom' && anim.motion?.preset === 'panRight', `presets ${JSON.stringify(anim)}`);
+  assert(anim.keyframes.x.length === 2 && anim.keyframes.opacity.length === 1, `keyframes ${JSON.stringify(anim.keyframes)}`);
+  assert((await page.locator('.tl-track .kf-mark').count()) === 2, 'keyframe markers missing on the timeline');
+  assert((await page.locator('.tl-track .anim-zone.in').count()) === 1, 'in-animation zone missing on the timeline');
+  await snap('animation-panel');
+
+  const frames = [9, 40];
+  const shots = [];
+  for (const f of frames) {
+    await page.evaluate((fr) => window.__cutroom.engine.seek(fr * 705_600_000 / 30), f);
+    await page.evaluate(() => window.__cutroom.store.set({ selection: null }));
+    await page.waitForFunction(() => [...document.querySelectorAll('video')].some((e) => e.style.display === 'block' && e.readyState >= 2 && !e.seeking));
+    await page.waitForTimeout(300);
+    const png = path.join(out, `anim-preview-${f}.png`);
+    await page.locator('.stage').screenshot({ path: png });
+    shots.push(png);
+  }
+  const exported = path.join(out, 'anim.mp4');
+  await page.click('.topbar button:has-text("Export…")');
+  await stubSave(exported);
+  await page.click('.modal.export button:has-text("Choose…")');
+  // The dialog remembers the previous export's settings; compare at the project's own rate.
+  await page.selectOption('select[aria-label="Output frame rate"]', '30');
+  await page.fill('input[aria-label="Target video bitrate in megabits per second"]', '12');
+  await page.click('.modal.export button:has-text("Export")');
+  await waitForExport();
+  await page.click('.modal.export button:has-text("Close")');
+  const raw = (args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args, '-vf', 'scale=64:64:flags=area,format=rgb24', '-frames:v', '1', '-f', 'rawvideo', '-']);
+  const mad = (x, y) => x.reduce((s, val, i) => s + Math.abs(val - y[i]), 0) / x.length;
+  const results = frames.map((f, i) => {
+    const a = raw(['-i', shots[i]]);
+    const b = raw(['-ss', (f / 30).toFixed(4), '-i', exported]);
+    const other = raw(['-ss', (frames[1 - i] / 30).toFixed(4), '-i', exported]); // a different moment, as a control
+    return { f, diff: mad(a, b), control: mad(a, other) };
+  });
+  console.log(`      animated preview vs export: ${results.map((r) => `frame ${r.f}: ${r.diff.toFixed(2)} (control ${r.control.toFixed(2)})`).join(', ')}`);
+  for (const r of results) {
+    assert(r.diff < 6, `frame ${r.f} differs (${r.diff.toFixed(2)})`);
+    assert(r.control > r.diff * 3, `frame ${r.f}: comparison not discriminating`);
+  }
 });
 
 await step('keyboard shortcuts dialog', async () => {

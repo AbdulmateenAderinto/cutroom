@@ -32,7 +32,8 @@ export function parseProject(text: string): Project {
 }
 
 function migrate(data: any): Project {
-  // Version 1 is the first format; future migrations go here, e.g. if (data.version === 1) {...; data.version = 2}
+  // v1 → v2: clip animations were added as an optional field; nothing to convert.
+  if (data.version === 1) data.version = 2;
   return data as Project;
 }
 
@@ -63,6 +64,12 @@ function validate(p: Project) {
       check(mediaIds.has(it.mediaId), `clip ${it.id} refers to unknown media`);
       check(isInt(it.sourceIn) && isInt(it.sourceOut) && it.sourceOut > it.sourceIn && it.sourceIn >= 0, `clip ${it.id} has bad in/out points`);
       check(['fit', 'fill', 'manual'].includes(it.framing?.mode), `clip ${it.id} has bad framing`);
+      if (it.animation !== undefined) {
+        check(typeof it.animation === 'object' && it.animation !== null, `clip ${it.id} has bad animation`);
+        for (const keys of Object.values(it.animation.keyframes ?? {})) {
+          check(Array.isArray(keys) && keys.every((k) => isInt(k.at) && Number.isFinite(k.value)), `clip ${it.id} has bad keyframes`);
+        }
+      }
     } else {
       check(it.kind === 'gap' && isInt(it.duration) && it.duration > 0, `bad gap ${it.id}`);
     }

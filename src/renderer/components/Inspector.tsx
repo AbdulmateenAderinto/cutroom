@@ -15,6 +15,7 @@ import * as ops from '../../shared/ops';
 import { COMMON_FRAME_RATES, formatDuration, formatTimecode, frameDuration, rateLabel, sameRate } from '../../shared/time';
 import * as A from '../state/actions';
 import { beginGesture, commit, endGesture, gestureActive, store, updateGesture, useStore } from '../state/store';
+import { AnimationSection } from './AnimationSection';
 import { CanvasControl } from './TopBar';
 import { Disclosure, NumberField, Section, Segmented, TimecodeField, formatBytes } from './controls';
 
@@ -191,6 +192,8 @@ function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) 
           </>
         )}
       </Section>
+
+      <AnimationSection clip={clip} project={project} />
 
       <Section title="Audio">
         {media.info.hasAudio ? (

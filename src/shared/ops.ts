@@ -20,6 +20,7 @@ import {
   layoutSequence,
   newId,
 } from './model';
+import { type AnimProperty, type ClipAnimation, type Easing, clampAnimValue, removeKeyframeAt, upsertKeyframe } from './animation';
 import { type Rational, type Ticks, frameDuration, snapToFrame } from './time';
 
 function withItems(project: Project, items: TrackItem[]): Project {
@@ -214,6 +215,34 @@ export function duplicateItem(project: Project, id: string): { project: Project;
 
 export function setFraming(project: Project, clipId: string, framing: Framing): Project {
   return updateClip(project, clipId, (c) => ({ ...c, framing }));
+}
+
+/** Replace a clip's animation (presets/keyframes). Empty animations are removed. */
+export function setAnimation(project: Project, clipId: string, fn: (a: ClipAnimation) => ClipAnimation): Project {
+  return updateClip(project, clipId, (c) => {
+    const next = fn(c.animation ?? {});
+    const kf = next.keyframes ? Object.fromEntries(Object.entries(next.keyframes).filter(([, v]) => v && v.length)) : undefined;
+    const cleaned: ClipAnimation = { ...next, keyframes: kf && Object.keys(kf).length ? kf : undefined };
+    for (const k of ['in', 'out', 'motion', 'keyframes'] as const) if (cleaned[k] === undefined) delete cleaned[k];
+    const { animation: _old, ...rest } = c;
+    return Object.keys(cleaned).length ? { ...rest, animation: cleaned } : rest;
+  });
+}
+
+/** Add or update a keyframe at source time `at` (snapped to the source frame grid). */
+export function setKeyframe(project: Project, clipId: string, prop: AnimProperty, at: Ticks, value: number, easing?: Easing): Project {
+  const clip = getItem(project, clipId);
+  if (!clip || clip.kind !== 'clip') return project;
+  const media = findMedia(project, clip.mediaId);
+  const t = media ? snapToFrame(at, media.info.frameRate, 'round') : at;
+  return setAnimation(project, clipId, (a) => ({
+    ...a,
+    keyframes: { ...a.keyframes, [prop]: upsertKeyframe(a.keyframes?.[prop], t, clampAnimValue(prop, value), easing) },
+  }));
+}
+
+export function removeKeyframe(project: Project, clipId: string, prop: AnimProperty, at: Ticks): Project {
+  return setAnimation(project, clipId, (a) => ({ ...a, keyframes: { ...a.keyframes, [prop]: removeKeyframeAt(a.keyframes?.[prop], at) } }));
 }
 
 export function setClipAudio(project: Project, clipId: string, audio: { volume?: number; muted?: boolean }): Project {

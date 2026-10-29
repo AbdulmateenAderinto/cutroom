@@ -9,10 +9,12 @@
  *   - source time:   a position inside a media file (ClipItem.sourceIn / sourceOut)
  *   - timeline time: a position in the edited sequence (derived by layoutSequence)
  */
+import { type AnimState, type ClipAnimation } from './animation';
 import type { Rational, Ticks } from './time';
 
 export const PROJECT_FORMAT = 'cutroom-project';
-export const PROJECT_VERSION = 1;
+/** v2: clip animations (keyframes and presets). */
+export const PROJECT_VERSION = 2;
 export const PROJECT_EXTENSION = 'cutroom';
 
 export interface MediaInfo {
@@ -68,6 +70,7 @@ export interface ClipItem {
   framing: Framing;
   volume: number; // 0..1
   muted: boolean;
+  animation?: ClipAnimation;
 }
 
 /** Empty space on the timeline (renders as background colour + silence). */
@@ -185,6 +188,15 @@ export function computeClipRect(srcW: number, srcH: number, canvasW: number, can
   }
   const w = srcW * s;
   const h = srcH * s;
+  return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+
+/** Apply an animation state to a framed rectangle (scale around its centre, then offset). */
+export function animateRect(r: Rect, st: AnimState, canvasW: number, canvasH: number): Rect {
+  const cx = r.x + r.w / 2 + st.x * canvasW;
+  const cy = r.y + r.h / 2 + st.y * canvasH;
+  const w = r.w * st.scale;
+  const h = r.h * st.scale;
   return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
 

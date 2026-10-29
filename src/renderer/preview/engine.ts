@@ -19,12 +19,14 @@ import {
   type LaidOutItem,
   type Project,
   DEFAULT_FRAMING,
+  animateRect,
   computeClipRect,
   createProject,
   findMedia,
   layoutSequence,
 } from '../../shared/model';
 import { type Ticks, TICKS_PER_SECOND, frameDuration, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
+import { evalAnimation } from '../../shared/animation';
 import { playhead } from '../state/playhead';
 import { store } from '../state/store';
 
@@ -158,12 +160,19 @@ class PreviewEngine {
     return idx;
   }
 
-  private applyStyle(idx: number, clip: ClipItem) {
+  /** Position the element for clip `l` at timeline time t (framing + animation, as in export). */
+  private applyStyle(idx: number, l: LaidOutItem, t: Ticks) {
     const el = this.els[idx];
+    if (l.item.kind !== 'clip') return;
+    const clip = l.item;
     const m = findMedia(this.seq.project, clip.mediaId);
     if (!el || !m) return;
     const { width: cw, height: ch } = this.seq.project.canvas;
-    const r = computeClipRect(m.info.displayWidth, m.info.displayHeight, cw, ch, clip.framing);
+    const base = computeClipRect(m.info.displayWidth, m.info.displayHeight, cw, ch, clip.framing);
+    const dur = l.end - l.start;
+    const st = evalAnimation(clip.animation, Math.min(Math.max(0, t - l.start), dur), dur, clip.sourceIn);
+    const r = animateRect(base, st, cw, ch);
+    el.style.opacity = String(st.opacity);
     el.style.left = `${(r.x / cw) * 100}%`;
     el.style.top = `${(r.y / ch) * 100}%`;
     el.style.width = `${(r.w / cw) * 100}%`;
@@ -213,7 +222,7 @@ class PreviewEngine {
     const displayT = Math.min(t, l.end - this.frame());
     const target = this.sourceSeconds(clip, l, displayT);
     if (Math.abs(el.currentTime - target) > (forPlay ? 0.02 : 0.002)) el.currentTime = target;
-    this.applyStyle(idx, clip);
+    this.applyStyle(idx, l, displayT);
     this.show(idx);
     return el;
   }
@@ -290,6 +299,7 @@ class PreviewEngine {
       return;
     }
     playhead.set({ time: t });
+    if (l.item.kind === 'clip' && l.item.animation && this.active >= 0) this.applyStyle(this.active, l, t);
     this.preloadNext(l, t);
     this.raf = requestAnimationFrame(this.tick);
   };
@@ -329,7 +339,7 @@ class PreviewEngine {
     const seamless = this.continuesInSameElement(l, next);
     this.current = next;
     playhead.set({ time: next.start });
-    if (seamless && next.item.kind === 'clip') this.applyStyle(this.active, next.item);
+    if (seamless && next.item.kind === 'clip') this.applyStyle(this.active, next, next.start);
     else this.beginItem(next.start);
     this.raf = requestAnimationFrame(this.tick);
   }

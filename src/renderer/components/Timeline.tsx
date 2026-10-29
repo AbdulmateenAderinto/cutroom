@@ -9,7 +9,8 @@
  * Snapping (toggle in the toolbar, or N) pulls edges and the playhead to cut points and the playhead.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { type LaidOutItem, type TrackItem, findMedia, itemDuration, layoutSequence } from '../../shared/model';
+import { ANIM_PROPERTIES } from '../../shared/animation';
+import { type ClipItem, type LaidOutItem, type TrackItem, findMedia, itemDuration, layoutSequence } from '../../shared/model';
 import * as ops from '../../shared/ops';
 import { type Ticks, formatDuration, formatTimecode, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
@@ -264,6 +265,7 @@ export function Timeline() {
                   offline={l.item.kind === 'clip' && !!missing[l.item.mediaId]}
                   onDown={(e) => onClipDown(e, l)}
                   onEdge={(e, edge) => onEdgeDown(e, l, edge)}
+                  pps={pps}
                 />
               );
             })}
@@ -290,6 +292,7 @@ function ClipBlock(props: {
   offline: boolean;
   onDown: (e: React.PointerEvent) => void;
   onEdge: (e: React.PointerEvent, edge: 'start' | 'end') => void;
+  pps: number;
 }) {
   const item: TrackItem = props.l.item;
   const isGap = item.kind === 'gap';
@@ -309,9 +312,28 @@ function ClipBlock(props: {
         <span className="clip-name">{props.offline ? '⚠ ' : ''}{props.name}</span>
         <span className="clip-dur">{formatDuration(props.l.end - props.l.start)}{audio}</span>
       </div>
+ {item.kind === 'clip' && item.animation && <AnimationMarks clip={item} pps={props.pps} width={props.w} />}
       <div className="trim-handle left" onPointerDown={(e) => props.onEdge(e, 'start')} title="Drag to trim the start" />
       <div className="trim-handle right" onPointerDown={(e) => props.onEdge(e, 'end')} title="Drag to trim the end" />
     </div>
+  );
+}
+
+/** In/out animation zones and keyframe diamonds drawn on a clip. */
+function AnimationMarks({ clip, pps, width }: { clip: ClipItem; pps: number; width: number }) {
+  const a = clip.animation!;
+  const px = (t: Ticks) => ticksToSeconds(t) * pps;
+  const keys = [...new Set(ANIM_PROPERTIES.flatMap((p) => a.keyframes?.[p] ?? []).map((k) => k.at))]
+    .filter((at) => at >= clip.sourceIn && at < clip.sourceOut);
+  return (
+    <>
+      {a.in && <div className="anim-zone in" style={{ width: Math.min(width, px(a.in.duration)) }} title={`In: ${a.in.preset}`} />}
+      {a.out && <div className="anim-zone out" style={{ width: Math.min(width, px(a.out.duration)) }} title={`Out: ${a.out.preset}`} />}
+      {a.motion && <div className="anim-motion" title={`Motion: ${a.motion.preset}`}>↗</div>}
+      {keys.map((at) => (
+        <div key={at} className="kf-mark" style={{ left: px(at - clip.sourceIn) - 4 }} title="Keyframe" />
+      ))}
+    </>
   );
 }
 

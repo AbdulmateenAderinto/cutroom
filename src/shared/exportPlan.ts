@@ -12,10 +12,12 @@
  * rounding never accumulates, and audio boundaries are derived from the same video frame
  * boundaries (keeps A/V in sync across any number of cuts).
  */
+import { animatesOpacity, evalAnimation, hasAnimation } from './animation';
 import {
   type MediaRef,
   type Project,
   type Rect,
+  animateRect,
   computeClipRect,
   evenDim,
   findMedia,
@@ -53,6 +55,9 @@ export const X264_PRESETS: { id: X264Preset; label: string }[] = [
   { id: 'medium', label: 'Medium (recommended)' },
   { id: 'slow', label: 'Slow (better quality per bit, slower export)' },
 ];
+
+/** Largest size an animated clip may be scaled to in one frame (protects memory). */
+export const MAX_ANIMATED_DIM = 8192;
 
 export interface ExportPlan {
   args: string[];
@@ -183,7 +188,55 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const r0 = computeClipRect(info.displayWidth, info.displayHeight, cw, ch, item.framing);
     const R = { x: r0.x * k, y: r0.y * k, w: r0.w * k, h: r0.h * k };
     const V = intersect(R, bw, bh);
-    if (V) {
+    if (hasAnimation(item.animation)) {
+      // Animated clip: evaluate the animation at every output frame (same function as the preview)
+      // and drive FFmpeg with per-frame commands for size, position and opacity.
+      const dur = l.end - l.start;
+      const quarter = 0.25 / (rate.num / rate.den);
+      const sizeCmds: string[] = [];
+      const posCmds: string[] = [];
+      const opCmds: string[] = [];
+      let prev = { w: -1, h: -1, x: NaN, y: NaN, o: -1 };
+      let first = prev;
+      for (let j = 0; j < frames; j++) {
+        const rel = Math.max(0, frameToTicks(f0 + j, rate) - l.start);
+        const st = evalAnimation(item.animation, Math.min(rel, dur), dur, item.sourceIn);
+        const r = animateRect(r0, st, cw, ch);
+        const cur = {
+          w: Math.min(MAX_ANIMATED_DIM, Math.max(2, Math.round(r.w * k))),
+          h: Math.min(MAX_ANIMATED_DIM, Math.max(2, Math.round(r.h * k))),
+          x: Math.round(r.x * k),
+          y: Math.round(r.y * k),
+          o: Math.round(st.opacity * 1000) / 1000,
+        };
+        if (j === 0) first = cur;
+        // Commands fire a quarter frame early so they are in place before frame j is processed.
+        const at = Math.max(0, j / (rate.num / rate.den) - quarter).toFixed(6);
+        if (j > 0 && (cur.w !== prev.w || cur.h !== prev.h)) sizeCmds.push(`${at} scale@s${n} w ${cur.w}, scale@s${n} h ${cur.h}`);
+        if (j > 0 && (cur.x !== prev.x || cur.y !== prev.y)) posCmds.push(`${at} overlay@o${n} x ${cur.x}, overlay@o${n} y ${cur.y}`);
+        if (j > 0 && cur.o !== prev.o) opCmds.push(`${at} ${['c0', 'c1', 'c2'].map((c) => `blend@b${n} ${c}_opacity ${cur.o}`).join(', ')}`);
+        prev = cur;
+      }
+      const sendcmd = (cmds: string[]) => (cmds.length ? `sendcmd=c='${cmds.join(';')}',` : '');
+      const fade = animatesOpacity(item.animation);
+      filters.push(
+        // Pixel format is converted BEFORE the resizing scale: a format filter after it would
+        // stop size changes from reaching the overlay (verified with FFmpeg 6.1).
+        `[${i}:v:0]setpts=PTS-STARTPTS,format=yuv420p,${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic,setsar=1[fg${n}]`,
+      );
+      if (fade) filters.push(`[bg${n}]split[bga${n}][bgb${n}]`);
+      const base = fade ? `bga${n}` : `bg${n}`;
+      filters.push(`[${base}]${sendcmd(posCmds).replace(/,$/, '') || 'null'}[bgp${n}]`);
+      const layer = fade ? `lay${n}` : v;
+      filters.push(
+        `[bgp${n}][fg${n}]overlay@o${n}=x=${first.x}:y=${first.y}:eof_action=repeat:format=auto,trim=end_frame=${frames},format=yuv420p[${layer}]`,
+      );
+      if (fade) {
+        filters.push(`[bgb${n}]${sendcmd(opCmds).replace(/,$/, '') || 'null'}[bgo${n}]`);
+        const o = first.o;
+        filters.push(`[${layer}][bgo${n}]blend@b${n}=all_mode=normal:c0_opacity=${o}:c1_opacity=${o}:c2_opacity=${o},format=yuv420p[${v}]`);
+      }
+    } else if (V) {
       const ox = Math.round(V.x);
       const oy = Math.round(V.y);
       const ow = Math.max(1, Math.round(V.x + V.w) - ox);

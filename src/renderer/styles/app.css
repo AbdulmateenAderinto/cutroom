@@ -227,3 +227,19 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .toast { background: #2a2f37; border: 1px solid var(--line-2); border-left: 4px solid var(--accent); padding: 9px 12px; border-radius: var(--radius); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); cursor: pointer; }
 .toast.warn { border-left-color: var(--warn); }
 .toast.error { border-left-color: var(--danger); }
+
+/* Animation */
+.anim-grid { display: grid; grid-template-columns: 52px 1fr 92px; gap: 6px; align-items: center; margin-bottom: 8px; }
+.anim-grid .field { margin: 0; }
+.kf-head { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 2px; }
+.kf-row { display: grid; grid-template-columns: 26px 1fr auto auto; gap: 6px; align-items: end; }
+.kf-row .field { margin: 3px 0; }
+.kf-diamond { background: none; border: 1px solid var(--line-2); border-radius: 4px; color: var(--muted); cursor: pointer; height: 28px; margin-bottom: 3px; font-size: 12px; }
+.kf-diamond.on { color: var(--accent); border-color: var(--accent); }
+.kf-diamond:hover { color: var(--text); }
+.kf-ease { width: 104px; margin-bottom: 3px; }
+.anim-zone { position: absolute; top: 0; bottom: 0; pointer-events: none; }
+.anim-zone.in { left: 0; background: linear-gradient(to right, rgba(242, 160, 61, 0.45), rgba(242, 160, 61, 0.05)); }
+.anim-zone.out { right: 0; background: linear-gradient(to left, rgba(242, 160, 61, 0.45), rgba(242, 160, 61, 0.05)); }
+.anim-motion { position: absolute; right: 12px; top: 3px; font-size: 11px; color: var(--accent); pointer-events: none; }
+.kf-mark { position: absolute; bottom: 6px; width: 8px; height: 8px; background: var(--accent); transform: rotate(45deg); border: 1px solid #000; pointer-events: none; }
