@@ -42,6 +42,8 @@ export interface MediaInfo {
   /** YUV matrix of the source (from its tag, else by size: < 720 lines = BT.601, as players and Chromium assume). */
   colorMatrix?: 'bt709' | 'bt601' | 'other';
   colorRange?: 'tv' | 'pc';
+  /** The file's own matrix and primaries tags ('' = untagged); sourceColor interprets them per platform. */
+  colorTags?: { matrix: string; primaries: string };
   /** Photos with transparency (PNG/WebP): the background colour shows through. */
   hasAlpha?: boolean;
   // Audio
@@ -353,9 +355,43 @@ export function evenDim(n: number): number {
 
 export const MAX_DIMENSION = 7680;
 
-/** Colour matrix to assume for a source (older projects lack the probed value). */
-export function sourceMatrix(info: MediaInfo): 'bt709' | 'bt601' | 'other' {
-  return info.colorMatrix ?? (info.height < 720 && info.width < 1280 ? 'bt601' : 'bt709');
+/** Where the preview runs: Chromium on macOS colour-manages video that Chromium elsewhere does not. */
+export type PreviewPlatform = 'mac' | 'other';
+
+export interface SourceColor {
+  matrix: 'bt709' | 'bt601' | 'other';
+  /** Colour primaries the preview converts from ('bt709' = no conversion). */
+  primaries: 'bt709' | 'smpte170m' | 'bt470bg' | 'other';
+}
+
+const BT601_MATRICES = ['smpte170m', 'bt470bg', 'bt601', 'fcc'];
+
+/**
+ * How the preview interprets a source's colours, so the export can do the same (measured; see
+ * ARCHITECTURE.md "Colour"). A tag wins; untagged video counts as SD (BT.601 matrix, SMPTE-C
+ * primaries) below 720 lines, or on macOS (VideoToolbox) at most 704×576. Only macOS converts
+ * SD primaries to the display: elsewhere SMPTE-C/EBU video is shown as if it were BT.709.
+ */
+export function sourceColor(info: MediaInfo, platform: PreviewPlatform): SourceColor {
+  const tags = info.colorTags;
+  const sd = platform === 'mac' ? info.width <= 704 && info.height <= 576 : info.height < 720 && info.width < 1280;
+  // Older projects have only the matrix (tagged or guessed by the < 720 lines rule).
+  const matrix: SourceColor['matrix'] = !tags
+    ? info.colorMatrix ?? (info.height < 720 && info.width < 1280 ? 'bt601' : 'bt709')
+    : tags.matrix === 'bt709' ? 'bt709'
+      : BT601_MATRICES.includes(tags.matrix) ? 'bt601'
+        : tags.matrix ? 'other'
+          : sd ? 'bt601' : 'bt709';
+  if (platform !== 'mac') return { matrix, primaries: 'bt709' };
+  const p = tags?.primaries ?? '';
+  // Untagged primaries follow the matrix (a BT.601 matrix implies SMPTE-C, as VideoToolbox assumes).
+  const primaries: SourceColor['primaries'] =
+    p === 'bt709' ? 'bt709'
+      : p === 'smpte170m' || p === 'smpte240m' ? 'smpte170m'
+        : p === 'bt470bg' ? 'bt470bg'
+          : p ? 'other'
+            : matrix === 'bt601' ? 'smpte170m' : 'bt709';
+  return { matrix, primaries };
 }
 
 export function isHexColor(s: string): boolean {

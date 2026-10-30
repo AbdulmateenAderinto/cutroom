@@ -151,7 +151,10 @@ plugins, complex compositing, proxies, wipes/slides and other transition shapes.
 - Speech: audio extraction to 16 kHz mono, whisper.cpp arguments and JSON parsing (punctuation
   merged, `[BLANK_AUDIO]` skipped), captions following trim/split/reorder, filler removal.
 - Captions in export: each caption image appears on exactly the right frames, at the right place, in the right colour.
-- Colour: untagged SD/HD, tagged BT.601 and full-range sources all export pure green as pure green.
+- Colour: untagged SD/HD, tagged BT.601, tagged PAL and full-range sources export pure green as pure
+  green for the Linux preview, and with SD primaries converted as the macOS preview shows them
+  (SMPTE-C 63,251,0; EBU 0,255,28), both within 12/255. The size rules for untagged video were
+  measured in the macOS app with both decoders (hardware: SD up to 704×576).
 - Music: audio clips land at the right time (tone onset within 5 ms), 150% boost and fades measured,
   ducking level during speech and pauses within 4% of the shared envelope.
 - Photos: EXIF orientation 6 exported upright, pure red/blue within 16/255 (RGB → BT.709 conversion),
@@ -236,8 +239,13 @@ progress/result screens, missing-media state and the gap rendering.
 - **Variable frame rate:** export conforms to the project frame rate. A frame can occasionally differ
   from the preview. In-points are snapped to the file's nominal (`r_frame_rate`) grid.
 - **HDR / colour:** no tone mapping. HDR files are flagged and will look wrong. Sources are
-  interpreted like the preview (tag, else BT.601 below 720 lines) and exported as BT.709. 10-bit
-  sources are exported as 8-bit. Other matrices (e.g. BT.2020 SDR) are passed through unconverted.
+  interpreted like the preview (tag, else SD by size; on macOS SD primaries are converted) and
+  exported as BT.709. 10-bit sources are exported as 8-bit. Other matrices and primaries (e.g. BT.2020
+  SDR) are passed through unconverted. On macOS:
+  - An untagged 704×576 clip is shown with EBU (PAL) primaries but exported as SMPTE-C (a small hue difference).
+  - Software-decoded clips (very small, or 4:4:4) follow Chromium's "below 720 lines" rule. For untagged
+    clips 706–1279 wide or 578–719 high, the preview then differs from the export.
+  - With hardware decoding, SD exports show within ≈10/255 of their source in near-black channels.
 - **Rotation:** 0/90/180/270° metadata is handled (verified for 90°). Mirrored display matrices are not.
 - **Files with a non-zero video start time** (some edited or camera MOVs) may be offset by that amount in export.
 - **Mismatched frame rates** (e.g. 25 fps clip in a 30 fps project): splitting can shift the

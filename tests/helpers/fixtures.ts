@@ -9,7 +9,7 @@
  * Each fixture also has a distinct sine tone, so audio can be attributed to a clip.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import type { MediaRef } from '../../src/shared/model';
 import { newId } from '../../src/shared/model';
@@ -23,8 +23,13 @@ export function ensureDirs() {
   mkdirSync(OUTPUT_DIR, { recursive: true });
 }
 
+/** Runs FFmpeg with the output file (last argument) written to a temporary name and renamed into
+ *  place, so test files running in parallel never see (or probe) a half-written fixture. */
 function ff(args: string[]) {
-  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args], { stdio: ['ignore', 'ignore', 'pipe'] });
+  const out = args[args.length - 1];
+  const tmp = path.join(path.dirname(out), `.tmp-${process.pid}-${path.basename(out)}`);
+  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args.slice(0, -1), tmp], { stdio: ['ignore', 'ignore', 'pipe'] });
+  renameSync(tmp, out);
 }
 
 export interface CodedSpec {
@@ -51,12 +56,14 @@ export function makeCoded(spec: CodedSpec): string {
   const rate = spec.rateExpr ?? String(spec.fps);
   const vf =
     `nullsrc=s=${spec.width}x${spec.height}:r=${rate}:d=${spec.seconds},format=yuv420p,` +
-    `geq=lum='16+mod(N\\,${fpsI})*${step}':cb='${spec.cb}':cr='40+floor(N/${fpsI})*20'`;
+    `geq=lum='16+mod(N\\,${fpsI})*${step}':cb='${spec.cb}':cr='40+floor(N/${fpsI})*20',` +
+    // Tagged BT.709 so the exporter passes the YUV values through untouched (they encode frame numbers).
+    // The frames themselves are tagged: FFmpeg 8+ converts untagged frames to match -colorspace.
+    `setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv`;
   ff([
     '-f', 'lavfi', '-i', vf,
     '-f', 'lavfi', '-i', `sine=f=${spec.freq}:r=48000:d=${spec.seconds}`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '8', '-g', '12', '-pix_fmt', 'yuv420p',
-    // Tagged BT.709 so the exporter passes the YUV values through untouched (they encode frame numbers).
     '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
     '-c:a', 'aac', '-b:a', '128k', '-shortest', out,
   ]);

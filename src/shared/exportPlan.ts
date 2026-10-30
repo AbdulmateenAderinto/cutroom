@@ -18,6 +18,7 @@ import {
   type ClipItem,
   type LaidOutItem,
   type MediaRef,
+  type PreviewPlatform,
   type Project,
   type Rect,
   animateRect,
@@ -27,7 +28,7 @@ import {
   findMedia,
   layoutSequence,
   sourceAt,
-  sourceMatrix,
+  sourceColor,
 } from './model';
 import { dipColour, resolveTransitions } from './transitions';
 import { clipColor, ffmpegMixer } from './color';
@@ -187,6 +188,8 @@ export interface ExportExtras {
   timeStretch?: 'rubberband' | 'atempo';
   /** ffconcat file listing caption PNGs (canvas-in-output size) with durations; see exportRunner. */
   captionTrack?: string;
+  /** Platform whose preview the export matches (sourceColor); default 'other'. */
+  previewPlatform?: PreviewPlatform;
 }
 
 /**
@@ -275,7 +278,24 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     // Convert the source's colour matrix/range to the BT.709 limited-range output, the same
     // interpretation the preview (Chromium) uses, so colours match.
     const isImage = info.kind === 'image';
-    const matrix = sourceMatrix(info);
+    const src = sourceColor(info, extras.previewPlatform ?? 'other');
+    // SD primaries (macOS only): converted to BT.709 first, in linear light with the sRGB curve as
+    // Chromium does (pure SMPTE-C green shows as 63,251,0), so the rest of the chain sees BT.709.
+    // The range is converted beforehand: the colorspace filter takes no full-range (yuvj) input.
+    const gamut = !isImage && (src.primaries === 'smpte170m' || src.primaries === 'bt470bg');
+    // Video frames are first tagged with the matrix/range assumed here: FFmpeg 8+ converts untagged
+    // frames (as BT.601) to match the output's BT.709 tag, which shifted untagged HD colours.
+    const tagSource = isImage
+      ? ''
+      : `setparams=${src.matrix === 'other' ? '' : `colorspace=${src.matrix === 'bt601' ? 'smpte170m' : 'bt709'}:`}range=${info.colorRange === 'pc' ? 'pc' : 'tv'},`;
+    const toBt709 = gamut
+      ? `scale=in_range=${info.colorRange === 'pc' ? 'pc' : 'tv'}:out_range=tv,format=yuv420p,` +
+        `colorspace=ispace=${src.matrix === 'bt601' ? 'smpte170m' : 'bt709'}:irange=tv:iprimaries=${src.primaries}:itrc=srgb:` +
+        'space=bt709:range=tv:primaries=bt709:trc=srgb:fast=0,' +
+        'setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv,'
+      : '';
+    const matrix = gamut ? 'bt709' : src.matrix;
+    const range = gamut ? 'tv' : info.colorRange;
     // Photos are first decoded to RGB (JPEG's full-range BT.601 is undone by that step), so the
     // resizing scale converts RGB → BT.709 limited range, as for backgrounds and captions.
     // Colour adjustments work on RGB (as the preview's SVG filter does): the source is converted to
@@ -284,7 +304,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const rgbPath = isImage || !!adjust;
     const colour = rgbPath
       ? ':out_color_matrix=bt709:out_range=tv'
-      : `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${info.colorRange === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
+      : `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${range === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
     // Transparent PNG/WebP keep their alpha so the background colour shows through.
     const fgFormat = isImage && info.hasAlpha ? 'yuva420p' : 'yuv420p';
     const speed = clipSpeed(item);
@@ -308,7 +328,9 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     }
     const i = inputIndex++;
     const decode =
-      (isImage ? 'format=rgba,' : adjust ? `scale=in_color_matrix=${matrix === 'bt601' ? 'bt601' : 'bt709'}:in_range=${info.colorRange === 'pc' ? 'pc' : 'tv'},format=rgba,` : '') +
+      tagSource +
+      toBt709 +
+      (isImage ? 'format=rgba,' : adjust ? `scale=in_color_matrix=${matrix === 'bt601' ? 'bt601' : 'bt709'}:in_range=${range === 'pc' ? 'pc' : 'tv'},format=rgba,` : '') +
       (adjust ? `colorchannelmixer=${ffmpegMixer(adjust)},` : '');
 
     // Video framing — identical maths to the preview, scaled into output pixels.

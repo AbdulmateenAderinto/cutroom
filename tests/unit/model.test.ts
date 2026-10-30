@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadProjectFile, saveProjectFile } from '../../src/main/project/projectFiles';
 import { buildExportPlan, outputSizeOptions } from '../../src/shared/exportPlan';
-import { type MediaRef, type Project, computeClipRect, createProject, layoutSequence, toManualFraming } from '../../src/shared/model';
+import { type MediaRef, type Project, computeClipRect, createProject, layoutSequence, sourceColor, toManualFraming } from '../../src/shared/model';
 import * as ops from '../../src/shared/ops';
 import { parseProject, serializeProject } from '../../src/shared/serialize';
 import {
@@ -238,6 +238,57 @@ describe('export plan', () => {
     const opts = outputSizeOptions(1080, 1920);
     expect(opts.find((o) => o.label.startsWith('720p'))).toMatchObject({ width: 720, height: 1280 });
     for (const o of opts) expect(o.width % 2 + (o.height % 2)).toBe(0);
+  });
+
+  it('converts SD primaries to BT.709 only for the macOS preview', () => {
+    const plan = (platform: 'mac' | 'other') => {
+      const m = media('a', 2, R30, 640, 360);
+      m.info.colorTags = { matrix: '', primaries: '' };
+      const p = ops.addClip(ops.addMedia(createProject(), [m]), 'a')!.project;
+      const s = { outputPath: '', width: 640, height: 360, frameRate: R30, canvasMapping: 'fit' as const, videoBitrateMbps: 2, x264Preset: 'fast' as const, audioBitrateKbps: 128 };
+      const args = buildExportPlan(p, s, 'x', (mm) => mm.path, { previewPlatform: platform }).args;
+      return args[args.indexOf('-filter_complex') + 1];
+    };
+    expect(plan('mac')).toMatch(/colorspace=ispace=smpte170m:irange=tv:iprimaries=smpte170m:itrc=srgb:space=bt709/);
+    expect(plan('mac')).not.toMatch(/in_color_matrix=bt601/); // already BT.709 after the conversion
+    expect(plan('other')).not.toMatch(/colorspace=ispace/);
+    expect(plan('other')).toMatch(/setparams=colorspace=smpte170m:range=tv/); // frames tagged as interpreted
+    expect(plan('other')).toMatch(/in_color_matrix=bt601:out_color_matrix=bt709/);
+  });
+});
+
+describe('source colour interpretation (measured in the preview)', () => {
+  const info = (w: number, h: number, matrix: string, primaries: string) => {
+    const i = media('a', 1, R30, w, h).info;
+    i.colorTags = { matrix, primaries };
+    return i;
+  };
+  const both = (w: number, h: number, matrix = '', primaries = '') =>
+    [sourceColor(info(w, h, matrix, primaries), 'mac'), sourceColor(info(w, h, matrix, primaries), 'other')];
+
+  it('untagged: SD by size, with a different size rule on macOS (VideoToolbox)', () => {
+    expect(both(640, 360)).toEqual([{ matrix: 'bt601', primaries: 'smpte170m' }, { matrix: 'bt601', primaries: 'bt709' }]);
+    expect(both(704, 576)[0]).toEqual({ matrix: 'bt601', primaries: 'smpte170m' });
+    for (const [w, h] of [[720, 480], [706, 400], [640, 578], [360, 640]]) {
+      expect(both(w, h)).toEqual([{ matrix: 'bt709', primaries: 'bt709' }, { matrix: 'bt601', primaries: 'bt709' }]);
+    }
+    expect(both(1280, 720)).toEqual([{ matrix: 'bt709', primaries: 'bt709' }, { matrix: 'bt709', primaries: 'bt709' }]);
+  });
+
+  it('tags win; untagged primaries follow the matrix on macOS', () => {
+    expect(both(1280, 720, 'smpte170m', 'smpte170m')[0]).toEqual({ matrix: 'bt601', primaries: 'smpte170m' });
+    expect(both(1280, 720, 'smpte170m')[0]).toEqual({ matrix: 'bt601', primaries: 'smpte170m' });
+    expect(both(1280, 720, 'bt709', 'smpte170m')[0]).toEqual({ matrix: 'bt709', primaries: 'smpte170m' });
+    expect(both(640, 360, 'bt470bg', 'bt470bg')[0]).toEqual({ matrix: 'bt601', primaries: 'bt470bg' });
+    expect(both(640, 360, 'bt709')).toEqual([{ matrix: 'bt709', primaries: 'bt709' }, { matrix: 'bt709', primaries: 'bt709' }]);
+    expect(both(640, 360, 'smpte170m', 'bt709')[0]).toEqual({ matrix: 'bt601', primaries: 'bt709' });
+  });
+
+  it('projects saved before tags were stored keep their matrix', () => {
+    const i = media('a', 1, R30, 1280, 720).info;
+    i.colorMatrix = 'bt601';
+    expect(sourceColor(i, 'mac')).toEqual({ matrix: 'bt601', primaries: 'smpte170m' });
+    expect(sourceColor(i, 'other')).toEqual({ matrix: 'bt601', primaries: 'bt709' });
   });
 });
 

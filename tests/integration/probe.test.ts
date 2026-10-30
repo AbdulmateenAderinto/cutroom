@@ -25,7 +25,9 @@ beforeAll(() => {
   if (!existsSync(fx('video.mkv'))) ff(['-i', fx('silent.mp4'), '-c', 'copy', fx('video.mkv')]);
   if (!existsSync(fx('audio-only.mp4'))) ff(['-f', 'lavfi', '-i', 'sine=d=1', '-c:a', 'aac', fx('audio-only.mp4')]);
   if (!existsSync(fx('hdr10.mp4'))) {
-    ff(['-f', 'lavfi', '-i', 'testsrc2=s=320x240:d=1', '-c:v', 'libx265', '-pix_fmt', 'yuv420p10le', '-color_trc', 'smpte2084',
+    // Tags set on the frames too: FFmpeg 8+ lets untagged frames override the output options.
+    ff(['-f', 'lavfi', '-i', 'testsrc2=s=320x240:d=1,setparams=color_trc=smpte2084:color_primaries=bt2020:colorspace=bt2020nc',
+      '-c:v', 'libx265', '-pix_fmt', 'yuv420p10le', '-color_trc', 'smpte2084',
       '-color_primaries', 'bt2020', '-colorspace', 'bt2020nc', '-x265-params', 'log-level=error', '-tag:v', 'hvc1', fx('hdr10.mp4')]);
   }
   if (!existsSync(fx('garbage.mp4'))) execFileSync('sh', ['-c', `head -c 20000 /dev/urandom > "${fx('garbage.mp4')}"`]);

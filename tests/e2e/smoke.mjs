@@ -57,7 +57,8 @@ function assert(cond, msg) {
 const userData = path.join(out, 'userdata');
 const app = await electron.launch({
   executablePath: electronPath,
-  args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required', root],
+  // No Mac colour management in screenshots (sRGB output, software decoding); see harness.mjs.
+  args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required', '--force-color-profile=srgb', '--disable-accelerated-video-decode', root],
   env: { ...process.env, CUTROOM_USER_DATA: userData },
 });
 const page = await app.firstWindow();

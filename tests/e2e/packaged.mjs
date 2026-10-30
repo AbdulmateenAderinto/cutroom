@@ -2,8 +2,7 @@
  * Smoke test of the PACKAGED app (electron-builder output, code inside app.asar): it starts, finds
  * FFmpeg, and the MCP bridge runs from inside app.asar with the command the AI settings show.
  *
- * Run after `npm run dist:dir` (Linux) — on a Mac, point CUTROOM_PACKAGED_APP at
- * dist/mac-arm64/Cutroom.app/Contents/MacOS/Cutroom.
+ * Run after `npm run dist:dir` (Linux or macOS; CUTROOM_PACKAGED_APP overrides the app path).
  */
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
@@ -12,7 +11,11 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { _electron as electron } from 'playwright';
 import { assert, makeSteps, root } from './harness.mjs';
 
-const exe = process.env.CUTROOM_PACKAGED_APP ?? path.join(root, 'dist/linux-unpacked/cutroom');
+const defaultExe =
+  process.platform === 'darwin'
+    ? path.join(root, `dist/mac${process.arch === 'arm64' ? '-arm64' : ''}/Cutroom.app/Contents/MacOS/Cutroom`)
+    : path.join(root, 'dist/linux-unpacked/cutroom');
+const exe = process.env.CUTROOM_PACKAGED_APP ?? defaultExe;
 if (!existsSync(exe)) {
   console.error(`Packaged app not found at ${exe}. Run: npm run dist:dir`);
   process.exit(1);

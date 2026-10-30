@@ -5,7 +5,7 @@
  * through edits, filler removal and burning captions into the export.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { runExport } from '../../src/main/export/exportRunner';
@@ -33,7 +33,13 @@ beforeAll(async () => {
   ensureDirs();
   const f = path.join(FIXTURE_DIR, 'speech.mp4');
   if (!existsSync(f)) {
-    ff(['-f', 'lavfi', '-i', 'testsrc2=s=640x360:r=30:d=4', '-f', 'lavfi', '-i', "flite=text='Hello there. Um, this is a test of captions.':voice=slt",
+    // Real speech where FFmpeg has flite (Homebrew's build does not); whisper is faked below, so a
+    // tone with pauses at the spoken gaps serves as well.
+    const hasFlite = /\sflite\s/.test(execFileSync('ffmpeg', ['-hide_banner', '-filters']).toString());
+    const voice = hasFlite
+      ? "flite=text='Hello there. Um, this is a test of captions.':voice=slt"
+      : "aevalsrc='0.4*sin(2*PI*220*t)*(between(t,0.3,1.05)+between(t,1.4,1.82)+between(t,2,3.55))':s=48000:d=4";
+    ff(['-f', 'lavfi', '-i', 'testsrc2=s=640x360:r=30:d=4', '-f', 'lavfi', '-i', voice,
       '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-ar', '48000', '-t', '4', f]);
   }
   writeFileSync(MODEL, Buffer.concat([Buffer.from('lmgg', 'latin1'), Buffer.alloc(2_000_000)]));
@@ -107,7 +113,7 @@ describe('caption export', () => {
     const inputs = ['-f', 'lavfi', '-i', 'color=c=black@0.0:s=640x360,format=rgba'];
     const graph = box ? `[0]format=rgba[bg];color=c=${box}:s=200x50,format=rgba[b];[bg][b]overlay=${x}:${y}` : '[0]format=rgba';
     ff([...inputs, '-filter_complex', graph, '-frames:v', '1', file]);
-    return execFileSync('base64', ['-w0', file]).toString();
+    return readFileSync(file).toString('base64');
   }
 
   it('shows each caption image exactly during its span, at its position, in true colour', async () => {

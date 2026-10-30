@@ -69,7 +69,7 @@ describe('colour adjustments in export', () => {
         p = addClip(p, m.id)!.project;
         p = setColor(p, p.sequence.items[0].id, adj);
         const out = path.join(OUTPUT_DIR, `color-${srcName.split(' ')[0]}-${name.replace(/\W+/g, '_')}.mp4`);
-        const r = await runExport(p, { outputPath: out, width: 320, height: 180, frameRate: { num: 30, den: 1 }, canvasMapping: 'fit', videoBitrateMbps: 8, x264Preset: 'veryfast', audioBitrateKbps: 128, rateControl: 'crf', crf: 12 });
+        const r = await runExport(p, { outputPath: out, width: 320, height: 180, frameRate: { num: 30, den: 1 }, canvasMapping: 'fit', videoBitrateMbps: 8, x264Preset: 'veryfast', audioBitrateKbps: 128, rateControl: 'crf', crf: 12 }, { previewPlatform: 'other' });
         expect(r.status, JSON.stringify(r).slice(0, 800)).toBe('done');
         source.forEach((rgb, i) => {
           const got = rgbAt(out, i % 2 ? 240 : 80, i < 2 ? 45 : 135);

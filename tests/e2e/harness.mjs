@@ -60,7 +60,10 @@ export function assert(cond, msg) {
 export async function launch({ userData, env = {} }) {
   const app = await electron.launch({
     executablePath: electronPath,
-    args: ['--no-sandbox', root],
+    // Screenshots are compared with FFmpeg's decode of the export, so render without the Mac's
+    // colour management: sRGB output (not the display's P3 profile) and software video decoding
+    // (macOS hardware decoding applies the BT.709 → display gamma change QuickTime also applies).
+    args: ['--no-sandbox', '--force-color-profile=srgb', '--disable-accelerated-video-decode', root],
     env: { ...process.env, CUTROOM_USER_DATA: userData, ...env },
   });
   const page = await app.firstWindow();

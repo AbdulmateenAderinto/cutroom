@@ -173,9 +173,26 @@ overlaid on the canvas.
 
 ## Colour
 
-The output is BT.709 limited range. Sources are interpreted the way Chromium (the preview) does:
-the tagged matrix if present, otherwise BT.601 below 720 lines and BT.709 above; full-range sources
-are converted. Solid colours (backgrounds, caption images) are converted RGB→YUV with BT.709 explicitly.
+The output is BT.709 limited range. Sources are interpreted the way Chromium (the preview) does,
+which differs by platform (`sourceColor` in `model.ts`; measured in the app):
+
+- The tagged matrix wins. Untagged video counts as SD (BT.601) below 720 lines, except on macOS,
+  where VideoToolbox treats it as SD only up to 704×576 (720×480 and 360×640 portrait count as HD).
+- Chromium on macOS also converts SD primaries to the display: SMPTE-C (tagged, or implied by a
+  BT.601 matrix) and EBU (`bt470bg`). Pure SMPTE-C green shows as 63,251,0. The export does the same
+  (FFmpeg `colorspace`, linear light with the sRGB curve, as Chromium) before anything else, so the
+  rest of the chain sees BT.709. Chromium elsewhere shows SD primaries as if they were BT.709, so there
+  is no conversion. `exportRunner` picks the platform it runs on (`previewPlatform`).
+- Full-range sources are converted to TV range.
+
+Every video source's frames are tagged with the assumed matrix/range at the start of its chain:
+FFmpeg 8+ otherwise converts untagged frames (assumed BT.601) to match the output's BT.709 tag.
+Solid colours (backgrounds, caption images) are converted RGB→YUV with BT.709 explicitly.
+
+macOS colour management that the export does not copy (it applies to the exported file too, e.g. in
+QuickTime): hardware-decoded video gets the BT.709 → display gamma change, and the window is
+colour-managed to the display (P3). The UI tests therefore run Electron with `--force-color-profile=srgb`
+and `--disable-accelerated-video-decode` so their screenshots compare with FFmpeg's decode.
 
 ## AI control (src/main/control, src/mcp, src/renderer/control)
 

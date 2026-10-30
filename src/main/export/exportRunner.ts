@@ -10,7 +10,7 @@ import { execFile, spawn } from 'node:child_process';
 import { accessSync, constants, existsSync, mkdtempSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { MediaRef, Project } from '../../shared/model';
+import type { MediaRef, PreviewPlatform, Project } from '../../shared/model';
 import { type CaptionTrack, type ExportSettings, buildExportPlan, canvasInOutput, validateExportSettings } from '../../shared/exportPlan';
 import { type Rational, parseRational, rateToFloat } from '../../shared/time';
 import { ffmpegPath, ffprobePath } from '../media/ffbin';
@@ -80,6 +80,8 @@ export interface RunExportOptions {
   captions?: CaptionTrack | null;
   /** Force a time-stretch filter for speed changes (default: the best one available). */
   timeStretch?: 'rubberband' | 'atempo';
+  /** Match the preview of this platform's Chromium (default: the one running). */
+  previewPlatform?: PreviewPlatform;
 }
 
 /**
@@ -146,7 +148,8 @@ export async function runExport(project: Project, settings: ExportSettings, opts
 
   async function encode(): Promise<ExportResult> {
   const timeStretch = opts.timeStretch ?? (project.sequence.items.some((i) => i.kind === 'clip' && i.speed) ? await timeStretchFilter() : 'atempo');
-  const plan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path), { captionTrack, timeStretch });
+  const previewPlatform = opts.previewPlatform ?? (process.platform === 'darwin' ? 'mac' : 'other');
+  const plan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path), { captionTrack, timeStretch, previewPlatform });
 
   let bin: string;
   try { bin = ffmpegPath(); } catch (e) { return fail((e as Error).message); }

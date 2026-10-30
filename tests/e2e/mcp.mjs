@@ -70,7 +70,7 @@ const assert = (c, m) => { if (!c) throw new Error(m); };
 console.log('Cutroom MCP test');
 const app = await electron.launch({
   executablePath: electronPath,
-  args: ['--no-sandbox', root],
+  args: ['--no-sandbox', '--force-color-profile=srgb', '--disable-accelerated-video-decode', root],
   env: {
     ...process.env, CUTROOM_USER_DATA: userData, CUTROOM_AI_CONTROL: '1',
     CUTROOM_WHISPER: path.join(root, 'tests/helpers/fake-whisper.mjs'), FAKE_WHISPER_WORDS: wordsFile,

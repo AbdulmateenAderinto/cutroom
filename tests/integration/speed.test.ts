@@ -57,7 +57,10 @@ describe('speed in export', () => {
       const audio = ffprobe(s.outputPath).streams.find((x: any) => x.codec_type === 'audio');
       expect(Math.abs(Number(audio.duration_ts) - (aSec + 4) * 48000)).toBeLessThan(1024);
       // ... and the 440 → 880 Hz switch is at the video cut (same check as the A/V sync tests).
-      expect(Math.abs(toneFrequency(pcm, aSec - 0.025, aSec - 0.005) - 440)).toBeLessThan(60);
+      // At 0.25× the stretched sound may end a little early (within the limits measured below;
+      // ≈ 20 ms with FFmpeg 9), so the "before" window stops short of that.
+      const early = speed === 0.25 ? 0.03 : 0.005;
+      expect(Math.abs(toneFrequency(pcm, aSec - early - 0.02, aSec - early) - 440)).toBeLessThan(60);
       expect(Math.abs(toneFrequency(pcm, aSec + 0.005, aSec + 0.025) - 880)).toBeLessThan(60);
       expect(Math.abs(toneFrequency(pcm, aSec * 0.2, aSec * 0.8) - 440)).toBeLessThan(10); // pitch kept
       expect(Math.abs(toneFrequency(pcm, aSec + 0.5, aSec + 3) - 880)).toBeLessThan(10);

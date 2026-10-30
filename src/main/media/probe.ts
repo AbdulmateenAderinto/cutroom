@@ -111,6 +111,8 @@ export async function probeMedia(file: string): Promise<ProbeResult> {
         : cs && cs !== 'unknown' && cs !== 'reserved' ? 'other'
           : height < 720 && width < 1280 ? 'bt601' : 'bt709';
   const colorRange: MediaInfo['colorRange'] = v.color_range === 'pc' || /^yuvj/.test(pixFmt) ? 'pc' : 'tv';
+  const tag = (t: string | undefined) => (t && !['unknown', 'reserved', 'unspecified'].includes(t) ? t : '');
+  const colorTags = { matrix: tag(v.color_space), primaries: tag(v.color_primaries) };
   if (/10|12/.test(pixFmt)) warnings.push('10/12-bit video: exported as 8-bit.');
   if (v.field_order && !['progressive', 'unknown'].includes(v.field_order)) warnings.push('Interlaced video: not deinterlaced.');
 
@@ -150,6 +152,7 @@ export async function probeMedia(file: string): Promise<ProbeResult> {
       isHDR,
       colorMatrix,
       colorRange,
+      colorTags,
       hasAudio: !!a,
       audioCodec,
       audioSampleRate: a ? Number(a.sample_rate) || null : null,
