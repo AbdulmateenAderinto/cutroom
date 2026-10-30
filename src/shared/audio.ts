@@ -5,7 +5,9 @@
  * where the project (video track) ends. The ducking envelope — how much a track is lowered while
  * the video track has sound — is computed here once and used by both preview and export.
  */
-import { type AudioClip, type AudioTrack, type Project, findMedia, layoutSequence, mediaKind, newId, timelineAt } from './model';
+import { type AudioClip, type AudioTrack, type Project, clipSpeed, findMedia, layoutSequence, mediaKind, newId, timelineAt } from './model';
+import { updateClip } from './ops';
+import { clipLayout } from './overlays';
 import { type Ticks, TICKS_PER_SECOND, frameDuration, snapToFrame } from './time';
 
 export const MAX_VOLUME = 2;
@@ -254,4 +256,33 @@ export function soundFromSilence(silence: { start: Ticks; end: Ticks }[], durati
 
 export function setSpeech(p: Project, mediaId: string, speech: { start: Ticks; end: Ticks }[]): Project {
   return { ...p, media: p.media.map((m) => (m.id === mediaId ? { ...m, speech } : m)) };
+}
+
+/**
+ * Detach a video clip's sound (main track or overlay): the same part of the file goes on an audio
+ * track at exactly the clip's timeline position, and the video clip is muted. The sound can then be
+ * trimmed or moved on its own — e.g. to start before the picture (J-cut) or run past it (L-cut).
+ * Uses the first track with room for it, or a new "Detached audio" track. Not for clips with a speed
+ * change (audio-track clips play at normal speed).
+ */
+export function detachAudio(p: Project, clipId: string): { project: Project; audioClipId: string } | { error: string } {
+  const l = clipLayout(p, clipId);
+  if (!l || l.item.kind !== 'clip') return { error: 'Select a video clip first.' };
+  const c = l.item;
+  const media = findMedia(p, c.mediaId);
+  if (!media?.info.hasAudio) return { error: 'This clip has no sound.' };
+  if (clipSpeed(c) !== 1) return { error: 'Set the clip back to 1× speed before detaching its sound.' };
+  if (c.muted) return { error: 'This clip is muted; unmute it first if you want to detach its sound.' };
+  const duration = l.end - l.start;
+  let project = p;
+  let track = tracks(p).find((t) => freeSlot(t, l.start, duration) === l.start);
+  if (!track) {
+    const r = addAudioTrack(project, 'Detached audio');
+    project = r.project;
+    track = tracks(project).find((t) => t.id === r.trackId)!;
+  }
+  const clip: AudioClip = { id: newId('aclip'), mediaId: c.mediaId, start: l.start, sourceIn: c.sourceIn, sourceOut: c.sourceIn + duration, volume: c.volume, fadeIn: 0, fadeOut: 0 };
+  project = mapTrack(project, track.id, (t) => ({ ...t, clips: sortClips([...t.clips, clip]) }));
+  project = updateClip(project, clipId, (x) => ({ ...x, muted: true }));
+  return { project, audioClipId: clip.id };
 }

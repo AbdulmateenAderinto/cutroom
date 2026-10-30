@@ -61,6 +61,7 @@ copy the config again.
 | Media | `import_media` |
 | Edit | `build_timeline` (whole rough cut in one step), `add_clip`, `set_clip_range`, `split_at`, `delete_clip`, `move_clip`, `duplicate_clip`, `set_framing`, `set_clip_audio`, `set_speed`, `set_transition`, `set_color`, `remove_ranges` |
 | Titles | `add_title` (presets + any style), `set_title`, `remove_title` |
+| Sound | `detach_audio` (clip sound → audio track, for J/L-cuts) |
 | Markers | `add_marker`, `set_marker`, `remove_marker` (exported as chapters; `export_video` `chapters`) |
 | Overlays | `add_overlay` (picture-in-picture: position preset, size, track), `set_overlay`, `remove_overlay`; the clip tools (`set_framing`, `set_color`, `set_speed`, `set_animation`, `set_keyframe`, `set_clip_audio`) also take overlay ids |
 | Audio | `add_audio` (music/voice-over on a track), `set_audio_clip` (move, trim, volume, fades), `remove_audio_clip`, `set_audio_track` (volume, mute, ducking) |

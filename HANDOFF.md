@@ -74,7 +74,7 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Area | Features |
 |---|---|
 | Import | MP4/MOV/MKV/WebM/AVI/MTS/MXF… (H.264, HEVC, ProRes, DNxHR…), GIF; MP3/WAV/AIFF/OGG…; JPEG/PNG/TIFF/HEIC (Mac). Preview copies for formats the preview can't play |
-| Editing | Trim, split, delete (close gap / leave gap), reorder, duplicate, undo/redo, snapping, frame stepping, markers (**M**, exported as chapters) |
+| Editing | Trim, split, delete (close gap / leave gap), reorder, duplicate, undo/redo, snapping, frame stepping, markers (**M**, exported as chapters), multi-select (⌘-click, Shift-click, ⌘A), detach audio for J/L-cuts |
 | Framing | Canvas presets (16:9, 9:16, 1:1, 4:5, custom), Fit / Fill / Manual per clip |
 | Overlays | Video tracks V2, V3… over the main track: picture-in-picture (**⧉ PiP** in the Media panel), corner presets, drag/resize in the preview |
 | Animation | In/out presets, slow zoom/pan, keyframes with easing |
@@ -86,7 +86,7 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Colour | Exposure, contrast, saturation, temperature |
 | Smart tools | Remove pauses, split at scenes, transcribe (whisper.cpp), remove filler words, captions |
 | Export | H.264, HEVC (Apple `hvc1`) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
-| AI | 48 MCP tools so Claude can edit, look at frames and export |
+| AI | 49 MCP tools so Claude can edit, look at frames and export |
 
 Projects save as `.cutroom` files (format version 7; older ones open fine).
 

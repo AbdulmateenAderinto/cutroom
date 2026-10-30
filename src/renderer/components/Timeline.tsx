@@ -168,6 +168,11 @@ export function Timeline() {
   const onClipDown = (e: React.PointerEvent, l: LaidOutItem) => {
     if (e.button !== 0) return;
     e.preventDefault();
+    const mod = window.cutroom.platform === 'darwin' ? e.metaKey : e.ctrlKey;
+    if (mod || e.shiftKey) {
+      A.extendSelection(l.item.id, mod ? 'toggle' : 'range');
+      return;
+    }
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
     store.set({ selection: { kind: 'item', id: l.item.id }, previewMediaId: null });
@@ -228,7 +233,8 @@ export function Timeline() {
   const markerIndex = drag ? drag.index : dropIndex;
   const markerX = markerIndex === null ? null : tToX(markerIndex < lay.items.length ? lay.items[markerIndex].start : lay.duration);
   const selectedId = selection?.kind === 'item' ? selection.id : null;
-  const hasSelection = !!selectedId || ['audio', 'title', 'overlay', 'marker'].includes(selection?.kind ?? '');
+  const multi = selection?.kind === 'items' ? new Set(selection.ids) : null;
+  const hasSelection = !!selectedId || !!multi || ['audio', 'title', 'overlay', 'marker'].includes(selection?.kind ?? '');
   const previewIdx = trimPreview ? lay.items.findIndex((l) => l.item.id === trimPreview.id) : -1;
 
   return (
@@ -287,7 +293,7 @@ export function Timeline() {
                   l={l}
                   x={tToX(l.start + offset)}
                   w={Math.max(2, ticksToSeconds(l.end - l.start) * pps)}
-                  selected={selectedId === l.item.id}
+                  selected={selectedId === l.item.id || !!multi?.has(l.item.id)}
                   dragging={drag?.id === l.item.id}
                   name={l.item.kind === 'clip' ? findMedia(project, l.item.mediaId)?.name ?? '?' : 'Gap'}
                   thumb={l.item.kind === 'clip' ? thumbs[l.item.mediaId] : undefined}

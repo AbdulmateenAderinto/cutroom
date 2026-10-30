@@ -24,6 +24,7 @@ import { TRANSITION_KINDS, transitionInfo } from '../../shared/transitions';
 import * as A from '../state/actions';
 import { beginGesture, commit, endGesture, gestureActive, store, updateGesture, useStore } from '../state/store';
 import { findAudioClip } from '../../shared/audio';
+import { NEUTRAL } from '../../shared/color';
 import { AnimationSection } from './AnimationSection';
 import { AudioClipInspector, TrackSettings } from './AudioInspector';
 import { TitleInspector } from './TitleInspector';
@@ -349,6 +350,17 @@ function ClipInspector({ clip, project, overlay }: { clip: ClipItem; project: Pr
               <span className="mono small">{Math.round(clip.volume * 100)}%</span>
             </div>
             <p className="muted small">Up to 200% (boost).</p>
+            <div className="row gap center">
+              <button
+                className="btn small"
+                onClick={() => A.detachAudio(id)}
+                disabled={clip.muted || clipSpeed(clip) !== 1}
+                title={clipSpeed(clip) !== 1 ? 'Only at 1× speed' : clip.muted ? 'The clip is muted' : 'Put this clip’s sound on an audio track (the clip is muted)'}
+              >
+                Detach audio
+              </button>
+              <span className="muted small">Then drag the sound’s edges past the picture’s for a J- or L-cut.</span>
+            </div>
           </>
         ) : (
           <p className="muted small">This clip’s source file has no audio. Silence is exported for its duration.</p>
@@ -471,6 +483,42 @@ function ProjectSettings({ project }: { project: Project }) {
   );
 }
 
+/** Several main-track items selected: what applies to all of them. */
+function MultiInspector({ ids, project }: { ids: string[]; project: Project }) {
+  const set = new Set(ids);
+  const lay = layoutSequence(project).items.filter((l) => set.has(l.item.id));
+  const clips = lay.flatMap((l) => (l.item.kind === 'clip' ? [l.item] : []));
+  const total = lay.reduce((n, l) => n + (l.end - l.start), 0);
+  const allMuted = clips.length > 0 && clips.every((c) => c.muted);
+  return (
+    <Section title={`${ids.length} items selected`}>
+      <p className="muted small">
+        {clips.length} clip{clips.length === 1 ? '' : 's'}{ids.length > clips.length ? ` and ${ids.length - clips.length} gap${ids.length - clips.length > 1 ? 's' : ''}` : ''}, {formatDuration(total)} in all.
+        ⌘/Ctrl-click adds or removes a clip; Shift-click selects a range; ⌘A selects every clip.
+      </p>
+      <div className="row gap wrap">
+        <button className="btn small" onClick={() => A.deleteSelected('close-gap')} title="Delete">Delete</button>
+        <button className="btn small" onClick={() => A.deleteSelected('leave-gap')} title="Shift+Delete">Delete, leave gaps</button>
+        <button className="btn small" onClick={() => A.copySelection()} title="⌘C — paste at the playhead with ⌘V">Copy</button>
+        <button
+          className="btn small"
+          disabled={!clips.length}
+          onClick={() => commit((p) => clips.reduce((q, c) => ops.setClipAudio(q, c.id, { muted: !allMuted }), p))}
+        >
+          {allMuted ? 'Unmute all' : 'Mute all'}
+        </button>
+        <button
+          className="btn small"
+          disabled={!clips.some((c) => c.color)}
+          onClick={() => commit((p) => clips.reduce((q, c) => ops.setColor(q, c.id, NEUTRAL), p))}
+        >
+          Reset colour
+        </button>
+      </div>
+    </Section>
+  );
+}
+
 export function Inspector() {
   const project = useStore((s) => s.project);
   const selection = useStore((s) => s.selection);
@@ -480,10 +528,11 @@ export function Inspector() {
   const audioTrack = selection?.kind === 'audioTrack' ? project.audioTracks?.find((t) => t.id === selection.id) : undefined;
   const titleClip = selection?.kind === 'title' ? project.titles?.find((t) => t.id === selection.id) : undefined;
   const overlay = selection?.kind === 'overlay' ? findOverlay(project, selection.id) : undefined;
+  const multi = selection?.kind === 'items' ? selection.ids : undefined;
   const marker = selection?.kind === 'marker' ? project.markers?.find((m) => m.id === selection.id) : undefined;
   const title = item?.kind === 'clip' ? 'Clip properties' : item?.kind === 'gap' ? 'Gap' : media ? 'Media'
-    : audioClip ? 'Audio clip' : audioTrack ? 'Audio track' : titleClip ? 'Title' : overlay ? 'Overlay clip' : marker ? 'Marker' : 'Project settings';
-  const anything = item || media || audioClip || audioTrack || titleClip || overlay || marker;
+    : audioClip ? 'Audio clip' : audioTrack ? 'Audio track' : titleClip ? 'Title' : overlay ? 'Overlay clip' : marker ? 'Marker' : multi ? 'Selection' : 'Project settings';
+  const anything = item || media || audioClip || audioTrack || titleClip || overlay || marker || multi;
   return (
     <aside className="panel inspector">
       <header className="panel-head">
@@ -501,6 +550,7 @@ export function Inspector() {
         {audioClip && <AudioClipInspector clipId={audioClip.clip.id} project={project} />}
         {audioTrack && <TrackSettings track={audioTrack} />}
         {titleClip && <TitleInspector id={titleClip.id} project={project} />}
+        {multi && <MultiInspector ids={multi} project={project} />}
         {marker && <MarkerInspector id={marker.id} project={project} />}
         {overlay && <ClipInspector key={overlay.id} clip={asClip(overlay)} project={project} overlay={overlay} />}
         {!anything && <ProjectSettings project={project} />}

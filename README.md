@@ -93,6 +93,10 @@ it shows. Overlapping overlays go on V3, V4…; higher tracks draw on top.
 **Markers:** press **M** (or **+ Marker**) to mark a moment; name and colour it in its panel. ↑/↓ stop at
 markers, and the export can write them as chapters.
 
+**Several clips:** ⌘-click (Ctrl-click) clips to select more than one, Shift-click for a range, ⌘A for
+all; then Delete, ⌘C/⌘V and more apply to all of them. **Detach audio** (in a clip's Audio section) puts
+its sound on an audio track so you can let it start before or run past the picture (J- and L-cuts).
+
 **Titles:** click **+ Text** above the timeline (or press T). Type in the **Text** box, pick a style,
 and drag the text in the preview to place it. Drag its block on the timeline to change when it shows.
 

@@ -23,7 +23,7 @@ import {
   timelineAt,
 } from '../../shared/model';
 import {
-  addAudioClip, deleteAudioClip, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip, setAudioClip, setAudioTrack, setSpeech, trimAudioClip,
+  addAudioClip, deleteAudioClip, detachAudio, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip, setAudioClip, setAudioTrack, setSpeech, trimAudioClip,
 } from '../../shared/audio';
 import { buildCues, fillerRanges } from '../../shared/captions';
 import { addTitle, deleteTitle, findTitle, moveTitle, updateTitle } from '../../shared/titles';
@@ -329,6 +329,14 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         if (!findOverlay(p, args.overlay_id)) throw new ToolError(`No overlay with id ${args.overlay_id}.`);
         edit('removed an overlay', (q) => deleteOverlay(q, args.overlay_id), { selection: null });
         return ok('removed');
+      }
+      case 'detach_audio': {
+        clipOrThrow(p, args.clip_id);
+        const r = detachAudio(p, args.clip_id);
+        if ('error' in r) throw new ToolError(r.error);
+        edit('detached a clip’s sound', () => r.project, { selection: { kind: 'audio', id: r.audioClipId } });
+        const hit = findAudioClip(store.get().project, r.audioClipId)!;
+        return ok({ audio_clip_id: r.audioClipId, track_id: hit.track.id, start_s: sec(hit.clip.start), source_in_s: sec(hit.clip.sourceIn), source_out_s: sec(hit.clip.sourceOut) });
       }
       // ---- markers ----
       case 'add_marker': {

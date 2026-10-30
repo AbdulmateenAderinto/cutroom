@@ -57,7 +57,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 48 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 49 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -117,6 +117,9 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Markers: **M** or **+ Marker** at the playhead; name, colour, time in the inspector; drag on the ruler; ↑/↓ stop at them; delete, undo | ✅ | One marker per frame; they keep their timeline position when clips change |
 | Markers as chapters in the export (MP4 and MOV), shifted for a range export | ✅ | Checked with `ffprobe -show_chapters`; chapters are never copied from source files any more |
 | AI tools `add_marker`, `set_marker`, `remove_marker`; `export_video` `chapters` | ✅ | |
+| Multi-select on the main track: ⌘/Ctrl-click, Shift-click (range), ⌘A; delete (close/leave gaps), copy/cut/paste, mute all, reset colour | ✅ | Dragging several clips at once is not supported yet; overlays/titles/audio are selected one at a time |
+| Detach audio: the clip's sound goes on an audio track at exactly the same time (clip muted), for J- and L-cuts | ✅ | Beeps within 2 ms of where they were before detaching; only at 1× speed |
+| AI tool `detach_audio` | ✅ | |
 
 ## Overlay tracks (picture-in-picture)
 
@@ -248,7 +251,9 @@ effect checked (cuts, trims, select, move, copy/cut/paste + undo, shuttle rates,
 searchable list) and that typing in a text field doesn't trigger them.
 
 **Editing tools UI run (thirteenth script):** markers with M and the button, rename/recolour in the
-inspector, dragging on the ruler, ↑/↓ stopping at them, chapters in an export, delete and undo.
+inspector, dragging on the ruler, ↑/↓ stopping at them, chapters in an export, delete and undo;
+⌘-click / Shift-click / ⌘A selection with copy/paste and delete of both clips plus undo; detach audio
+and an L-cut (picture trimmed with W while its sound keeps running).
 
 **Overlays UI run (twelfth script, 7 steps):** **⧉ PiP** adds the clip at the playhead on a V2 row
 and selects it; dragging and resizing it in the preview and the “Top left” preset (the main clip's

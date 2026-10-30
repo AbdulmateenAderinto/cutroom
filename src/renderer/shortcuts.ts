@@ -40,6 +40,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'Edit', label: 'Split at playhead', keys: [{ code: L('S') }, { code: L('B'), mod: true }, { code: L('K'), mod: true }], run: () => A.splitAtPlayhead() },
   { group: 'Edit', label: 'Trim clip start to playhead', keys: [{ code: L('Q') }], run: () => A.trimToPlayhead('start') },
   { group: 'Edit', label: 'Trim clip end to playhead', keys: [{ code: L('W') }], run: () => A.trimToPlayhead('end') },
+  { group: 'Edit', label: 'Select all clips (⌘/Ctrl-click adds a clip, Shift-click a range)', keys: [{ code: L('A'), mod: true }], run: () => A.selectAllClips() },
   { group: 'Edit', label: 'Select clip under playhead', keys: [{ code: L('X') }], run: () => A.selectAtPlayhead() },
   { group: 'Edit', label: 'Delete (close the gap)', keys: [{ key: 'Delete' }, { key: 'Backspace' }], run: () => A.deleteSelected('close-gap') },
   { group: 'Edit', label: 'Delete, leave a gap', keys: [{ key: 'Delete', shift: true }, { key: 'Backspace', shift: true }], run: () => A.deleteSelected('leave-gap') },

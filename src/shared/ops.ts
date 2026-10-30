@@ -265,8 +265,14 @@ export function getItem(project: Project, id: string): TrackItem | undefined {
 export type DeleteMode = 'close-gap' | 'leave-gap';
 
 export function deleteItem(project: Project, id: string, mode: DeleteMode): Project {
+  return deleteItems(project, [id], mode);
+}
+
+/** Delete several main-track items at once (one edit). */
+export function deleteItems(project: Project, ids: string[], mode: DeleteMode): Project {
+  const del = new Set(ids);
   const items = project.sequence.items.flatMap((i): TrackItem[] => {
-    if (i.id !== id) return [i];
+    if (!del.has(i.id)) return [i];
     if (mode === 'close-gap' || i.kind === 'gap') return [];
     return [{ kind: 'gap', id: newId('gap'), duration: itemDuration(i) }];
   });

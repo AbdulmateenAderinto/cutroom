@@ -267,6 +267,12 @@ export const CONTROL_TOOLS: ToolDef[] = [
     description: 'Delete an overlay clip.',
     inputSchema: obj({ overlay_id: str('overlay id') }, ['overlay_id']),
   },
+  {
+    name: 'detach_audio',
+    runs: 'renderer',
+    description: 'Move a video clip\'s sound (main track or overlay) to an audio track at exactly the same time, and mute the clip. Then trim/move the audio clip with set_audio_clip for a J-cut (sound starts before the picture) or L-cut (sound continues after it). Clip must be at 1× speed.',
+    inputSchema: obj({ clip_id: str('clip id') }, ['clip_id']),
+  },
   // ---- Markers ----
   {
     name: 'add_marker',

@@ -12,6 +12,7 @@ import type { Ticks } from '../../shared/time';
 
 export type Selection =
   | { kind: 'item'; id: string } // video track item
+  | { kind: 'items'; ids: string[] } // several main-track items (⌘-click, Shift-click, ⌘A)
   | { kind: 'media'; id: string }
   | { kind: 'audio'; id: string } // audio track clip
   | { kind: 'audioTrack'; id: string }
@@ -173,12 +174,24 @@ export function redo() {
 function validSelection(p: Project, sel: Selection): Selection {
   if (!sel) return null;
   if (sel.kind === 'item') return p.sequence.items.some((i) => i.id === sel.id) ? sel : null;
+  if (sel.kind === 'items') {
+    const ids = sel.ids.filter((id) => p.sequence.items.some((i) => i.id === id));
+    return ids.length > 1 ? { kind: 'items', ids } : ids.length ? { kind: 'item', id: ids[0] } : null;
+  }
   if (sel.kind === 'audio') return (p.audioTracks ?? []).some((t) => t.clips.some((c) => c.id === sel.id)) ? sel : null;
   if (sel.kind === 'audioTrack') return (p.audioTracks ?? []).some((t) => t.id === sel.id) ? sel : null;
   if (sel.kind === 'title') return (p.titles ?? []).some((t) => t.id === sel.id) ? sel : null;
   if (sel.kind === 'overlay') return (p.overlays ?? []).some((o) => o.id === sel.id) ? sel : null;
   if (sel.kind === 'marker') return (p.markers ?? []).some((m) => m.id === sel.id) ? sel : null;
-  return p.media.some((m) => m.id === sel.id) ? sel : null;
+  return sel.kind === 'media' && p.media.some((m) => m.id === sel.id) ? sel : null;
+}
+
+/** Main-track items in the selection (one or several), in timeline order. */
+export function selectedItemIds(sel: Selection, p: Project): string[] {
+  if (sel?.kind === 'item') return [sel.id];
+  if (sel?.kind !== 'items') return [];
+  const set = new Set(sel.ids);
+  return p.sequence.items.filter((i) => set.has(i.id)).map((i) => i.id);
 }
 
 /** Replace the whole project (new/open/recover). Clears history. */

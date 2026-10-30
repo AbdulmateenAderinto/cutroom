@@ -5,7 +5,7 @@ import type { AudioClip, MediaRef, OverlayClip, Project, TitleClip, TrackItem } 
 import { createProject, evenDim, findMedia, layoutSequence, newId } from '../../shared/model';
 import * as ops from '../../shared/ops';
 import {
-  addAudioClip, addAudioTrack, audioClipEnd, deleteAudioClip, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip,
+  addAudioClip, addAudioTrack, audioClipEnd, deleteAudioClip, detachAudio as detachAudioOp, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip,
   removeAudioTrack, setSpeech, soundFromSilence, splitAudioClip, updateAudioClip,
 } from '../../shared/audio';
 import { type TitlePreset, addTitle, deleteTitle, duplicateTitle, findTitle, moveTitle, splitTitle, updateTitle } from '../../shared/titles';
@@ -16,7 +16,7 @@ import {
 import { TICKS_PER_SECOND, type Ticks, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
 import { playhead } from './playhead';
-import { commit, isDirty, loadProject, redo, store, toast, undo } from './store';
+import { commit, isDirty, loadProject, redo, selectedItemIds, store, toast, undo } from './store';
 
 const api = () => window.cutroom;
 
@@ -162,6 +162,30 @@ export function jumpToEdit(dir: -1 | 1) {
   if (target !== undefined) engine.seek(Math.min(target, Math.max(0, lay.duration - frameDuration(p.frameRate))));
 }
 
+/** ⌘A: select every clip on the main track. */
+export function selectAllClips() {
+  const ids = store.get().project.sequence.items.filter((i) => i.kind === 'clip').map((i) => i.id);
+  if (ids.length) store.set({ selection: ids.length > 1 ? { kind: 'items', ids } : { kind: 'item', id: ids[0] } });
+}
+
+/**
+ * Click on a main-track item with ⌘/Ctrl (add or remove it) or Shift (everything between the
+ * selected item and this one).
+ */
+export function extendSelection(id: string, mode: 'toggle' | 'range') {
+  const s = store.get();
+  const cur = selectedItemIds(s.selection, s.project);
+  let ids: string[];
+  if (mode === 'toggle') ids = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+  else {
+    const order = s.project.sequence.items.map((i) => i.id);
+    const anchor = cur.length ? order.indexOf(cur[0]) : order.indexOf(id);
+    const to = order.indexOf(id);
+    ids = order.slice(Math.min(anchor, to), Math.max(anchor, to) + 1);
+  }
+  store.set({ selection: ids.length > 1 ? { kind: 'items', ids } : ids.length ? { kind: 'item', id: ids[0] } : null, previewMediaId: null });
+}
+
 /** X: select the video-track clip under the playhead. */
 export function selectAtPlayhead() {
   const t = playhead.get().time;
@@ -202,9 +226,10 @@ let clipboard: Clip | null = null;
 export function copySelection(): boolean {
   const sel = store.get().selection;
   const p = store.get().project;
-  if (sel?.kind === 'item') {
-    const it = p.sequence.items.find((i) => i.id === sel.id);
-    if (it) clipboard = { kind: 'items', items: [structuredClone(it)] };
+  if (sel?.kind === 'item' || sel?.kind === 'items') {
+    const ids = new Set(selectedItemIds(sel, p));
+    const items = p.sequence.items.filter((i) => ids.has(i.id));
+    if (items.length) clipboard = { kind: 'items', items: structuredClone(items) };
   } else if (sel?.kind === 'title') {
     const t = findTitle(p, sel.id);
     if (t) clipboard = { kind: 'title', title: structuredClone(t) };
@@ -235,7 +260,7 @@ export function pasteAtPlayhead(): boolean {
       toast('The copied clip’s media is not in this project.');
       return true;
     }
-    commit(() => r.project, { selection: { kind: 'item', id: r.ids[0] } });
+    commit(() => r.project, { selection: r.ids.length > 1 ? { kind: 'items', ids: r.ids } : { kind: 'item', id: r.ids[0] } });
   } else if (c.kind === 'title') {
     const r = addTitle(p, t, { text: c.title.text, duration: c.title.duration, style: c.title.style });
     commit(() => updateTitle(r.project, r.id, (x) => ({ ...x, animIn: c.title.animIn, animOut: c.title.animOut, animLength: c.title.animLength })), { selection: { kind: 'title', id: r.id } });
@@ -287,6 +312,15 @@ export function markedRange(): { start: Ticks; end: Ticks } | null {
 export function addTitleAction(preset: TitlePreset = 'title') {
   const r = addTitle(store.get().project, playhead.get().time, { preset });
   commit(() => r.project, { selection: { kind: 'title', id: r.id } });
+}
+
+/** Put a clip's sound on an audio track (for J/L-cuts); the clip is muted. */
+export function detachAudio(clipId: string) {
+  const r = detachAudioOp(store.get().project, clipId);
+  if ('error' in r) return toast(r.error, 'warn');
+  commit(() => r.project, { selection: { kind: 'audio', id: r.audioClipId } });
+  const track = findAudioClip(store.get().project, r.audioClipId)?.track;
+  toast(`Sound moved to “${track?.name}”. Drag its edges past the picture's for a J- or L-cut.`);
 }
 
 /** M: add a marker at the playhead (or select the one already there). */
@@ -432,6 +466,10 @@ export function deleteSelected(mode: ops.DeleteMode) {
     const t = store.get().project.audioTracks?.find((x) => x.id === sel.id);
     if (t && t.clips.length && !confirm(`Delete the track “${t.name}” and its ${t.clips.length} clip(s)?`)) return;
     return void commit((p) => removeAudioTrack(p, sel.id), { selection: null });
+  }
+  if (sel?.kind === 'items') {
+    const ids = selectedItemIds(sel, store.get().project);
+    return void commit((p) => ops.deleteItems(p, ids, mode), { selection: null });
   }
   const id = selectedItemId();
   if (!id) return toast('Select a clip on the timeline first.');
