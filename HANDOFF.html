@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cutroom Hand-off</title>
+<meta name="description" content="How to pick up Cutroom on your own Mac: setup, running it, what was built, what still needs checking, and what's next.">
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #ffffff; --text: #1d1f22; --muted: #62666d; --line: #e3e1dc;
+    --accent: #c9711a; --accent-soft: #fbeedd; --ok: #2f7d4f; --ok-soft: #e3f3e8; --warn: #9a5b00; --warn-soft: #fdf1d8;
+    --code-bg: #f1efea; --code-text: #2a2c30; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #131416; --panel: #1b1d20; --text: #e7e7e5; --muted: #9da1a8; --line: #2c2f34;
+      --accent: #f0a04b; --accent-soft: #3a2a17; --ok: #6cc28d; --ok-soft: #17301f; --warn: #f2c063; --warn-soft: #3a2f14;
+      --code-bg: #101113; --code-text: #e3e3e0; --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #131416; --panel: #1b1d20; --text: #e7e7e5; --muted: #9da1a8; --line: #2c2f34;
+    --accent: #f0a04b; --accent-soft: #3a2a17; --ok: #6cc28d; --ok-soft: #17301f; --warn: #f2c063; --warn-soft: #3a2f14;
+    --code-bg: #101113; --code-text: #e3e3e0; --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; display: grid; grid-template-columns: 1fr; gap: 32px; }
+  @media (min-width: 960px) { .wrap { grid-template-columns: 220px minmax(0, 1fr); padding: 0 32px; } }
+  header.hero { max-width: 1120px; margin: 0 auto; padding: 48px 16px 24px; }
+  @media (min-width: 960px) { header.hero { padding: 64px 32px 32px; } }
+  .eyebrow { color: var(--accent); font-weight: 600; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.1; margin: 8px 0 12px; letter-spacing: -.02em; }
+  .lede { color: var(--muted); font-size: 18px; max-width: 680px; margin: 0; }
+  .repo { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  a { color: var(--accent); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 28px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .stat b { display: block; font-size: 24px; letter-spacing: -.01em; }
+  .stat span { color: var(--muted); font-size: 13px; }
+  .stat.ok b { color: var(--ok); }
+  .stat.warn b { color: var(--warn); }
+  nav.toc { position: relative; }
+  @media (min-width: 960px) { nav.toc { position: sticky; top: 24px; align-self: start; } }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  @media (min-width: 960px) { nav.toc ol { display: block; } }
+  nav.toc a { display: block; color: var(--muted); text-decoration: none; font-size: 14px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); }
+  @media (min-width: 960px) { nav.toc a { border: 0; background: none; padding: 4px 10px; } }
+  nav.toc a:hover { color: var(--text); background: var(--accent-soft); }
+  main { min-width: 0; padding-bottom: 80px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 20px; margin-bottom: 20px; box-shadow: var(--shadow); scroll-margin-top: 16px; }
+  @media (min-width: 640px) { section { padding: 28px 30px; } }
+  h2 { font-size: 22px; margin: 0 0 12px; letter-spacing: -.01em; }
+  h2 .n { color: var(--accent); margin-right: 8px; font-variant-numeric: tabular-nums; }
+  h3 { font-size: 16px; margin: 22px 0 8px; }
+  p { margin: 10px 0; }
+  .muted { color: var(--muted); }
+  small, .small { font-size: 14px; }
+  ul { padding-left: 22px; margin: 10px 0; }
+  li { margin: 4px 0; }
+  code { font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--code-bg); color: var(--code-text); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+  .cmd { position: relative; margin: 10px 0; }
+  .cmd pre { margin: 0; background: var(--code-bg); color: var(--code-text); border: 1px solid var(--line); border-radius: 10px; padding: 12px 64px 12px 14px; overflow-x: auto; }
+  .cmd pre code { background: none; padding: 0; white-space: pre; overflow-wrap: normal; }
+  .copy { position: absolute; top: 7px; right: 7px; font: 600 12px/1 inherit; font-family: inherit; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; cursor: pointer; }
+  .copy:hover { color: var(--text); }
+  .copy.done { color: var(--ok); border-color: var(--ok); }
+  .table { overflow-x: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: 0; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: var(--code-bg); }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .new { display: inline-block; font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; }
+  .note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 10px 10px 0; margin: 14px 0; }
+  .note.warn { border-color: var(--warn); background: var(--warn-soft); }
+  .checklist { list-style: none; padding: 0; }
+  .checklist li { margin: 0; border-bottom: 1px solid var(--line); }
+  .checklist li:last-child { border-bottom: 0; }
+  .checklist label { display: flex; gap: 12px; padding: 10px 2px; cursor: pointer; }
+  .checklist input { margin-top: 5px; width: 17px; height: 17px; accent-color: var(--ok); flex: none; }
+  .checklist input:checked + span { color: var(--muted); text-decoration: line-through; }
+  .progress { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
+  .bar { flex: 1; height: 6px; background: var(--code-bg); border-radius: 99px; overflow: hidden; border: 1px solid var(--line); }
+  .bar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .2s; }
+  .reset { font: inherit; font-size: 13px; color: var(--muted); background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 0; }
+  .cols { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 720px) { .cols { grid-template-columns: 1fr 1fr; } }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--bg); }
+  .card h3 { margin-top: 0; }
+  .theme { position: fixed; top: 12px; right: 12px; font: inherit; font-size: 13px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; cursor: pointer; z-index: 2; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; padding: 0 16px 40px; }
+</style>
+</head>
+<body>
+<button class="theme" type="button" id="theme" aria-label="Switch light or dark theme">◐ Theme</button>
+
+<header class="hero">
+  <div class="eyebrow">Cutroom · pick-up guide</div>
+  <h1>Carry on with Cutroom on your Mac</h1>
+  <p class="lede">Setup, running it, what was built, what still needs checking on a real Mac, and where to look in the code.</p>
+  <p class="repo">Repository: <a href="https://github.com/AbdulmateenAderinto/cutroom">github.com/AbdulmateenAderinto/cutroom</a> · branch <code>main</code> · updated 30 Oct 2026</p>
+  <div class="stats">
+    <div class="stat ok"><b>Phases 1–4</b><span>built, tested, pushed</span></div>
+    <div class="stat ok"><b>270 / 270</b><span>unit + real-FFmpeg tests</span></div>
+    <div class="stat ok"><b>16 / 16</b><span>end-to-end suites (real app)</span></div>
+    <div class="stat ok"><b>18 / 18</b><span>MCP (AI control) steps</span></div>
+    <div class="stat warn"><b>Not yet</b><span>run on a Mac — see §6</span></div>
+    <div class="stat warn"><b>Phase 5</b><span>waiting on you — see §11</span></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <ol>
+      <li><a href="#setup">1 · Set up</a></li>
+      <li><a href="#run">2 · Run it</a></li>
+      <li><a href="#dmg">3 · Installable app</a></li>
+      <li><a href="#ai">4 · Connect Claude</a></li>
+      <li><a href="#features">5 · What's in the app</a></li>
+      <li><a href="#verify">6 · Verify on your Mac</a></li>
+      <li><a href="#tests">7 · Tests</a></li>
+      <li><a href="#limits">8 · Known limits</a></li>
+      <li><a href="#code">9 · Where things live</a></li>
+      <li><a href="#claude">10 · Claude Code locally</a></li>
+      <li><a href="#next">11 · What's next</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="setup">
+      <h2><span class="n">1</span>Set up (once)</h2>
+      <p>You need <a href="https://brew.sh">Homebrew</a>. Then, in Terminal:</p>
+      <div class="cmd"><pre><code>brew install node ffmpeg</code></pre></div>
+      <div class="cmd"><pre><code>git clone https://github.com/AbdulmateenAderinto/cutroom.git ~/cutroom</code></pre></div>
+      <div class="cmd"><pre><code>cd ~/cutroom &amp;&amp; npm install</code></pre></div>
+      <h3>Already have a clone from earlier?</h3>
+      <p>Update it instead:</p>
+      <div class="cmd"><pre><code>cd ~/cutroom &amp;&amp; git pull origin main &amp;&amp; npm install</code></pre></div>
+      <h3>Optional: transcripts and captions</h3>
+      <div class="cmd"><pre><code>brew install whisper-cpp</code></pre></div>
+      <p class="muted small">Then download a speech model inside the app: clip panel → Smart tools → Transcribe.</p>
+    </section>
+
+    <section id="run">
+      <h2><span class="n">2</span>Run it</h2>
+      <div class="cmd"><pre><code>cd ~/cutroom &amp;&amp; npm run dev</code></pre></div>
+      <p><code>npm run dev</code> hot-reloads UI changes. Restart it after changing anything in <code>src/main</code> or <code>src/preload</code>. To run a normal build instead: <code>npm start</code>.</p>
+    </section>
+
+    <section id="dmg">
+      <h2><span class="n">3</span>Make an installable app (.dmg)</h2>
+      <div class="cmd"><pre><code>cd ~/cutroom &amp;&amp; npm run dist:mac</code></pre></div>
+      <p>Output: <code>dist/Cutroom-0.1.0-arm64.dmg</code> (Apple Silicon) and <code>dist/Cutroom-0.1.0.dmg</code> (Intel). Open it and drag Cutroom to Applications.</p>
+      <ul>
+        <li>Ad-hoc signed, not notarized. A <code>.dmg</code> you built yourself opens normally; one downloaded from elsewhere needs right-click → <b>Open</b> the first time.</li>
+        <li>FFmpeg is not bundled (licensing). Homebrew's FFmpeg is found automatically, even when started from Finder.</li>
+        <li>No Mac handy? On GitHub: <b>Actions → “macOS app (.dmg)” → Run workflow</b>. It runs all tests on a Mac runner, builds both <code>.dmg</code> files and attaches them to the run (<code>cutroom-macos</code>). It only runs when started by hand or on a <code>v*</code> tag.</li>
+      </ul>
+    </section>
+
+    <section id="ai">
+      <h2><span class="n">4</span>Connect Claude (AI control)</h2>
+      <ol>
+        <li>In Cutroom: <b>AI control</b> (top bar) → tick <b>Allow AI assistants to control Cutroom</b>.</li>
+        <li>Copy the snippet it shows:
+          <ul>
+            <li>Claude Desktop: Settings → Developer → Edit Config → paste the <code>cutroom</code> entry under <code>mcpServers</code> → restart.</li>
+            <li>Claude Code: run the <code>claude mcp add …</code> command it shows.</li>
+          </ul>
+        </li>
+        <li>Ask things like “Remove the silences in interview.mov and add boxed captions” or “Make a 30-second vertical cut with a crossfade between each clip”.</li>
+      </ol>
+      <p class="muted small">If you move or reinstall the app, copy the snippet again (the path changes). Details: <code>docs/AI.md</code>.</p>
+    </section>
+
+    <section id="features">
+      <h2><span class="n">5</span>What's in the app</h2>
+      <p class="muted small">Items marked <span class="new">NEW</span> were added in the latest round (Phases 1–4).</p>
+      <div class="table"><table>
+        <thead><tr><th>Area</th><th>Features</th></tr></thead>
+        <tbody>
+          <tr><td>Import</td><td>MP4/MOV/MKV/WebM/AVI/MTS/MXF… (H.264, HEVC, ProRes, DNxHR…), GIF; MP3/WAV/AIFF/OGG…; JPEG/PNG/TIFF/HEIC (Mac). Preview copies for formats the preview can't play.</td></tr>
+          <tr><td>Editing</td><td>Trim, split, delete (close gap / leave gap), reorder, duplicate, undo/redo, snapping, frame stepping. <span class="new">NEW</span> Markers (<b>M</b>, exported as chapters), multi-select (⌘-click, Shift-click, ⌘A), copy/paste, detach audio for J/L-cuts.</td></tr>
+          <tr><td>Framing</td><td>Canvas presets (16:9, 9:16, 1:1, 4:5, custom), Fit / Fill / Manual per clip.</td></tr>
+          <tr><td>Overlays <span class="new">NEW</span></td><td>Video tracks V2, V3… over the main track: picture-in-picture (<b>⧉ PiP</b> in the Media panel), corner presets, drag/resize in the preview.</td></tr>
+          <tr><td>Animation</td><td>In/out presets, slow zoom/pan, keyframes with easing. <span class="new">NEW</span> Clip rotation (any angle) and rotation keyframes; title keyframes.</td></tr>
+          <tr><td>Music &amp; sound</td><td>Audio tracks, waveforms, fades, volume to 200%, auto-ducking under speech. <span class="new">NEW</span> 3-band EQ, noise reduction (export, with “Listen”), loudness normalization, voice-over recording.</td></tr>
+          <tr><td>Photos</td><td>JPEG/PNG/WebP clips, EXIF rotation, transparency, Ken Burns.</td></tr>
+          <tr><td>Titles</td><td>Text rows, 5 styles, fonts, looks, drag to place, fade/rise/pop/typewriter (key <b>T</b>).</td></tr>
+          <tr><td>Speed</td><td>0.25×–4× per clip, pitch kept. <span class="new">NEW</span> Stepped speed ramps, freeze frame (<b>⇧F</b>), reverse.</td></tr>
+          <tr><td>Transitions</td><td>Crossfade, dip to black/white. <span class="new">NEW</span> Wipes, slides, zoom.</td></tr>
+          <tr><td>Colour</td><td>Exposure, contrast, saturation, temperature. <span class="new">NEW</span> Hue, lightness, curves; HDR → SDR tone mapping; <code>.cube</code> LUTs per media file.</td></tr>
+          <tr><td>Effects <span class="new">NEW</span></td><td>Blur, masks (ellipse/rectangle, soft edge; circle PiP), chroma key (green screen), stabilization.</td></tr>
+          <tr><td>Smart tools</td><td>Remove pauses, split at scenes, transcribe (whisper.cpp), remove filler words, captions.</td></tr>
+          <tr><td>Project &amp; media <span class="new">NEW</span></td><td><b>Versions…</b> (named snapshots next to the project, restore with undo); <b>Manage…</b> media manager (uses per file, remove unused, relink a whole folder of moved files, collect files into one folder); <b>Proxy</b> mode for smooth 4K preview (export uses originals).</td></tr>
+          <tr><td>Export</td><td>H.264, HEVC (Apple <code>hvc1</code>) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (<b>I</b> / <b>O</b>); Apple hardware encoder where available; safe <code>.partial</code> → verify → rename.</td></tr>
+          <tr><td>Export queue <span class="new">NEW</span></td><td>Queue several exports and keep editing; optional “Render in parallel parts” (same frames as one pass).</td></tr>
+          <tr><td>AI</td><td>56 MCP tools so Claude can edit, look at frames and export.</td></tr>
+        </tbody>
+      </table></div>
+      <p class="muted small">Projects save as <code>.cutroom</code> files (format version 7; older ones open fine).</p>
+    </section>
+
+    <section id="verify">
+      <h2><span class="n">6</span>Verify on your Mac</h2>
+      <p>None of this could be done in the cloud session (Linux, no Apple hardware). Tick these off as you go — your ticks are remembered in this browser. Anything that fails is worth a GitHub issue or a message to Claude.</p>
+      <div class="progress"><div class="bar"><i id="bar"></i></div><span id="count">0 / 0</span><button class="reset" type="button" id="reset">Clear ticks</button></div>
+      <ul class="checklist" id="checklist">
+        <li><label><input type="checkbox" data-k="dev"><span><code>npm run dev</code> opens the window; FFmpeg is found (no red banner).</span></label></li>
+        <li><label><input type="checkbox" data-k="iphone"><span>Import a few iPhone clips (HEVC, portrait, <b>HDR/HLG</b>: check the tone-mapped picture looks right) and <b>HEIC photos</b> (converted with macOS's <code>sips</code> — untested so far).</span></label></li>
+        <li><label><input type="checkbox" data-k="prores"><span>Import a ProRes or camera file (.mov/.mts/.mxf): “Preparing…” then preview; export matches.</span></label></li>
+        <li><label><input type="checkbox" data-k="4k"><span>Playback is smooth with real 4K footage; music stays in sync. Then turn on <b>Proxy</b> and compare.</span></label></li>
+        <li><label><input type="checkbox" data-k="parallel"><span>Queue two exports with “Render in parallel parts” on and off: is parallel faster on your Mac?</span></label></li>
+        <li><label><input type="checkbox" data-k="pip"><span>Picture-in-picture: two 4K clips at once (main + PiP) still play smoothly; the PiP stays in sync.</span></label></li>
+        <li><label><input type="checkbox" data-k="vt"><span>Export with <b>Apple hardware — VideoToolbox</b> in the export dialog (only offered if a test encode works).</span></label></li>
+        <li><label><input type="checkbox" data-k="airdrop"><span>AirDrop an <i>Apple devices — HEVC</i> export to an iPhone; open it in Photos. Open a ProRes export in Final Cut Pro.</span></label></li>
+        <li><label><input type="checkbox" data-k="keys"><span>Try the keyboard shortcuts (press <b>?</b> for the list), especially J/K/L and ⌘C/⌘V on a Mac keyboard.</span></label></li>
+        <li><label><input type="checkbox" data-k="whisper"><span>Speech: <code>brew install whisper-cpp</code>, download a model in the app, transcribe a real clip.</span></label></li>
+        <li><label><input type="checkbox" data-k="vo"><span>Record a voice-over (● Record voice-over): macOS asks for the microphone once; check the take lines up with the picture.</span></label></li>
+        <li><label><input type="checkbox" data-k="lut"><span>Colour: load a real <code>.cube</code> LUT from a grading pack; check the preview and the export look the same.</span></label></li>
+        <li><label><input type="checkbox" data-k="denoise"><span>Noise reduction on a real noisy voice recording (use <b>Listen</b>); stabilize a real handheld clip.</span></label></li>
+        <li><label><input type="checkbox" data-k="relink"><span>Move a project's media to another drive, reopen, and use <b>Manage… → Relink missing from a folder</b>.</span></label></li>
+        <li><label><input type="checkbox" data-k="versions"><span>Save a version, change things, restore it, undo.</span></label></li>
+        <li><label><input type="checkbox" data-k="claude"><span>AI control from the real Claude Desktop / Claude Code.</span></label></li>
+        <li><label><input type="checkbox" data-k="dmg"><span><code>npm run dist:mac</code> builds the <code>.dmg</code>, and the installed app starts and exports.</span></label></li>
+        <li><label><input type="checkbox" data-k="tests"><span>Run the automated tests on the Mac (section 7).</span></label></li>
+      </ul>
+    </section>
+
+    <section id="tests">
+      <h2><span class="n">7</span>Tests</h2>
+      <div class="cmd"><pre><code>npm test</code></pre></div>
+      <p>Unit + real-FFmpeg export tests (270, about 2 minutes).</p>
+      <div class="cmd"><pre><code>npm run test:e2e</code></pre></div>
+      <p>Drives the real app through every feature (16 scripts, about 15 minutes) and compares the preview with the exported video.</p>
+      <div class="cmd"><pre><code>npm run test:mcp</code></pre></div>
+      <p>Connects the official MCP client and edits through the AI tools.</p>
+      <div class="cmd"><pre><code>npm run dist:dir &amp;&amp; npm run test:packaged</code></pre></div>
+      <p>Checks a packaged build starts and the AI bridge works from inside it.</p>
+      <p class="muted small">Screenshots and exported files from the tests go to <code>tests/.output/</code>.</p>
+    </section>
+
+    <section id="limits">
+      <h2><span class="n">8</span>Known limits</h2>
+      <p class="muted small">Short version — the full list, with how each feature was tested, is in <code>docs/STATUS.md</code>.</p>
+      <ul>
+        <li>Speed changes: sound is time-stretched and lands slightly early/late (≈ −50 ms at 0.25×, −30 ms at 0.5×, +8…15 ms at 2×). Normal speed is exact.</li>
+        <li>HDR tone mapping, LUTs, noise reduction, voice-over and the hardware encoder have not been tried with real Mac footage/hardware.</li>
+        <li>Noise reduction is export-only (use “Listen” to hear it). Speed ramps are stepped, not a smooth curve.</li>
+        <li>The export queue lives in the window: closing the app stops it. Parallel export has not been benchmarked.</li>
+        <li>The AI tools (MCP) don't cover versions, the media manager, proxy mode or the export queue yet.</li>
+        <li><code>.dmg</code> not notarized; FFmpeg must come from Homebrew (Phase 5, §11).</li>
+        <li>Crossfade playback in the preview: smoothness at the cut has not been measured; a brief stutter is possible.</li>
+      </ul>
+    </section>
+
+    <section id="code">
+      <h2><span class="n">9</span>Where things live</h2>
+      <div class="table"><table>
+        <thead><tr><th>Path</th><th>What</th></tr></thead>
+        <tbody>
+          <tr><td><code>src/shared/</code></td><td>The editing model and all maths shared by preview and export: <code>model.ts</code>, <code>ops.ts</code>, <code>time.ts</code>, <code>exportPlan.ts</code>, <code>audio.ts</code>, <code>audioFx.ts</code>, <code>titles.ts</code>, <code>transitions.ts</code>, <code>color.ts</code>, <code>effects.ts</code>, <code>animation.ts</code>, <code>overlays.ts</code>, <code>markers.ts</code>, <code>captions.ts</code></td></tr>
+          <tr><td><code>src/main/</code></td><td>Electron main process: media probing, preview copies (<code>media/proxy.ts</code>), freeze/reverse/stabilize (<code>media/derived.ts</code>), LUTs, relink/collect (<code>media/manage.ts</code>), export runner (incl. parallel parts), project files and versions, MCP control server, whisper</td></tr>
+          <tr><td><code>src/renderer/</code></td><td>React UI, the preview engine (<code>preview/engine.ts</code>), state and actions (<code>state/</code>), export queue (<code>state/exportQueue.ts</code>)</td></tr>
+          <tr><td><code>src/mcp/</code></td><td>The stdio MCP bridge Claude launches</td></tr>
+          <tr><td><code>tests/</code></td><td><code>unit/</code>, <code>integration/</code> (real exports), <code>e2e/</code> (the real app)</td></tr>
+          <tr><td><code>docs/STATUS.md</code></td><td>Every feature with how it was tested, plus limitations</td></tr>
+          <tr><td><code>docs/ARCHITECTURE.md</code></td><td>How preview and export stay identical, timing model, export pipeline</td></tr>
+          <tr><td><code>docs/AI.md</code></td><td>Smart tools and AI control</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note"><b>The rule the code follows:</b> anything that affects the picture or sound is computed once in <code>src/shared/</code> and used by both the preview and the export, so they can't drift apart — and each feature has a test comparing the preview with the export. Keep it that way.</div>
+    </section>
+
+    <section id="claude">
+      <h2><span class="n">10</span>Continuing with Claude Code locally</h2>
+      <div class="cmd"><pre><code>cd ~/cutroom &amp;&amp; claude</code></pre></div>
+      <p>A good first message:</p>
+      <div class="cmd"><pre><code>Read HANDOFF.md and docs/STATUS.md, run npm test and npm run test:e2e on this Mac, and fix anything that fails. Then work through the checklist in HANDOFF.md section 6.</code></pre></div>
+    </section>
+
+    <section id="next">
+      <h2><span class="n">11</span>What's next</h2>
+      <div class="note warn"><b>Phase 5 needs your input before it can start.</b> It was deliberately skipped.</div>
+      <div class="cols">
+        <div class="card">
+          <h3>Notarized release</h3>
+          <p class="small">Needs a paid Apple Developer account for a Developer ID certificate and notarization, so downloaded copies open without the right-click → Open step.</p>
+        </div>
+        <div class="card">
+          <h3>Bundled FFmpeg</h3>
+          <p class="small">Shipping FFmpeg inside the app means choosing a build and licence. An <b>LGPL</b> build can be bundled more freely but lacks libx264/libx265 (H.264/HEVC would then use Apple's hardware encoder only); a <b>GPL</b> build keeps them but makes the whole app GPL.</p>
+        </div>
+      </div>
+      <h3>Other ideas</h3>
+      <ul>
+        <li>Smooth (curve) speed ramps.</li>
+        <li>AI tools for versions, the export queue and proxy mode.</li>
+        <li>An export queue that survives quitting the app.</li>
+        <li>Transitions on overlay tracks; per-shot colour matching.</li>
+        <li>Real-time noise reduction in the preview.</li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<footer>Cutroom hand-off · same content as <code>HANDOFF.md</code> in the repository.</footer>
+
+<script>
+  // Copy buttons on every command block.
+  document.querySelectorAll('.cmd').forEach(function (box) {
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'copy'; btn.textContent = 'Copy';
+    btn.addEventListener('click', function () {
+      var text = box.querySelector('code').textContent;
+      var done = function () { btn.textContent = 'Copied'; btn.classList.add('done'); setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1500); };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
+    });
+    box.appendChild(btn);
+  });
+
+  // Checklist ticks, remembered in this browser (works without storage too).
+  var KEY = 'cutroom-handoff-checks';
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('#checklist input'));
+  function update() {
+    var n = boxes.filter(function (b) { return b.checked; }).length;
+    document.getElementById('count').textContent = n + ' / ' + boxes.length;
+    document.getElementById('bar').style.width = (100 * n / boxes.length) + '%';
+  }
+  function store() {
+    var s = {};
+    boxes.forEach(function (b) { if (b.checked) s[b.dataset.k] = true; });
+    try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {}
+  }
+  boxes.forEach(function (b) {
+    b.checked = !!saved[b.dataset.k];
+    b.addEventListener('change', function () { store(); update(); });
+  });
+  document.getElementById('reset').addEventListener('click', function () {
+    boxes.forEach(function (b) { b.checked = false; }); store(); update();
+  });
+  update();
+
+  // Theme toggle (follows the system until changed).
+  var root = document.documentElement;
+  try { var t = localStorage.getItem('cutroom-handoff-theme'); if (t) root.setAttribute('data-theme', t); } catch (e) {}
+  document.getElementById('theme').addEventListener('click', function () {
+    var dark = root.getAttribute('data-theme') ? root.getAttribute('data-theme') === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    var next = dark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('cutroom-handoff-theme', next); } catch (e) {}
+  });
+</script>
+</body>
+</html>

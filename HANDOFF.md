@@ -5,6 +5,11 @@ what still needs checking on a Mac, and where to look in the code.
 
 Repository: https://github.com/AbdulmateenAderinto/cutroom (branch `main`)
 
+**Status at hand-off (30 Oct 2026):** Phases 1–4 of the feature plan are built, tested and pushed.
+In the cloud (Linux) session: typecheck clean, 270/270 unit + real-FFmpeg tests, 16/16 end-to-end
+suites (real app, preview compared with export), MCP 18/18. Nothing has been run on a Mac yet —
+that is section 6. Phase 5 (notarized release, bundled FFmpeg) is waiting on you (section 11).
+
 ---
 
 ## 1. Set up (once)
@@ -21,6 +26,12 @@ git clone https://github.com/AbdulmateenAderinto/cutroom.git ~/cutroom
 
 ```bash
 cd ~/cutroom && npm install
+```
+
+Already have a clone from earlier? Update it instead:
+
+```bash
+cd ~/cutroom && git pull origin main && npm install
 ```
 
 Optional, for transcripts and captions:
@@ -110,6 +121,10 @@ Tick these off; anything that fails is worth a GitHub issue or a message to Clau
 - [ ] Record a voice-over (● Record voice-over): macOS asks for the microphone once; check the take lines up with the picture.
 - [ ] AI control from the real Claude Desktop / Claude Code.
 - [ ] `npm run dist:mac` builds the `.dmg`, and the installed app starts and exports.
+- [ ] Colour: load a real `.cube` LUT from a grading pack; check the preview and the export look the same.
+- [ ] Noise reduction on a real noisy voice recording (use **Listen**); stabilize a real handheld clip.
+- [ ] Move a project's media to another drive, reopen, and use **Manage… → Relink missing from a folder**.
+- [ ] Save a version, change things, restore it, undo.
 - [ ] Run the automated tests on the Mac (section 7).
 
 ## 7. Tests
@@ -124,7 +139,7 @@ Unit + real-FFmpeg export tests (~270, about 2 minutes).
 npm run test:e2e
 ```
 
-Drives the real app through every feature (15 scripts) and compares the preview with the exported video.
+Drives the real app through every feature (16 scripts, about 15 minutes) and compares the preview with the exported video.
 
 ```bash
 npm run test:mcp
@@ -145,6 +160,8 @@ Screenshots and exported files from the tests go to `tests/.output/`.
 - Speed changes: sound is time-stretched and lands slightly early/late (≈ −50 ms at 0.25×, −30 ms at 0.5×, +8…15 ms at 2×). Normal speed is exact.
 - HDR tone mapping, LUTs, noise reduction, voice-over and the hardware encoder have not been tried with real Mac footage/hardware.
 - Noise reduction is export-only (use “Listen” to hear it). Speed ramps are stepped.
+- The export queue lives in the window: closing the app stops it. Parallel export has not been benchmarked.
+- The AI tools (MCP) don't cover versions, the media manager, proxy mode or the export queue yet.
 - `.dmg` not notarized; FFmpeg must come from Homebrew. Phase 5 (notarized release, bundled FFmpeg) is waiting on your Apple Developer account and an FFmpeg licensing decision.
 - Crossfade playback in the preview: smoothness at the cut has not been measured; a brief stutter is possible.
 
@@ -152,9 +169,9 @@ Screenshots and exported files from the tests go to `tests/.output/`.
 
 | Path | What |
 |---|---|
-| `src/shared/` | The editing model and all maths shared by preview and export: `model.ts`, `ops.ts`, `time.ts`, `exportPlan.ts`, `audio.ts`, `titles.ts`, `transitions.ts`, `color.ts`, `animation.ts`, `captions.ts` |
-| `src/main/` | Electron main process: media probing, export runner, project files, MCP control server, whisper |
-| `src/renderer/` | React UI and the preview engine (`preview/engine.ts`) |
+| `src/shared/` | The editing model and all maths shared by preview and export: `model.ts`, `ops.ts`, `time.ts`, `exportPlan.ts`, `audio.ts`, `audioFx.ts`, `titles.ts`, `transitions.ts`, `color.ts`, `effects.ts`, `animation.ts`, `overlays.ts`, `markers.ts`, `captions.ts` |
+| `src/main/` | Electron main process: media probing, preview copies (`media/proxy.ts`), freeze/reverse/stabilize (`media/derived.ts`), LUTs, relink/collect (`media/manage.ts`), export runner (incl. parallel parts), project files and versions, MCP control server, whisper |
+| `src/renderer/` | React UI, the preview engine (`preview/engine.ts`), state and actions (`state/`), export queue (`state/exportQueue.ts`) |
 | `src/mcp/` | The stdio MCP bridge Claude launches |
 | `tests/` | `unit/`, `integration/` (real exports), `e2e/` (the real app) |
 | `docs/STATUS.md` | Every feature with how it was tested, plus limitations |
@@ -173,4 +190,16 @@ cd ~/cutroom && claude
 A good first message: *"Read HANDOFF.md and docs/STATUS.md, run `npm test` and `npm run test:e2e`
 on this Mac, and fix anything that fails. Then work through the checklist in HANDOFF.md section 6."*
 
-Ideas for what's next: speed ramps, more transition shapes, curves/LUTs, notarized builds, bundled FFmpeg (needs a licensing decision), proxies for 4K editing.
+## 11. What's next
+
+**Phase 5 — needs your input before it can start:**
+
+- **Notarized release:** needs an Apple Developer account (paid) for a Developer ID certificate and
+  notarization, so downloaded copies open without the right-click → Open step.
+- **Bundled FFmpeg:** shipping FFmpeg inside the app means choosing a build and licence. An LGPL build
+  can be bundled more freely but lacks libx264/libx265 (H.264/HEVC would then use Apple's hardware
+  encoder only); a GPL build keeps them but makes the whole app GPL. Decide which you want.
+
+**Other ideas:** smooth (curve) speed ramps; AI tools for versions, queue and proxy mode; a queue that
+survives quitting; transitions on overlay tracks; per-shot colour matching; real-time noise reduction
+in the preview.
