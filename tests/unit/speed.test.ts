@@ -131,3 +131,33 @@ describe('speed', () => {
     expect(clipOf(parseProject(serializeProject(p)), 0).speed).toBe(1.5);
   });
 });
+
+describe('speed ramps and split edges', () => {
+  it('a ramp splits the footage into equal parts with speeds from → to; footage is kept', async () => {
+    const { speedRamp } = await import('../../src/shared/ops');
+    const p0 = proj();
+    const id = p0.sequence.items[0].id;
+    const r = speedRamp(p0, id, 1, 0.25, 4);
+    if ('error' in r) throw new Error(r.error);
+    const parts = r.project.sequence.items.slice(0, 4) as ClipItem[];
+    expect(parts.map((c) => c.speed ?? 1)).toEqual([1, 0.75, 0.5, 0.25]);
+    expect(parts[0].sourceIn).toBe((p0.sequence.items[0] as ClipItem).sourceIn);
+    for (let i = 1; i < 4; i++) expect(Math.abs(parts[i].sourceIn - parts[i - 1].sourceOut)).toBeLessThan(705_600_000 / 30);
+    expect(r.ids).toEqual(parts.map((c) => c.id));
+    expect(speedRamp(p0, 'nope', 1, 2)).toHaveProperty('error');
+  });
+
+  it('split: the transition and out-animation stay on the right part, the in-animation on the left', async () => {
+    const { setTransition, setAnimation, splitAt } = await import('../../src/shared/ops');
+    let p = proj();
+    const id = p.sequence.items[0].id;
+    p = setTransition(p, id, 'crossfade', 705_600_000 / 2);
+    p = setAnimation(p, id, (a) => ({ ...a, in: { preset: 'fade', duration: 705_600_000 / 2 }, out: { preset: 'fade', duration: 705_600_000 / 2 } }));
+    const s = splitAt(p, 705_600_000)!;
+    const [l, r] = s.project.sequence.items as ClipItem[];
+    expect(l.transition).toBeUndefined();
+    expect(r.transition?.kind).toBe('crossfade');
+    expect(l.animation?.in && !l.animation.out).toBeTruthy();
+    expect(r.animation?.out && !r.animation.in).toBeTruthy();
+  });
+});

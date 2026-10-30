@@ -1,20 +1,24 @@
 /**
  * UI test for the editing tools added in Phase 1: markers (M, the ruler, the inspector, ↑/↓,
  * chapters in the export), multi-select (⌘-click, Shift-click, ⌘A; delete, copy/paste), and
- * detaching a clip's sound for an L-cut.
+ * detaching a clip's sound for an L-cut, and a speed ramp (preview vs export, playback rates).
  *
  * Run: npm run test:e2e   (Linux without a display: xvfb-run -a npm run test:e2e)
  */
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { TPS, assert, ff, fixture, launch, makeSteps, outputDir } from './harness.mjs';
+import { TPS, assert, compareFrames, ff, fixture, launch, makeSteps, outputDir } from './harness.mjs';
 
 const out = outputDir('editing');
 const userData = path.join(out, 'userdata');
-const clip = (name, f0) => fixture(name, (f) => ff(['-f', 'lavfi', '-i', 'testsrc2=s=640x360:r=30:d=4', '-f', 'lavfi', '-i', `sine=f=${f0}:d=4`,
-  '-c:v', 'libx264', '-preset', 'veryfast', '-g', '15', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', f]));
-const a = clip('keys-a.mp4', 440);
-const b = clip('keys-b.mp4', 880);
+// Smooth gradients that change steadily over time: preview and export frames are easy to tell apart
+// (a frame 12 later is clearly different) and there are no hard edges to rescale differently.
+const grad = (r, g, b) => `nullsrc=s=640x360:r=30:d=4,format=rgb24,geq=r='${r}':g='${g}':b='${b}',scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv`;
+const clip = (name, src, f0) => fixture(name, (f) => ff(['-f', 'lavfi', '-i', src, '-f', 'lavfi', '-i', `sine=f=${f0}:d=4`,
+  '-c:v', 'libx264', '-preset', 'veryfast', '-g', '15', '-pix_fmt', 'yuv420p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
+  '-c:a', 'aac', '-shortest', f]));
+const a = clip('edit-a.mp4', grad('40+50*T', '60+120*X/W', '200-150*Y/H'), 440);
+const b = clip('edit-b.mp4', grad('220-150*X/W', '30+50*T', '60+100*Y/H'), 880);
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const { step, finish } = makeSteps();
@@ -147,6 +151,60 @@ await step('detach audio, then extend the sound past the cut (L-cut)', async () 
   assert(st.sequence.items[0].sourceOut === 3 * TPS && st.audioTracks[0].clips[0].sourceOut === 4 * TPS, 'L-cut: picture 3 s, sound 4 s');
   await page.evaluate(() => window.__cutroom.store.set({ snapping: true }));
   await page.screenshot({ path: path.join(out, 'lcut.png') });
+});
+
+await step('speed ramp: “Ease into slow motion” makes 8 parts; playback changes rate; preview matches export', async () => {
+  await page.click('.tl-track .clip >> nth=1');
+  await page.click('.inspector button:has-text("Ease into slow motion")');
+  const items = (await h.state()).sequence.items;
+  const speeds = items.slice(1).map((c) => c.speed ?? 1);
+  assert(items.length === 9 && speeds[0] === 1 && speeds[7] === 0.25, JSON.stringify(speeds));
+  const sel = await page.evaluate(() => window.__cutroom.store.get().selection);
+  assert(sel?.kind === 'items' && sel.ids.length === 8, 'the parts should be selected');
+  // Play from inside the ramp: the element's rate follows the parts.
+  await page.keyboard.press('Escape');
+  const lay = await page.evaluate(() => {
+    const p = window.__cutroom.store.get().project;
+    let t = 0;
+    return p.sequence.items.map((i) => {
+      const d = Math.round((i.sourceOut - i.sourceIn) / (i.speed ?? 1));
+      const r = { start: t / 705_600_000, end: (t + d) / 705_600_000, speed: i.speed ?? 1 };
+      t += d;
+      return r;
+    });
+  });
+  await page.evaluate((t) => window.__cutroom.engine.seek(Math.round(t * 705_600_000)), lay[5].start + 0.05);
+  await page.click('button:has-text("Play")');
+  const rates = new Set();
+  const end = Date.now() + 2500;
+  while (Date.now() < end) {
+    rates.add(await page.evaluate(() => [...document.querySelectorAll('video.stage-video')].find((v) => v.style.display === 'block')?.playbackRate));
+    await page.waitForTimeout(100);
+  }
+  await page.click('button:has-text("Pause")');
+  assert([0.57, 0.46, 0.36].some((r) => rates.has(r)) && rates.size >= 2, `rates seen: ${[...rates].join(', ')}`);
+  // Preview vs export inside the slow part.
+  await page.addStyleTag({ content: '.toasts { display: none !important; }' });
+  const shots = [];
+  for (const t of [lay[2].start + 0.1, lay[7].start + 0.2, lay[8].start + 0.5]) {
+    const f = Math.round(t * 30);
+    await h.seekFrame(f);
+    await h.previewReady();
+    await page.waitForTimeout(300);
+    const png = path.join(out, `ramp-${f}.png`);
+    await page.locator('.stage').screenshot({ path: png });
+    shots.push({ f, png });
+  }
+  const file = path.join(out, 'ramp.mp4');
+  await h.exportTo(file, { fps: 30 });
+  for (const { f, png } of shots) {
+    const at = (x) => ['-ss', (x / 30 - 0.005).toFixed(4), '-i', file];
+    const same = compareFrames(['-i', png], at(f), undefined, [32, 18]);
+    // Control: 45 frames earlier (in the slow parts only a few source frames away).
+    const other = compareFrames(['-i', png], at(f - 45), undefined, [32, 18]);
+    console.log(`      frame ${f}: preview vs export ${same.toFixed(2)} (45 frames earlier ${other.toFixed(2)})`);
+    assert(same < 8 && same < other * 0.7, `frame ${f}: preview and export differ (${same.toFixed(2)})`);
+  }
 });
 
 await h.close();

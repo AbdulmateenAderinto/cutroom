@@ -323,6 +323,13 @@ export function detachAudio(clipId: string) {
   toast(`Sound moved to “${track?.name}”. Drag its edges past the picture's for a J- or L-cut.`);
 }
 
+/** Stepped speed ramp on a main-track clip; the parts are selected afterwards. */
+export function rampSelected(clipId: string, from: number, to: number, steps = 8) {
+  const r = ops.speedRamp(store.get().project, clipId, from, to, steps);
+  if ('error' in r) return toast(r.error, 'warn');
+  commit(() => r.project, { selection: { kind: 'items', ids: r.ids } });
+}
+
 /** M: add a marker at the playhead (or select the one already there). */
 export function addMarkerAction() {
   const r = addMarker(store.get().project, playhead.get().time);

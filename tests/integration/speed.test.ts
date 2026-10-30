@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { runExport } from '../../src/main/export/exportRunner';
 import type { ExportSettings } from '../../src/shared/exportPlan';
 import { type ClipItem, type MediaRef, createProject, layoutSequence, sourceAt } from '../../src/shared/model';
-import { addClip, addMedia, setSpeed } from '../../src/shared/ops';
+import { addClip, addMedia, setSpeed, speedRamp } from '../../src/shared/ops';
 import { TICKS_PER_SECOND as S, frameToTicks, ticksToFrame } from '../../src/shared/time';
 import { OUTPUT_DIR, decodeCodedFrame, ensureDirs, ffprobe, makeCoded, makeSync, mediaRefFor, readAudio, rms, samplePatch, toneFrequency } from '../helpers/fixtures';
 
@@ -106,4 +106,34 @@ describe('speed: sound lines up with the picture', () => {
       });
     }
   }
+});
+
+describe('speed ramp in export', () => {
+  it('1× → 0.25× in 8 steps: every frame is the expected source frame of its part; pitch kept', async () => {
+    let p = addMedia({ ...createProject('ramp'), canvas: { width: 320, height: 240, preset: 'custom' } }, [A]);
+    p = addClip(p, A.id)!.project;
+    const r = speedRamp(p, p.sequence.items[0].id, 1, 0.25, 8);
+    if ('error' in r) throw new Error(r.error);
+    p = r.project;
+    const lay = layoutSequence(p);
+    const total = ticksToFrame(lay.duration, R30, 'round');
+    const s = settings('speed-ramp.mp4');
+    const e = await runExport(p, s);
+    expect(e.status, JSON.stringify(e).slice(0, 800)).toBe('done');
+    const got = samplePatch(s.outputPath, 160, 120).map((px) => decodeCodedFrame(px, 30).frame);
+    expect(got.length).toBe(total);
+    const bad: string[] = [];
+    for (let j = 0; j < total; j++) {
+      const t = frameToTicks(j, R30);
+      const l = lay.items.find((x) => t >= x.start && t < x.end)!;
+      const want = ticksToFrame(sourceAt(l.item as ClipItem, l.start, t), R30, 'floor');
+      if (got[j] !== want) bad.push(`${j}: got ${got[j]} want ${want}`);
+    }
+    expect(bad.slice(0, 5)).toEqual([]);
+    // The footage runs forward without skipping more than the speed allows, and slows down.
+    expect(got[total - 1]).toBeGreaterThanOrEqual(117);
+    const pcm = readAudio(s.outputPath);
+    expect(Math.abs(toneFrequency(pcm, 0.2, 0.5) - 440)).toBeLessThan(10);
+    expect(Math.abs(toneFrequency(pcm, total / 30 - 1.5, total / 30 - 0.5) - 440)).toBeLessThan(10);
+  });
 });

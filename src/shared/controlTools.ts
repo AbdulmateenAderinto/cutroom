@@ -268,6 +268,12 @@ export const CONTROL_TOOLS: ToolDef[] = [
     inputSchema: obj({ overlay_id: str('overlay id') }, ['overlay_id']),
   },
   {
+    name: 'speed_ramp',
+    runs: 'renderer',
+    description: 'Ramp a main-track clip\'s speed: its footage is split into `steps` equal parts (default 8) whose speeds go evenly from `from` to `to` (0.25–4). Stepped, not continuous. To ramp only part of a clip, split it first. Returns the new clip ids.',
+    inputSchema: obj({ clip_id: str('clip id'), from: num('speed of the first part'), to: num('speed of the last part'), steps: num('number of parts, 2–24 (default 8)') }, ['clip_id', 'from', 'to']),
+  },
+  {
     name: 'detach_audio',
     runs: 'renderer',
     description: 'Move a video clip\'s sound (main track or overlay) to an audio track at exactly the same time, and mute the clip. Then trim/move the audio clip with set_audio_clip for a J-cut (sound starts before the picture) or L-cut (sound continues after it). Clip must be at 1× speed.',

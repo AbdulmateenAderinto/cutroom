@@ -261,6 +261,19 @@ function ClipInspector({ clip, project, overlay }: { clip: ClipItem; project: Pr
             hint="0.25× (slow motion) to 4×. The clip keeps the same footage and gets shorter or longer on the timeline."
           />
           <p className="muted small">Sound keeps its pitch. Keyframes stay on the same moments of the footage.</p>
+          {!overlay && (
+            <>
+              <div className="field-label">Speed ramp</div>
+              <div className="row gap wrap" role="group" aria-label="Speed ramps">
+                {RAMPS.map((rp) => (
+                  <button key={rp.label} className="btn tiny" title={`${rp.from}× → ${rp.to}× in 8 steps`} onClick={() => A.rampSelected(id, rp.from, rp.to)}>
+                    {rp.label}
+                  </button>
+                ))}
+              </div>
+              <p className="muted small">Splits the clip into 8 parts whose speeds step from one value to the other (a stepped ramp). Split first to ramp only part of a clip.</p>
+            </>
+          )}
         </Section>
       )}
 
@@ -482,6 +495,13 @@ function ProjectSettings({ project }: { project: Project }) {
     </>
   );
 }
+
+const RAMPS = [
+  { label: 'Ease into slow motion', from: 1, to: 0.25 },
+  { label: 'Ease out of slow motion', from: 0.25, to: 1 },
+  { label: 'Speed up', from: 1, to: 4 },
+  { label: 'Slow down', from: 4, to: 1 },
+];
 
 /** Several main-track items selected: what applies to all of them. */
 function MultiInspector({ ids, project }: { ids: string[]; project: Project }) {

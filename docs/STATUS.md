@@ -57,7 +57,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 49 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 50 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -120,6 +120,8 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Multi-select on the main track: ⌘/Ctrl-click, Shift-click (range), ⌘A; delete (close/leave gaps), copy/cut/paste, mute all, reset colour | ✅ | Dragging several clips at once is not supported yet; overlays/titles/audio are selected one at a time |
 | Detach audio: the clip's sound goes on an audio track at exactly the same time (clip muted), for J- and L-cuts | ✅ | Beeps within 2 ms of where they were before detaching; only at 1× speed |
 | AI tool `detach_audio` | ✅ | |
+| Speed ramps: ease into / out of slow motion, speed up, slow down (any from → to with `speed_ramp`) | ✅ | **Stepped**: the clip becomes 8 parts at evenly stepped speeds, not a continuous curve. Every exported frame checked; preview vs export compared |
+| Splitting keeps a clip's in-animation on the first part and its out-animation and transition on the last | ✅ | Before, both halves kept them (a crossfade appeared between the halves) |
 
 ## Overlay tracks (picture-in-picture)
 
@@ -253,7 +255,9 @@ searchable list) and that typing in a text field doesn't trigger them.
 **Editing tools UI run (thirteenth script):** markers with M and the button, rename/recolour in the
 inspector, dragging on the ruler, ↑/↓ stopping at them, chapters in an export, delete and undo;
 ⌘-click / Shift-click / ⌘A selection with copy/paste and delete of both clips plus undo; detach audio
-and an L-cut (picture trimmed with W while its sound keeps running).
+and an L-cut (picture trimmed with W while its sound keeps running); a speed ramp (8 parts, the
+video element's rate changes during playback, preview vs export at three moments: 2.0–4.4/255 vs
+11.7–53 for a frame 45 earlier).
 
 **Overlays UI run (twelfth script, 7 steps):** **⧉ PiP** adds the clip at the playhead on a V2 row
 and selects it; dragging and resizing it in the preview and the “Top left” preset (the main clip's

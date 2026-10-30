@@ -209,16 +209,34 @@ export function splitAt(project: Project, t: Ticks): { project: Project; leftId:
   if (offset < pf || hit.end - t < pf) return null;
   const sp = clipSpeed(clip);
   const cut = sourceAt(clip, hit.start, t);
-  const left: ClipItem = { ...clip, sourceOut: cut };
+  const left: ClipItem = withEdges({ ...clip, sourceOut: cut }, true, false);
   // The right half starts on the source frame that is visible at the split point.
   const rightIn = snapToFrame(cut, media.info.frameRate, 'floor');
-  const right: ClipItem = {
+  const right: ClipItem = withEdges({
     ...clip,
     id: newId('clip'),
     ...legalRange(project, media, rightIn, rightIn + Math.round((hit.end - t) * sp), 'in', sp),
-  };
+  }, false, true);
   items.splice(hit.index, 1, left, right);
   return { project: { ...project, sequence: { items } }, leftId: left.id, rightId: right.id };
+}
+
+/**
+ * A part of a split clip keeps what belongs to its edges: the in-animation stays on the first
+ * part; the out-animation and the transition to the next clip on the last. Keyframes follow the
+ * footage, so they stay on both.
+ */
+function withEdges(c: ClipItem, first: boolean, last: boolean): ClipItem {
+  const out: ClipItem = { ...c };
+  if (!last) delete out.transition;
+  if (c.animation) {
+    const a: ClipAnimation = { ...c.animation };
+    if (!first) delete a.in;
+    if (!last) delete a.out;
+    if (Object.keys(a).length) out.animation = a;
+    else delete out.animation;
+  }
+  return out;
 }
 
 export function updateClip(project: Project, clipId: string, fn: (c: ClipItem) => ClipItem): Project {
@@ -382,18 +400,9 @@ export function removeSourceRanges(
   if (cursor < clip.sourceOut) keep.push({ start: cursor, end: clip.sourceOut });
   const parts = keep.filter((k) => k.end - k.start >= minKeep);
   if (parts.length === 1 && parts[0].start === clip.sourceIn && parts[0].end === clip.sourceOut) return { project, parts: 1, removed: 0 };
-  const anim = clip.animation;
-  const newClips: ClipItem[] = parts.map((k, i) => {
-    const c: ClipItem = { ...clip, id: i === 0 ? clip.id : newId('clip'), ...legalRange(project, media, k.start, k.end, 'in', clipSpeed(clip)) };
-    if (anim) {
-      // In-animation stays on the first part, out-animation on the last; keyframes follow the footage.
-      const a: ClipAnimation = { ...anim, in: i === 0 ? anim.in : undefined, out: i === parts.length - 1 ? anim.out : undefined };
-      if (!a.in) delete a.in;
-      if (!a.out) delete a.out;
-      c.animation = a;
-    }
-    return c;
-  });
+  const newClips: ClipItem[] = parts.map((k, i) =>
+    withEdges({ ...clip, id: i === 0 ? clip.id : newId('clip'), ...legalRange(project, media, k.start, k.end, 'in', clipSpeed(clip)) }, i === 0, i === parts.length - 1),
+  );
   const items = project.sequence.items.flatMap((it) => (it.id === clipId ? newClips : [it]));
   const kept = newClips.reduce((s, c) => s + itemDuration(c), 0);
   return { project: withItems(project, items), parts: newClips.length, removed: itemDuration(clip) - kept }; // timeline time
@@ -472,4 +481,30 @@ export function relinkMedia(project: Project, mediaId: string, path: string, inf
 
 export function basename(p: string): string {
   return p.split(/[\\/]/).pop() ?? p;
+}
+
+/**
+ * Speed ramp, made of steps: the clip's footage is split into `steps` equal parts whose speeds go
+ * evenly from `from` (first part) to `to` (last part). Each part is an ordinary clip, so preview,
+ * export, sound (pitch kept) and every other tool treat it like any speed change. The change is
+ * stepped, not continuous: with 8 steps over a second each speed lasts a few frames.
+ */
+export function speedRamp(project: Project, clipId: string, from: number, to: number, steps = 8): { project: Project; ids: string[] } | { error: string } {
+  const clip = getItem(project, clipId);
+  if (!clip || clip.kind !== 'clip') return { error: 'Select a clip on the main track.' };
+  const media = findMedia(project, clip.mediaId);
+  if (!media || media.info.kind === 'image') return { error: 'Photos have no speed.' };
+  const n = Math.max(2, Math.min(24, Math.round(steps)));
+  const fd = frameDuration(media.info.frameRate);
+  const len = clip.sourceOut - clip.sourceIn;
+  if (len < n * 2 * fd) return { error: `The clip is too short for ${n} steps (needs at least ${n * 2} frames of footage).` };
+  const times = Array.from({ length: n - 1 }, (_, k) => snapToFrame(clip.sourceIn + (len * (k + 1)) / n, media.info.frameRate, 'round'));
+  const index = project.sequence.items.findIndex((i) => i.id === clipId);
+  const split = splitAtSourceTimes(project, clipId, times);
+  let p = split.project;
+  const ids = p.sequence.items.slice(index, index + split.parts).map((i) => i.id);
+  ids.forEach((id, i) => {
+    p = setSpeed(p, id, legalSpeed(from + ((to - from) * i) / (ids.length - 1)));
+  });
+  return { project: p, ids };
 }

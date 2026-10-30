@@ -330,6 +330,14 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         edit('removed an overlay', (q) => deleteOverlay(q, args.overlay_id), { selection: null });
         return ok('removed');
       }
+      case 'speed_ramp': {
+        if (![args.from, args.to].every(Number.isFinite)) throw new ToolError('from and to must be numbers between 0.25 and 4.');
+        const r = ops.speedRamp(p, args.clip_id, Number(args.from), Number(args.to), args.steps ?? 8);
+        if ('error' in r) throw new ToolError(r.error);
+        edit(`ramped speed ${args.from}× → ${args.to}×`, () => r.project, { selection: { kind: 'items', ids: r.ids } });
+        const tl = projectSummary(store.get().project).timeline;
+        return ok({ parts: r.ids.map((id) => tl.find((x) => x.id === id)).map((x) => ({ id: x!.id, speed: (x as { speed?: number }).speed ?? 1, start_s: x!.start_s, end_s: x!.end_s })) });
+      }
       case 'detach_audio': {
         clipOrThrow(p, args.clip_id);
         const r = detachAudio(p, args.clip_id);

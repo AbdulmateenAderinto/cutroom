@@ -81,12 +81,12 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Music | Audio tracks, waveforms, fades, volume to 200%, auto-ducking under speech |
 | Photos | JPEG/PNG/WebP clips, EXIF rotation, transparency, Ken Burns |
 | Titles | Text rows, 5 styles, fonts, looks, drag to place, fade/rise/pop/typewriter (key **T**) |
-| Speed | 0.25×–4× per clip, pitch kept |
+| Speed | 0.25×–4× per clip, pitch kept; stepped speed ramps (ease into/out of slow motion) |
 | Transitions | Crossfade, dip to black/white |
 | Colour | Exposure, contrast, saturation, temperature |
 | Smart tools | Remove pauses, split at scenes, transcribe (whisper.cpp), remove filler words, captions |
 | Export | H.264, HEVC (Apple `hvc1`) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
-| AI | 49 MCP tools so Claude can edit, look at frames and export |
+| AI | 50 MCP tools so Claude can edit, look at frames and export |
 
 Projects save as `.cutroom` files (format version 7; older ones open fine).
 

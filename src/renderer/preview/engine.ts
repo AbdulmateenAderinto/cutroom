@@ -736,8 +736,13 @@ class PreviewEngine {
     const seamless = this.continuesInSameElement(l, next);
     this.current = next;
     playhead.set({ time: next.start });
-    if (seamless && next.item.kind === 'clip') this.applyStyle(this.active, next, next.start);
-    else this.beginItem(next.start);
+    if (seamless && next.item.kind === 'clip') {
+      // Same file, next part (a split, or a step of a speed ramp): keep playing, at its speed.
+      const el = this.els[this.active];
+      const rate = clipSpeed(next.item) * this.shuttle;
+      if (el && el.playbackRate !== rate) el.playbackRate = rate;
+      this.applyStyle(this.active, next, next.start);
+    } else this.beginItem(next.start);
     this.raf = requestAnimationFrame(this.tick);
   }
 }
