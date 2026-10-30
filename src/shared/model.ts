@@ -15,7 +15,7 @@ import type { Rational, Ticks } from './time';
 
 export const PROJECT_FORMAT = 'cutroom-project';
 /** v2: clip animations. v3: transcripts and captions. v4: audio tracks and audio-only media. */
-export const PROJECT_VERSION = 4;
+export const PROJECT_VERSION = 5;
 export const PROJECT_EXTENSION = 'cutroom';
 
 export type MediaKind = 'video' | 'audio' | 'image';
@@ -136,6 +136,41 @@ export type TrackItem = ClipItem | GapItem;
 
 export type CanvasPreset = 'match' | '16:9' | '9:16' | '1:1' | '4:5' | 'custom';
 
+export type TitleFont = 'sans' | 'serif' | 'rounded' | 'mono' | 'condensed';
+export type TitleLook = 'plain' | 'shadow' | 'outline' | 'box';
+export type TitleAnim = 'none' | 'fade' | 'rise' | 'pop' | 'typewriter';
+
+export interface TitleStyle {
+  font: TitleFont;
+  weight: number; // 400 | 600 | 700 | 900
+  italic: boolean;
+  size: number; // text height as % of the canvas height
+  color: string; // #rrggbb
+  align: 'left' | 'center' | 'right';
+  /** Anchor, as fractions of the canvas: x is the left/centre/right edge of the text (per align), y its vertical centre. */
+  x: number;
+  y: number;
+  look: TitleLook;
+  boxColor: string; // #rrggbb, for look 'box'
+  boxOpacity: number; // 0..1
+  uppercase: boolean;
+  /** Lines wrap at this fraction of the canvas width. */
+  maxWidth: number;
+}
+
+/** Text over the picture, placed freely in time on a text row (rows never have overlapping titles). */
+export interface TitleClip {
+  id: string;
+  row: number; // 0 = lowest row; higher rows draw on top
+  start: Ticks;
+  duration: Ticks;
+  text: string; // may contain line breaks
+  style: TitleStyle;
+  animIn: TitleAnim;
+  animOut: TitleAnim;
+  animLength: Ticks; // length of each of the in/out animations
+}
+
 export interface Project {
   format: typeof PROJECT_FORMAT;
   version: number;
@@ -152,6 +187,8 @@ export interface Project {
   captions?: CaptionSettings;
   /** Music / voice-over tracks, mixed under the video track's audio. */
   audioTracks?: AudioTrack[];
+  /** Titles and text overlays, drawn above the picture (and below captions). */
+  titles?: TitleClip[];
 }
 
 export const DEFAULT_FRAMING: Framing = { mode: 'fit', scale: 1, x: 0, y: 0 };

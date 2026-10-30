@@ -44,7 +44,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 36 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 39 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -61,14 +61,27 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | EXIF rotation, transparent PNG/WebP over the background colour | ✅ | Pixel-checked in export; preview vs export compared |
 | Fit/Fill/Manual framing and all animations (Ken Burns etc.) on photos | ✅ | Pan measured per exported frame |
 
+## Titles and text
+
+| Feature | Status | Notes |
+|---|---|---|
+| Add a title at the playhead (**+ Text** or T); several text rows, freely placed | ✅ | Rows never overlap; higher rows draw on top |
+| Styles: Title, Subtitle, Lower third, Quote, Label | ✅ | |
+| Font (sans, serif, rounded, condensed, mono), size, weight, italic, colour, ALL CAPS | ✅ | System fonts; see limitations |
+| Looks: plain, shadow, outline, box (colour + opacity) | ✅ | |
+| Multi-line text, wrapping width, left/centre/right alignment | ✅ | |
+| Drag the text in the preview (centre snapping), or type X/Y | ✅ | |
+| In/out animations: fade, rise, pop, typewriter | ✅ | Preview vs export matched frame by frame mid-animation |
+| Move, trim, split, duplicate, delete, undo; save/reopen | ✅ | |
+| AI tools: `add_title`, `set_title`, `remove_title` | ✅ | |
+
 ## Planned, in this order
 
-1. 🔜 Text and titles
-2. 🔜 Export presets, constant quality (CRF), export a marked range, hardware encoding (VideoToolbox)
-3. 🔜 Constant-speed changes
-4. 🔜 Transitions (crossfade, dip to colour)
-5. 🔜 Exposure, contrast, saturation, temperature
-6. 🔜 `.app`/`.dmg` packaging
+1. 🔜 Export presets, constant quality (CRF), export a marked range, hardware encoding (VideoToolbox)
+2. 🔜 Constant-speed changes
+3. 🔜 Transitions (crossfade, dip to colour)
+4. 🔜 Exposure, contrast, saturation, temperature
+5. 🔜 `.app`/`.dmg` packaging
 
 Not planned yet: generative tools, background removal, motion tracking, optical flow,
 plugins, complex compositing, proxies.
@@ -131,6 +144,11 @@ gain and ducked under speech, export levels measured.
 preview vs export compared for the photo, the zoom and the PNG (mean difference 1.8–7.1/255 vs
 19–125 for a different moment).
 
+**Titles UI run (fifth script, 7 steps):** add a title with the button and another with T (second
+row), multi-line text, the Lower third style, dragging in the preview plus undo, preview vs export
+inside each title's area at a settled frame, mid-“rise” and mid-“pop” (the matching export frame is
+clearly closer than frames 2 away), and save/reopen.
+
 **MCP run (`npm run test:mcp`, 12 steps):** security checks (no token, wrong token, browser origin
 all refused), tool listing, import, contact sheet and frames, `build_timeline`, editing plus undo/redo,
 readable errors for bad input, timeline frame capture, export with polling, analysis tools, speech
@@ -182,6 +200,10 @@ progress/result screens, missing-media state and the gap rendering.
   frame each output frame; extreme zooms (> 8192 px) are clamped.
 - **Scene detection** uses brightness changes: cuts between shots of similar brightness and colour
   can be missed. Lower the sensitivity to find more.
+- **Titles:** fonts are the ones installed on the computer (a fallback is used if one is missing), so a
+  project can look different on another Mac. Text is drawn at the output resolution, so export is sharp;
+  the preview draws at the on-screen size. No per-word styling, rotation or keyframed motion for titles yet.
+  Right-to-left and complex scripts are untested.
 - **Captions:** one caption track for the whole project; per-word timing comes from whisper.cpp and can be
   off by ~0.1–0.3 s; editing a line's text spreads the new words evenly across its time span.
   Right-to-left and complex scripts are untested.

@@ -260,6 +260,9 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .review-cut { position: absolute; top: 0; bottom: 0; width: 2px; background: #ffd23f; pointer-events: none; z-index: 1; }
 
 .caption-layer { position: absolute; left: 0; top: 0; pointer-events: none; }
+.title-hit { position: absolute; cursor: move; border: 1px dashed transparent; border-radius: 3px; }
+.title-hit:hover { border-color: rgba(255, 255, 255, 0.5); }
+.title-hit.selected { border: 1px dashed var(--accent); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4); }
 
 /* Speech & captions */
 .speech-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
@@ -290,6 +293,13 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .aclip-label { position: absolute; left: 8px; bottom: 2px; font-size: 10.5px; color: #e8fff6; text-shadow: 0 1px 2px #000; pointer-events: none; white-space: nowrap; }
 .fade-handle { position: absolute; top: 0; width: 10px; height: 10px; background: #fff; border: 1px solid #000; cursor: ew-resize; z-index: 3; opacity: 0; }
 .aclip:hover .fade-handle, .aclip.selected .fade-handle { opacity: 0.9; }
+.tl-text { margin-top: 10px; }
+.tl-text-row { position: relative; height: 30px; border-bottom: 1px solid var(--line); }
+.tclip { position: absolute; top: 3px; height: 24px; border-radius: 5px; background: #5b3f8c; border: 1px solid rgba(255, 255, 255, 0.15); overflow: hidden; cursor: grab; }
+.tclip.selected { border: 2px solid var(--accent); }
+.tclip-label { position: absolute; left: 8px; top: 3px; font-size: 11px; color: #f3ecff; white-space: nowrap; pointer-events: none; }
+.tclip:hover .trim-handle, .tclip.selected .trim-handle { background: rgba(242, 160, 61, 0.55); }
 .tl-past-end { position: absolute; top: 0; bottom: 0; right: 0; background: repeating-linear-gradient(45deg, rgba(0,0,0,0.35), rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.15) 6px, rgba(0,0,0,0.15) 12px); pointer-events: none; z-index: 2; }
 .tl-audio-add { display: flex; gap: 10px; align-items: center; padding: 8px 4px; border-top: 1px dashed var(--line); position: sticky; left: 0; }
 .audio-thumb { font-size: 26px; color: #8fe3c4; background: linear-gradient(135deg, #1f3a32, #12201c); }
+.title-text { width: 100%; resize: vertical; font-family: inherit; min-height: 54px; }

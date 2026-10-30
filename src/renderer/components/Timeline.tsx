@@ -18,6 +18,7 @@ import * as A from '../state/actions';
 import { playhead, usePlayhead } from '../state/playhead';
 import { beginGesture, commit, endGesture, store, updateGesture, useStore } from '../state/store';
 import { AudioTracks } from './AudioTracks';
+import { TextRows } from './TextRows';
 import { MEDIA_DRAG_TYPE } from './MediaBin';
 import { audioClipEnd } from '../../shared/audio';
 
@@ -89,6 +90,9 @@ export function Timeline() {
 
   const audioEdges = (exclude?: string) =>
     (project.audioTracks ?? []).flatMap((tr) => tr.clips.filter((c) => c.id !== exclude).flatMap((c) => [c.start, audioClipEnd(c)]));
+  const titleEdges = (exclude?: string) => (project.titles ?? []).filter((t) => t.id !== exclude).flatMap((t) => [t.start, t.start + t.duration]);
+  const freeSnap = (t: Ticks, alt: boolean, exclude?: string) =>
+    snapTime(t, [...cutPoints(), playhead.get().time, ...audioEdges(exclude), ...titleEdges(exclude)], alt);
 
   const insertionIndex = (t: Ticks) => lay.items.filter((l) => (l.start + l.end) / 2 < t).length;
 
@@ -216,7 +220,7 @@ export function Timeline() {
   const markerIndex = drag ? drag.index : dropIndex;
   const markerX = markerIndex === null ? null : tToX(markerIndex < lay.items.length ? lay.items[markerIndex].start : lay.duration);
   const selectedId = selection?.kind === 'item' ? selection.id : null;
-  const hasSelection = !!selectedId || selection?.kind === 'audio';
+  const hasSelection = !!selectedId || selection?.kind === 'audio' || selection?.kind === 'title';
   const previewIdx = trimPreview ? lay.items.findIndex((l) => l.item.id === trimPreview.id) : -1;
 
   return (
@@ -226,6 +230,8 @@ export function Timeline() {
         <button className="btn small" onClick={A.duplicateSelected} disabled={!hasSelection} title="Duplicate the selected clip (⌘D)">Duplicate</button>
         <button className="btn small" onClick={() => A.deleteSelected('close-gap')} disabled={!hasSelection} title="Delete and close the gap (Delete)">Delete</button>
         <button className="btn small" onClick={() => A.deleteSelected('leave-gap')} disabled={!hasSelection} title="Delete but keep the space as a gap (Shift+Delete)">Delete, leave gap</button>
+        <span className="sep" />
+        <button className="btn small" onClick={() => A.addTitleAction()} title="Add a title at the playhead (T)">+ Text</button>
         <span className="sep" />
         <label className="check" title="Snap edges and the playhead to cut points (N). Hold Alt while dragging to bypass.">
           <input type="checkbox" checked={snapping} onChange={(e) => store.set({ snapping: e.target.checked })} />
@@ -251,6 +257,7 @@ export function Timeline() {
       <div className="tl-scroll" ref={scrollRef}>
         <div className="tl-content" style={{ width: contentWidth }}>
           <Ruler pps={pps} scrollLeft={scroll.left} width={scroll.width} rate={rate} onPointerDown={onRulerDown} />
+          <TextRows pps={pps} tToX={tToX} xToT={xToT} contentX={contentX} duration={lay.duration} snap={freeSnap} />
           <div className="tl-track" onDragOver={onDragOver} onDragLeave={() => setDropIndex(null)} onDrop={onDrop}>
             {lay.items.length === 0 && (
               <div className="tl-empty">Drag media here, or use “+ Add to timeline” in the Media panel.</div>
@@ -285,7 +292,7 @@ export function Timeline() {
             xToT={xToT}
             contentX={contentX}
             duration={lay.duration}
-            snap={(t, alt, exclude) => snapTime(t, [...cutPoints(), playhead.get().time, ...audioEdges(exclude)], alt)}
+            snap={freeSnap}
           />
           <Playhead pps={pps} scrollRef={scrollRef} />
         </div>

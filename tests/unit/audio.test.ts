@@ -3,7 +3,7 @@ import {
   DUCK_ATTACK, DUCK_RELEASE, addAudioClip, addAudioTrack, audioClipEnd, clipGainAt, duckGainAt, findAudioClip, moveAudioClip,
   setAudioClip, setSpeech, soundFromSilence, speechIntervals, splitAudioClip, trimAudioClip,
 } from '../../src/shared/audio';
-import { type MediaRef, type Project, createProject } from '../../src/shared/model';
+import { type MediaRef, PROJECT_VERSION, type Project, createProject } from '../../src/shared/model';
 import { addClip, addMedia, createClip, trimEdge } from '../../src/shared/ops';
 import { parseProject, serializeProject } from '../../src/shared/serialize';
 import { TICKS_PER_SECOND as S } from '../../src/shared/time';
@@ -110,6 +110,6 @@ describe('ducking', () => {
     const a = addAudioClip(proj(), 'song', S)!;
     const back = parseProject(serializeProject(a.project));
     expect(back.audioTracks).toEqual(a.project.audioTracks);
-    expect(back.version).toBe(4);
+    expect(back.version).toBe(PROJECT_VERSION);
   });
 });

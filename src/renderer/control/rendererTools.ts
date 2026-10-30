@@ -11,6 +11,7 @@ import {
   type Framing,
   type MediaRef,
   type Project,
+  type TitleClip,
   type Transcript,
   evenDim,
   findMedia,
@@ -22,9 +23,10 @@ import {
   addAudioClip, deleteAudioClip, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip, setAudioClip, setAudioTrack, setSpeech, trimAudioClip,
 } from '../../shared/audio';
 import { buildCues, fillerRanges } from '../../shared/captions';
+import { addTitle, deleteTitle, findTitle, moveTitle, updateTitle } from '../../shared/titles';
 import * as ops from '../../shared/ops';
 import { COMMON_FRAME_RATES, type Rational, frameDuration, rateLabel, secondsToTicks, ticksToSeconds } from '../../shared/time';
-import { renderCaptionTrack } from '../captions/draw';
+import { renderOverlayTrack } from '../captions/draw';
 import { engine } from '../preview/engine';
 import * as A from '../state/actions';
 import { playhead } from '../state/playhead';
@@ -116,6 +118,11 @@ export function projectSummary(p: Project) {
       offline: !!s.missing[m.id],
       warnings: m.warnings,
     })),
+    titles: (p.titles ?? []).map((t) => ({
+      id: t.id, text: t.text, row: t.row, start_s: sec(t.start), end_s: sec(t.start + t.duration),
+      font: t.style.font, size: t.style.size, weight: t.style.weight, color: t.style.color, look: t.style.look,
+      align: t.style.align, x: t.style.x, y: t.style.y, anim_in: t.animIn, anim_out: t.animOut,
+    })),
     audio_tracks: (p.audioTracks ?? []).map((t) => ({
       id: t.id, name: t.name, volume: t.volume, muted: t.muted, duck: t.duck ? { db: t.duckDb } : false,
       clips: t.clips.map((c) => ({
@@ -191,8 +198,8 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         const r = document.querySelector('.stage')!.getBoundingClientRect();
         return ok({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) });
       }
-      case '__render_captions': {
-        const track = await renderCaptionTrack(args.project as Project, args.width, args.height);
+      case '__render_overlays': {
+        const track = await renderOverlayTrack(args.project as Project, args.width, args.height, args.rate);
         return ok(track ? JSON.stringify(track) : 'null');
       }
       case '__end_capture':
@@ -236,6 +243,30 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         return ok(JSON.stringify(mediaNeedingSpeechAnalysis(p).map((id) => ({ id, path: findMedia(p, id)!.path, duration_s: sec(findMedia(p, id)!.info.duration) }))));
 
       // ---- audio tracks ----
+      case 'add_title': {
+        if (typeof args.text !== 'string') throw new ToolError('text is required.');
+        const r = addTitle(p, T(args.start ?? ticksToSeconds(playhead.get().time)), {
+          preset: args.preset, text: args.text, duration: args.duration !== undefined ? T(args.duration) : undefined, row: args.row,
+        });
+        const next = updateTitle(r.project, r.id, (t) => applyTitleArgs(t, { ...args, start: undefined, duration: undefined, row: undefined }));
+        edit(`added the title “${args.text.slice(0, 40)}”`, () => next, { selection: { kind: 'title', id: r.id } });
+        const t = findTitle(store.get().project, r.id)!;
+        return ok({ title_id: r.id, row: t.row, start_s: sec(t.start), end_s: sec(t.start + t.duration), project_end_s: sec(layoutSequence(store.get().project).duration) });
+      }
+      case 'set_title': {
+        const old = findTitle(p, args.title_id);
+        if (!old) throw new ToolError(`No title with id ${args.title_id}.`);
+        let next = updateTitle(p, old.id, (t) => applyTitleArgs(t, { ...args, start: undefined, row: undefined }));
+        if (args.start !== undefined || args.row !== undefined) next = moveTitle(next, old.id, args.start !== undefined ? T(args.start) : old.start, args.row);
+        edit('changed a title', () => next, { selection: { kind: 'title', id: old.id } });
+        const t = findTitle(store.get().project, old.id)!;
+        return ok({ title_id: t.id, row: t.row, start_s: sec(t.start), end_s: sec(t.start + t.duration) });
+      }
+      case 'remove_title': {
+        if (!findTitle(p, args.title_id)) throw new ToolError(`No title with id ${args.title_id}.`);
+        edit('removed a title', (q) => deleteTitle(q, args.title_id), { selection: null });
+        return ok('removed');
+      }
       case 'add_audio': {
         const m = mediaOrThrow(p, args.media_id);
         if (!m.info.hasAudio) throw new ToolError(`${m.name} has no audio.`);
@@ -494,5 +525,36 @@ export function installControlBridge() {
   return () => {
     off1();
     off2();
+  };
+}
+
+/** Apply the add_title / set_title arguments (only the ones given) to a title. */
+function applyTitleArgs(t: TitleClip, a: Record<string, any>): TitleClip {
+  const st = { ...t.style };
+  const color = (v: unknown, name: string) => {
+    if (typeof v !== 'string' || !isHexColor(v)) throw new ToolError(`${name} must be a colour like #ffcc00.`);
+    return v;
+  };
+  if (a.font !== undefined) st.font = a.font;
+  if (a.size !== undefined) st.size = a.size;
+  if (a.weight !== undefined) st.weight = a.weight;
+  if (a.italic !== undefined) st.italic = !!a.italic;
+  if (a.color !== undefined) st.color = color(a.color, 'color');
+  if (a.look !== undefined) st.look = a.look;
+  if (a.box_color !== undefined) st.boxColor = color(a.box_color, 'box_color');
+  if (a.box_opacity !== undefined) st.boxOpacity = a.box_opacity;
+  if (a.uppercase !== undefined) st.uppercase = !!a.uppercase;
+  if (a.align !== undefined) st.align = a.align;
+  if (a.x !== undefined) st.x = a.x;
+  if (a.y !== undefined) st.y = a.y;
+  if (a.max_width !== undefined) st.maxWidth = a.max_width;
+  return {
+    ...t,
+    style: st,
+    text: typeof a.text === 'string' ? a.text : t.text,
+    duration: a.duration !== undefined ? T(a.duration) : t.duration,
+    animIn: a.anim_in ?? t.animIn,
+    animOut: a.anim_out ?? t.animOut,
+    animLength: a.anim_length !== undefined ? T(a.anim_length) : t.animLength,
   };
 }

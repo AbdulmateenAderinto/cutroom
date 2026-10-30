@@ -139,10 +139,10 @@ export function setupAiControl(getWin: () => BrowserWindow | null) {
 
   if (readSettings().aiControl || process.env.CUTROOM_AI_CONTROL === '1') void start();
   app.on('will-quit', () => void server?.stop());
-  /** Caption images for an export, drawn by the window at the canvas-in-output size. */
+  /** Caption and title images for an export, drawn by the window at the canvas-in-output size. */
   const renderCaptions = async (project: Project, settings: ExportSettings): Promise<CaptionTrack | null> => {
     const { bw, bh } = canvasInOutput(project, settings);
-    const r = await callRenderer('__render_captions', { project, width: bw, height: bh });
+    const r = await callRenderer('__render_overlays', { project, width: bw, height: bh, rate: settings.frameRate });
     if (r.isError) throw new Error((r.content[0] as { text: string }).text);
     const text = (r.content[0] as { text: string }).text;
     return text === 'null' ? null : (JSON.parse(text) as CaptionTrack);

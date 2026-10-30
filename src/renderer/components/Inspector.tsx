@@ -18,6 +18,7 @@ import { beginGesture, commit, endGesture, gestureActive, store, updateGesture, 
 import { findAudioClip } from '../../shared/audio';
 import { AnimationSection } from './AnimationSection';
 import { AudioClipInspector, TrackSettings } from './AudioInspector';
+import { TitleInspector } from './TitleInspector';
 import { CaptionsSection } from './CaptionsSection';
 import { SmartTools } from './SmartTools';
 import { CanvasControl } from './TopBar';
@@ -359,9 +360,10 @@ export function Inspector() {
   const media = selection?.kind === 'media' ? findMedia(project, selection.id) : undefined;
   const audioClip = selection?.kind === 'audio' ? findAudioClip(project, selection.id) : null;
   const audioTrack = selection?.kind === 'audioTrack' ? project.audioTracks?.find((t) => t.id === selection.id) : undefined;
+  const titleClip = selection?.kind === 'title' ? project.titles?.find((t) => t.id === selection.id) : undefined;
   const title = item?.kind === 'clip' ? 'Clip properties' : item?.kind === 'gap' ? 'Gap' : media ? 'Media'
-    : audioClip ? 'Audio clip' : audioTrack ? 'Audio track' : 'Project settings';
-  const anything = item || media || audioClip || audioTrack;
+    : audioClip ? 'Audio clip' : audioTrack ? 'Audio track' : titleClip ? 'Title' : 'Project settings';
+  const anything = item || media || audioClip || audioTrack || titleClip;
   return (
     <aside className="panel inspector">
       <header className="panel-head">
@@ -378,6 +380,7 @@ export function Inspector() {
         {media && <MediaInspector m={media} />}
         {audioClip && <AudioClipInspector clipId={audioClip.clip.id} project={project} />}
         {audioTrack && <TrackSettings track={audioTrack} />}
+        {titleClip && <TitleInspector id={titleClip.id} project={project} />}
         {!anything && <ProjectSettings project={project} />}
       </div>
     </aside>

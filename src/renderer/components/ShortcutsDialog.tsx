@@ -11,6 +11,7 @@ export function ShortcutsDialog() {
     ['Shift+Delete', 'Delete selected clip, leave a gap'],
     [m + 'D', 'Duplicate selected clip'],
     [m + 'Z / ' + m + '⇧Z', 'Undo / redo'],
+    ['T', 'Add a title at the playhead'],
     ['N', 'Toggle snapping (hold Alt while dragging to bypass)'],
     ['+ / −', 'Zoom timeline (or ' + m + ' + scroll wheel)'],
     [m + 'I', 'Import media'],

@@ -12,6 +12,8 @@ Status: the core workflow (import → edit → save → export) works and is tes
   remove filler words, and burned-in captions that follow every edit.
 - **Music and photos:** audio tracks with waveforms, fades, volume up to 200% and automatic
   ducking under speech; photos (JPEG/PNG/WebP, transparency, EXIF rotation) as clips with Ken Burns moves.
+- **Titles:** text rows with styles (title, lower third, quote…), fonts, box/outline/shadow looks,
+  drag-to-position in the preview, and fade/rise/pop/typewriter animations.
 - **AI control (MCP):** let Claude Desktop or Claude Code edit with you. See [docs/AI.md](docs/AI.md).
 
 See [docs/STATUS.md](docs/STATUS.md) for what works, what's planned and the known limitations.
@@ -67,6 +69,9 @@ fade. Click the track name for track volume, mute and **Lower under speech** (du
 **Photos:** import JPEG/PNG/WebP files and add them like videos. Each becomes a 4-second clip; drag its
 end to change that. Try **Motion → Slow zoom in** in its Animation section.
 
+**Titles:** click **+ Text** above the timeline (or press T). Type in the **Text** box, pick a style,
+and drag the text in the preview to place it. Drag its block on the timeline to change when it shows.
+
 More, with a clip selected: the **Animation** section (presets and keyframes) and **Smart tools**
 (pauses, scenes, transcription, filler words, captions). Caption style is in **Project settings**
 (deselect with Esc).
@@ -88,7 +93,7 @@ npm run test:e2e
 ```
 
 This launches the real app and clicks through the editing workflow, the Smart tools / captions
-workflow, music tracks and photos (native file dialogs are stubbed). Screenshots go to `tests/.output/`. On a Linux machine
+workflow, music tracks, photos and titles (native file dialogs are stubbed). Screenshots go to `tests/.output/`. On a Linux machine
 without a display, use `xvfb-run -a npm run test:e2e`.
 
 ```bash

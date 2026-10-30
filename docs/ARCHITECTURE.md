@@ -124,7 +124,15 @@ The exporter samples it at every output frame and sends the values to FFmpeg as 
 Two FFmpeg details matter: commands fire a quarter frame early so they land on the right frame, and the
 pixel-format conversion must come *before* the resizing `scale` (a `format` filter after it stops size changes).
 
-## Captions (src/shared/captions.ts, src/renderer/captions/)
+## Captions and titles (src/shared/captions.ts, src/shared/titles.ts, src/renderer/captions/)
+
+Titles live on text rows with an explicit timeline start, like audio clips. `titleStateAt()` gives a
+title's opacity / offset / scale / revealed characters at any time. `drawOverlay()` draws every title
+(by row) and then the caption with Canvas 2D. The preview calls it for the playhead time. For export,
+the window renders each distinct overlay state into a PNG (`renderOverlayTrack`): states change at
+caption and title boundaries, and on every output frame while a title animates. The PNGs go through
+the same image track as captions (below), so titles and captions are one overlay in FFmpeg.
+
 
 Transcripts are stored per media file as words with **source** times. `buildCues(project)` maps
 them through the timeline (trims, splits, reordering, removed pauses) and groups them into lines,
@@ -153,6 +161,6 @@ lists them; the server validates arguments. Editing tools execute in the window 
 
 ## Where to add the planned features
 
-- **Text / overlays, colour adjustments:** a second visual layer in the preview, and an extra
+- **Colour adjustments:** a second visual layer in the preview, and an extra
   overlay or `eq` stage per segment in the export plan.
 - **Speed changes:** `ClipItem.speed`. Timeline duration = source range / speed; `setpts`/`atempo` in export.

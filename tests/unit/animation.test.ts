@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { IDENTITY, ease, evalAnimation, hasAnimation, keyframeValue } from '../../src/shared/animation';
-import { createProject } from '../../src/shared/model';
+import { PROJECT_VERSION, createProject } from '../../src/shared/model';
 import * as ops from '../../src/shared/ops';
 import { parseProject, serializeProject } from '../../src/shared/serialize';
 import { TICKS_PER_SECOND as S } from '../../src/shared/time';
@@ -87,10 +87,10 @@ describe('animation ops', () => {
     let p = proj();
     p = ops.setAnimation(p, p.sequence.items[0].id, (a) => ({ ...a, in: { preset: 'pop', duration: S } }));
     const text = serializeProject(p);
-    expect(JSON.parse(text).version).toBe(4);
+    expect(JSON.parse(text).version).toBe(PROJECT_VERSION);
     expect(parseProject(text).sequence.items[0]).toEqual(p.sequence.items[0]);
     const v1 = JSON.parse(serializeProject(proj()));
     v1.version = 1;
-    expect(parseProject(JSON.stringify(v1)).version).toBe(4);
+    expect(parseProject(JSON.stringify(v1)).version).toBe(PROJECT_VERSION);
   });
 });

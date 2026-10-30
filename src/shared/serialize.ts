@@ -38,6 +38,8 @@ function migrate(data: any): Project {
   if (data.version === 2) data.version = 3;
   // v3 → v4: audio tracks and media kinds were added as optional fields; nothing to convert.
   if (data.version === 3) data.version = 4;
+  // v4 → v5: titles were added as an optional field; nothing to convert.
+  if (data.version === 4) data.version = 5;
   return data as Project;
 }
 
@@ -69,6 +71,12 @@ function validate(p: Project) {
       check(mediaIds.has(c.mediaId), `audio clip ${c.id} refers to unknown media`);
       check(isInt(c.start) && c.start >= 0 && isInt(c.sourceIn) && isInt(c.sourceOut) && c.sourceOut > c.sourceIn, `audio clip ${c.id} has bad timing`);
     }
+  }
+  for (const t of p.titles ?? []) {
+    check(typeof t.id === 'string' && typeof t.text === 'string' && t.style && typeof t.style === 'object', 'bad title');
+    check(isInt(t.start) && t.start >= 0 && isInt(t.duration) && t.duration > 0 && isInt(t.row) && t.row >= 0, `title ${t.id} has bad timing`);
+    check(isHexColor(t.style.color) && isHexColor(t.style.boxColor), `title ${t.id} has bad colours`);
+    check(isInt(t.animLength) && t.animLength >= 0, `title ${t.id} has bad animation length`);
   }
   const ids = new Set<string>();
   for (const it of p.sequence.items) {

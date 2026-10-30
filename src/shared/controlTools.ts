@@ -21,6 +21,29 @@ const str = (description: string, extra: Record<string, unknown> = {}) => ({ typ
 const bool = (description: string) => ({ type: 'boolean', description });
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object' as const, properties, required, additionalProperties: false });
 
+const titleProps = {
+  text: str('the text; \\n for a new line'),
+  start: num('timeline seconds'),
+  duration: num('seconds'),
+  row: num('text row, 0 = lowest; higher rows draw on top'),
+  font: str('font family', { enum: ['sans', 'serif', 'rounded', 'condensed', 'mono'] }),
+  size: num('text height in % of the canvas height (e.g. 9 = big title, 4 = lower third)'),
+  weight: num('400, 600, 700, 800 or 900'),
+  italic: bool('italic'),
+  color: str('#rrggbb'),
+  look: str('plain, shadow, outline, or box (text on a coloured box)', { enum: ['plain', 'shadow', 'outline', 'box'] }),
+  box_color: str('#rrggbb, for look=box'),
+  box_opacity: num('0..1, for look=box'),
+  uppercase: bool('ALL CAPS'),
+  align: str('text alignment; also what x anchors', { enum: ['left', 'center', 'right'] }),
+  x: num('0..1 across the canvas: left edge / centre / right edge of the text, per align'),
+  y: num('0..1 down the canvas: vertical centre of the text'),
+  max_width: num('0.1..1 of the canvas width; longer lines wrap'),
+  anim_in: str('entrance animation', { enum: ['none', 'fade', 'rise', 'pop', 'typewriter'] }),
+  anim_out: str('exit animation', { enum: ['none', 'fade', 'rise', 'pop', 'typewriter'] }),
+  anim_length: num('seconds for each animation (default 0.4)'),
+};
+
 const IN_PRESETS = ['fade', 'zoom', 'pop', 'slideLeft', 'slideRight', 'slideUp', 'slideDown'];
 const MOTION_PRESETS = ['kenBurnsIn', 'kenBurnsOut', 'panLeft', 'panRight'];
 const EASINGS = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'hold'];
@@ -49,7 +72,7 @@ export const CONTROL_TOOLS: ToolDef[] = [
     name: 'get_frame',
     runs: 'main',
     description:
-      'Look at a picture. With `time`: the timeline preview at that time (exactly what the export will show, including framing and animation). With `media_id` and `source_time`: a frame of an original media file. Returns a JPEG image.',
+      'Look at a picture. With `time`: the timeline preview at that time (exactly what the export will show, including framing, animation, titles and captions). With `media_id` and `source_time`: a frame of an original media file. Returns a JPEG image.',
     inputSchema: obj({ time: num('timeline time in seconds'), media_id: str('media id'), source_time: num('time inside the media file, seconds') }),
   },
   {
@@ -170,6 +193,25 @@ export const CONTROL_TOOLS: ToolDef[] = [
     inputSchema: obj({ clip_id: str('clip id'), property: str('property', { enum: ['scale', 'x', 'y', 'opacity'] }), time: num('timeline seconds') }, ['clip_id']),
   },
 
+  // ---- Titles / text ----
+  {
+    name: 'add_title',
+    runs: 'renderer',
+    description: 'Add a title / text overlay at a TIMELINE time (default: 3 s long, on the lowest free text row). Start from a style preset (title, subtitle, lowerThird, quote, label) and override any style field. Titles are drawn over the picture, under captions; they keep their timeline position when video clips are edited. Check the result with get_frame.',
+    inputSchema: obj({ preset: str('style preset', { enum: ['title', 'subtitle', 'lowerThird', 'quote', 'label'] }), ...titleProps }, ['text']),
+  },
+  {
+    name: 'set_title',
+    runs: 'renderer',
+    description: 'Change a title: text, timing (start, duration, row), style or animation. Only the given fields change.',
+    inputSchema: obj({ title_id: str('title id'), ...titleProps }, ['title_id']),
+  },
+  {
+    name: 'remove_title',
+    runs: 'renderer',
+    description: 'Delete a title.',
+    inputSchema: obj({ title_id: str('title id') }, ['title_id']),
+  },
   // ---- Audio tracks (music, voice-over) ----
   {
     name: 'add_audio',

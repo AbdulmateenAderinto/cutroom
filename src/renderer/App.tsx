@@ -63,6 +63,7 @@ function onKeyDown(e: KeyboardEvent) {
   else if (k === 'b' && mod) A.splitAtPlayhead();
   else if ((k === 'Delete' || k === 'Backspace') && !mod) A.deleteSelected(e.shiftKey ? 'leave-gap' : 'close-gap');
   else if (k === 'd' && mod) A.duplicateSelected();
+  else if ((k === 't' || k === 'T') && !mod) A.addTitleAction();
   else if ((k === 'n' || k === 'N') && !mod) store.set({ snapping: !store.get().snapping });
   else if ((k === '=' || k === '+') && !mod) A.zoomBy(1.25);
   else if (k === '-' && !mod) A.zoomBy(0.8);

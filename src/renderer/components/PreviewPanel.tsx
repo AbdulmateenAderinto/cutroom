@@ -3,7 +3,7 @@ import { evalAnimation } from '../../shared/animation';
 import { type ClipItem, animateRect, computeClipRect, findMedia, layoutSequence, toManualFraming } from '../../shared/model';
 import { setFraming } from '../../shared/ops';
 import { formatTimecode } from '../../shared/time';
-import { CaptionLayer } from '../captions/CaptionLayer';
+import { OverlayLayer, TitleHandles } from '../captions/OverlayLayer';
 import { engine } from '../preview/engine';
 import * as A from '../state/actions';
 import { usePlayhead } from '../state/playhead';
@@ -153,7 +153,7 @@ export function PreviewPanel() {
             <video ref={va} className="stage-video" />
             <video ref={vb} className="stage-video" />
             <img ref={im} className="stage-video" alt="" />
-            {!sourceMedia && <CaptionLayer project={project} width={size.w} height={size.h} />}
+            {!sourceMedia && <OverlayLayer project={project} width={size.w} height={size.h} />}
             {offline && (
               <div className="stage-message">
                 <strong>Media offline</strong>
@@ -177,6 +177,7 @@ export function PreviewPanel() {
               <div className="frame-handle" onPointerDown={(e) => startDrag(e, 'scale')} title="Drag to scale" />
             </div>
           )}
+          {!sourceMedia && <TitleHandles project={project} width={size.w} height={size.h} playing={playing} />}
         </div>
       </div>
       <footer className="transport">

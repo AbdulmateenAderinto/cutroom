@@ -60,6 +60,7 @@ copy the config again.
 | Look | `get_project`, `get_frame` (timeline as it will export, or an original file), `get_contact_sheet` |
 | Media | `import_media` |
 | Edit | `build_timeline` (whole rough cut in one step), `add_clip`, `set_clip_range`, `split_at`, `delete_clip`, `move_clip`, `duplicate_clip`, `set_framing`, `set_clip_audio`, `remove_ranges` |
+| Titles | `add_title` (presets + any style), `set_title`, `remove_title` |
 | Audio | `add_audio` (music/voice-over on a track), `set_audio_clip` (move, trim, volume, fades), `remove_audio_clip`, `set_audio_track` (volume, mute, ducking) |
 | Animate | `set_animation` (in/out/motion presets), `set_keyframe`, `remove_keyframes` |
 | Analyse | `detect_silence`, `remove_silence`, `detect_scenes`, `split_at_scenes` |

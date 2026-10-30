@@ -14,6 +14,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import electronPath from 'electron';
 import { _electron as electron } from 'playwright';
+import { compareFrames } from './harness.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const out = path.join(root, 'tests/.output/mcp');
@@ -276,6 +277,26 @@ await step('audio tools: add_audio, set_audio_clip, set_audio_track (ducking), r
   assert(st.media.find((m) => m.id === talkId).speech?.length >= 1, 'speech analysis not stored for ducking');
   const rm = (await call('remove_audio_clip', { clip_id: add.clip_id })).json;
   assert(rm.audio_tracks[0].clips.length === 0, 'not removed');
+});
+
+await step('title tools: add_title, set_title, remove_title; get_frame shows the title', async () => {
+  const before = (await client.callTool({ name: 'get_frame', arguments: { time: 0.5 } })).content.find((c) => c.type === 'image').data;
+  const add = (await call('add_title', { text: 'Made with AI', preset: 'title', start: 0, duration: 2, color: '#ffd23f', anim_in: 'none' })).json;
+  assert(add.title_id && add.row === 0 && add.start_s === 0 && add.end_s === 2, JSON.stringify(add));
+  const after = (await client.callTool({ name: 'get_frame', arguments: { time: 0.5 } })).content.find((c) => c.type === 'image').data;
+  const [fa, fb] = [path.join(out, 'title-before.jpg'), path.join(out, 'title-after.jpg')];
+  writeFileSync(fa, Buffer.from(before, 'base64'));
+  writeFileSync(fb, Buffer.from(after, 'base64'));
+  const centre = compareFrames(['-i', fa], ['-i', fb], [0.3, 0.42, 0.4, 0.16]);
+  const corner = compareFrames(['-i', fa], ['-i', fb], [0, 0, 0.2, 0.2]);
+  assert(centre > 10 && corner < 3, `get_frame should show the title in the centre only (centre ${centre.toFixed(1)}, corner ${corner.toFixed(1)})`);
+  const bad = await client.callTool({ name: 'set_title', arguments: { title_id: add.title_id, color: 'yellow' } });
+  assert(bad.isError && bad.content[0].text.includes('#ffcc00'), 'bad colour accepted');
+  await call('set_title', { title_id: add.title_id, text: 'Edited', y: 0.2, look: 'box', start: 0.5 });
+  const t = (await call('get_project', {})).json.titles[0];
+  assert(t.text === 'Edited' && t.y === 0.2 && t.look === 'box' && t.start_s === 0.5, JSON.stringify(t));
+  await call('remove_title', { title_id: add.title_id });
+  assert((await call('get_project', {})).json.titles.length === 0, 'title not removed');
 });
 
 await step('turning AI control off disconnects the bridge', async () => {

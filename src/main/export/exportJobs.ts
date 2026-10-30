@@ -41,11 +41,11 @@ export async function startExport(
   last = job;
   try {
     let captions: CaptionTrack | null = null;
-    if (project.captions?.enabled && getCaptions) {
+    if ((project.captions?.enabled || project.titles?.some((t) => t.text.trim())) && getCaptions) {
       try {
         captions = await getCaptions();
       } catch (e) {
-        job.result = { status: 'failed', message: `Could not render captions: ${(e as Error).message}`, details: '' };
+        job.result = { status: 'failed', message: `Could not render captions or titles: ${(e as Error).message}`, details: '' };
         return job.result;
       }
     }

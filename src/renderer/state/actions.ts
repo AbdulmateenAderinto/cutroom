@@ -8,6 +8,7 @@ import {
   addAudioClip, addAudioTrack, audioClipEnd, deleteAudioClip, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip,
   removeAudioTrack, setSpeech, soundFromSilence, splitAudioClip, updateAudioClip,
 } from '../../shared/audio';
+import { type TitlePreset, addTitle, deleteTitle, duplicateTitle, splitTitle } from '../../shared/titles';
 import { TICKS_PER_SECOND, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
 import { playhead } from './playhead';
@@ -80,6 +81,12 @@ export async function loadWaveform(mediaId: string) {
   } finally {
     waveLoading.delete(mediaId);
   }
+}
+
+/** Add a title at the playhead (on the lowest free text row) and select it. */
+export function addTitleAction(preset: TitlePreset = 'title') {
+  const r = addTitle(store.get().project, playhead.get().time, { preset });
+  commit(() => r.project, { selection: { kind: 'title', id: r.id } });
 }
 
 export function addAudioTrackAction() {
@@ -174,6 +181,12 @@ export async function relink(mediaId: string) {
 
 export function splitAtPlayhead() {
   const sel = store.get().selection;
+  if (sel?.kind === 'title') {
+    const rt = splitTitle(store.get().project, sel.id, playhead.get().time);
+    if (!rt) return toast('Move the playhead inside the selected title to split it.');
+    commit(() => rt.project, { selection: { kind: 'title', id: rt.rightId } });
+    return;
+  }
   if (sel?.kind === 'audio') {
     const ra = splitAudioClip(store.get().project, sel.id, playhead.get().time);
     if (!ra) return toast('Move the playhead inside the selected audio clip to split it.');
@@ -188,6 +201,7 @@ export function splitAtPlayhead() {
 export function deleteSelected(mode: ops.DeleteMode) {
   const sel = store.get().selection;
   if (sel?.kind === 'audio') return void commit((p) => deleteAudioClip(p, sel.id), { selection: null });
+  if (sel?.kind === 'title') return void commit((p) => deleteTitle(p, sel.id), { selection: null });
   if (sel?.kind === 'audioTrack') {
     const t = store.get().project.audioTracks?.find((x) => x.id === sel.id);
     if (t && t.clips.length && !confirm(`Delete the track “${t.name}” and its ${t.clips.length} clip(s)?`)) return;
@@ -205,6 +219,11 @@ export function deleteSelected(mode: ops.DeleteMode) {
 
 export function duplicateSelected() {
   const sel = store.get().selection;
+  if (sel?.kind === 'title') {
+    const r = duplicateTitle(store.get().project, sel.id);
+    if (r) commit(() => r.project, { selection: { kind: 'title', id: r.id } });
+    return;
+  }
   if (sel?.kind === 'audio') {
     const p = store.get().project;
     const hit = findAudioClip(p, sel.id);

@@ -14,6 +14,7 @@ export type Selection =
   | { kind: 'media'; id: string }
   | { kind: 'audio'; id: string } // audio track clip
   | { kind: 'audioTrack'; id: string }
+  | { kind: 'title'; id: string } // text / title overlay
   | null;
 export type DialogName = 'export' | 'shortcuts' | 'ai' | 'speech' | null;
 
