@@ -132,8 +132,29 @@ tests/          unit/, integration/ (real FFmpeg), e2e/ (drives the app), helper
 docs/           ARCHITECTURE.md, AI.md (Smart tools + MCP), STATUS.md (feature checklist + known limitations)
 ```
 
-## Packaging
+## Packaging (.dmg)
 
-There is no `.app`/`.dmg` build yet; it's planned (electron-builder, with an arm64 or universal
-build). Until then, run Cutroom with `npm run dev` or `npm start`. Bundling FFmpeg inside the app raises
-licensing questions (an FFmpeg build that includes libx264 is GPL), which need to be settled at that point.
+On your Mac:
+
+```bash
+npm run dist:mac
+```
+
+This builds `dist/Cutroom-<version>-arm64.dmg` (Apple Silicon) and `dist/Cutroom-<version>.dmg` (Intel).
+Open the `.dmg` and drag Cutroom to Applications.
+
+- The app is **ad-hoc signed, not notarized** (no Apple Developer ID yet). A `.dmg` you built yourself
+  opens normally. One downloaded from elsewhere is blocked the first time: right-click the app →
+  **Open** → **Open**.
+- FFmpeg is **not bundled** (an FFmpeg build with libx264 is GPL, which affects how the app could be
+  distributed). Install it with `brew install ffmpeg`; Cutroom finds it in `/opt/homebrew/bin` or
+  `/usr/local/bin` even when started from Finder.
+- For AI control, the bridge command shown in **AI control** points inside the installed app, so
+  re-copy it into Claude's settings after moving or updating the app.
+
+To build it without a Mac: on GitHub, open **Actions → macOS app (.dmg) → Run workflow**. It runs the
+tests on macOS, builds both `.dmg`s, checks the packaged app, and attaches them to the run as
+`cutroom-macos`.
+
+`npm run dist:dir` builds an unpacked app for the current platform, and `npm run test:packaged`
+checks it starts, finds FFmpeg, and that the AI bridge runs from inside the packaged app.

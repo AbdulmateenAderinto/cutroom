@@ -110,9 +110,14 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Preview (SVG `feColorMatrix` in sRGB) matches the export | ✅ | 4 settings compared: within 3–5/255, same as with no adjustment |
 | AI tool `set_color` | ✅ | |
 
-## Planned
+## Packaging
 
-1. 🔜 `.app`/`.dmg` packaging (needs to be built and signed on a Mac)
+| Feature | Status | Notes |
+|---|---|---|
+| `npm run dist:mac` → arm64 and Intel `.dmg` (electron-builder, ad-hoc signed) | ☑️ | Configured; **not built yet** — a `.dmg` can only be made on macOS |
+| Packaged app layout (code in `app.asar`) starts, finds FFmpeg, AI bridge runs from inside it | ✅ | Tested with the Linux build of the same package (`npm run test:packaged`) |
+| GitHub Actions workflow: macOS tests + `.dmg` build + packaged-app test | ☑️ | Manual trigger (or `v*` tag); not run yet |
+| Notarization / Developer ID signing, auto-update, bundled FFmpeg | ❌ | Needs an Apple Developer account; FFmpeg licensing decision |
 
 Not planned yet: generative tools, background removal, motion tracking, optical flow,
 plugins, complex compositing, proxies, wipes/slides and other transition shapes.
@@ -209,7 +214,9 @@ progress/result screens, missing-media state and the gap rendering.
 **Not verified yet:**
 - Running on macOS / Apple Silicon. All runs so far were on Linux; Electron and FFmpeg are
   cross-platform, but macOS-specific behaviour (menus, dialogs, HEVC hardware decoding,
-  Homebrew paths, the window-close prompt) hasn't been exercised.
+  Homebrew paths, the window-close prompt) hasn't been exercised. The macOS workflow
+  (Actions → "macOS app (.dmg)") runs every automated test on a Mac runner when started.
+- The `.dmg` itself, and the VideoToolbox hardware encoder (both need a Mac).
 - Playback smoothness with real camera footage (4K, long GOP, high bitrate) and long timelines.
 - Real phone footage (VFR, HDR, Dolby Vision, rotation variants), MOV files from cameras, 44.1 kHz or 5.1 audio.
 - Listening tests for audio quality, and volume levels in the export.
@@ -250,7 +257,8 @@ progress/result screens, missing-media state and the gap rendering.
   rendered as background), so it is quick but not instant.
   Each clip opens its own decoder in one FFmpeg process, which is fine for dozens of clips; very
   long timelines (hundreds of clips) may need segment-by-segment rendering.
-- **Packaging:** no signed `.app` yet; FFmpeg must be installed separately.
+- **Packaging:** the `.dmg` is ad-hoc signed, not notarized (right-click → Open the first time when
+  downloaded). FFmpeg must be installed separately (Homebrew).
 - **Animation:** no rotation keyframes yet; position is rounded to whole output pixels per frame
   (sub-pixel drift is not visible at normal speeds). An animated clip is scaled from the full
   frame each output frame; extreme zooms (> 8192 px) are clamped.

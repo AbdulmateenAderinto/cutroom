@@ -1,0 +1,50 @@
+# Builds Cutroom.dmg on macOS (Apple Silicon and Intel) and runs the test suites there.
+# Runs only when started by hand (Actions → "macOS app (.dmg)" → Run workflow) or on a v* tag,
+# so it never uses macOS runner minutes unexpectedly.
+name: macOS app (.dmg)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ui_tests:
+        description: Also run the UI (Electron) test scripts on macOS
+        type: boolean
+        default: true
+  push:
+    tags: ['v*']
+
+jobs:
+  dmg:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install FFmpeg (Homebrew)
+        run: brew install ffmpeg
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Unit and export tests (real FFmpeg on macOS)
+        run: npm test
+      - name: UI tests on macOS
+        if: ${{ github.event_name == 'push' || inputs.ui_tests }}
+        run: npm run test:e2e && node tests/e2e/mcp.mjs
+      - name: Build the .dmg (ad-hoc signed, not notarized)
+        run: npm run dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Packaged app test
+        run: node tests/e2e/packaged.mjs
+        env:
+          CUTROOM_PACKAGED_APP: dist/mac-arm64/Cutroom.app/Contents/MacOS/Cutroom
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cutroom-macos
+          path: |
+            dist/*.dmg
+            tests/.output/**/*.png
+          if-no-files-found: warn

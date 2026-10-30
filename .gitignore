@@ -5,3 +5,4 @@ tests/.fixtures/
 tests/.output/
 *.mp4.partial
 .DS_Store
+dist/
