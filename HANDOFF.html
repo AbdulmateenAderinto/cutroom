@@ -105,12 +105,13 @@
   <h1>Carry on with Cutroom on your Mac</h1>
   <p class="lede">Setup, running it, what was built, what still needs checking on a real Mac, and where to look in the code.</p>
   <p class="repo">Repository: <a href="https://github.com/AbdulmateenAderinto/cutroom">github.com/AbdulmateenAderinto/cutroom</a> · branch <code>main</code> · updated 30 Oct 2026</p>
+  <div class="note" style="margin-top:20px"><b>Passed on your Mac (arm64, Homebrew <code>ffmpeg-full</code>), 30 Oct:</b> 270/270 unit + real-FFmpeg tests, all 16 end-to-end suites, the MCP test and the packaged-app test, after the FFmpeg 9 fixes (commit <code>6212064</code>). The 3 MCP steps added afterwards (versions, export queue, proxy mode) have only run in the cloud so far — re-run <code>npm run test:mcp</code> to cover them.</div>
   <div class="stats">
     <div class="stat ok"><b>Phases 1–4</b><span>built, tested, pushed</span></div>
-    <div class="stat ok"><b>270 / 270</b><span>unit + real-FFmpeg tests</span></div>
-    <div class="stat ok"><b>16 / 16</b><span>end-to-end suites (real app)</span></div>
-    <div class="stat ok"><b>21 / 21</b><span>MCP (AI control) steps</span></div>
-    <div class="stat warn"><b>Not yet</b><span>run on a Mac — see §6</span></div>
+    <div class="stat ok"><b>270 / 270</b><span>unit + real-FFmpeg tests · Mac ✓ cloud ✓</span></div>
+    <div class="stat ok"><b>16 / 16</b><span>end-to-end suites (real app) · Mac ✓ cloud ✓</span></div>
+    <div class="stat ok"><b>21 / 21</b><span>MCP steps · cloud ✓ · Mac ✓ before the newest 3</span></div>
+    <div class="stat warn"><b>By hand</b><span>real footage &amp; devices — see §6</span></div>
     <div class="stat warn"><b>Phase 5</b><span>waiting on you — see §11</span></div>
   </div>
 </header>
@@ -210,7 +211,7 @@
 
     <section id="verify">
       <h2><span class="n">6</span>Verify on your Mac</h2>
-      <p>None of this could be done in the cloud session (Linux, no Apple hardware). Tick these off as you go — your ticks are remembered in this browser. Anything that fails is worth a GitHub issue or a message to Claude.</p>
+      <p>The automated tests already pass on your Mac (last item, ticked). The rest needs real footage, devices or Apple hardware, which the cloud session (Linux) doesn't have. Tick these off as you go — your ticks are remembered in this browser. Anything that fails is worth a GitHub issue or a message to Claude.</p>
       <div class="progress"><div class="bar"><i id="bar"></i></div><span id="count">0 / 0</span><button class="reset" type="button" id="reset">Clear ticks</button></div>
       <ul class="checklist" id="checklist">
         <li><label><input type="checkbox" data-k="dev"><span><code>npm run dev</code> opens the window; FFmpeg is found (no red banner).</span></label></li>
@@ -230,7 +231,7 @@
         <li><label><input type="checkbox" data-k="versions"><span>Save a version, change things, restore it, undo.</span></label></li>
         <li><label><input type="checkbox" data-k="claude"><span>AI control from the real Claude Desktop / Claude Code.</span></label></li>
         <li><label><input type="checkbox" data-k="dmg"><span><code>npm run dist:mac</code> builds the <code>.dmg</code>, and the installed app starts and exports.</span></label></li>
-        <li><label><input type="checkbox" data-k="tests"><span>Run the automated tests on the Mac (section 7).</span></label></li>
+        <li><label><input type="checkbox" data-k="tests" checked><span>Run the automated tests on the Mac (section 7). <b>Passed 30 Oct</b> with <code>ffmpeg-full</code>: 270/270, 16/16 e2e, MCP, packaged. Re-run <code>npm run test:mcp</code> for the 3 newer MCP steps.</span></label></li>
       </ul>
     </section>
 
@@ -283,7 +284,7 @@
       <h2><span class="n">10</span>Continuing with Claude Code locally</h2>
       <div class="cmd"><pre><code>cd ~/cutroom &amp;&amp; claude</code></pre></div>
       <p>A good first message:</p>
-      <div class="cmd"><pre><code>Read HANDOFF.md and docs/STATUS.md, run npm test and npm run test:e2e on this Mac, and fix anything that fails. Then work through the checklist in HANDOFF.md section 6.</code></pre></div>
+      <div class="cmd"><pre><code>Read HANDOFF.md and docs/STATUS.md, run npm run test:mcp on this Mac (the newest MCP steps haven't run here yet) and fix anything that fails. Then help me work through the checklist in HANDOFF.md section 6.</code></pre></div>
     </section>
 
     <section id="next">
@@ -328,8 +329,8 @@
 
   // Checklist ticks, remembered in this browser (works without storage too).
   var KEY = 'cutroom-handoff-checks';
-  var saved = {};
-  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
+  var saved = null;
+  try { var raw = localStorage.getItem(KEY); saved = raw ? JSON.parse(raw) : null; } catch (e) { saved = null; }
   var boxes = Array.prototype.slice.call(document.querySelectorAll('#checklist input'));
   function update() {
     var n = boxes.filter(function (b) { return b.checked; }).length;
@@ -342,7 +343,7 @@
     try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {}
   }
   boxes.forEach(function (b) {
-    b.checked = !!saved[b.dataset.k];
+    b.checked = saved ? !!saved[b.dataset.k] : b.defaultChecked; // untouched list: items already done start ticked
     b.addEventListener('change', function () { store(); update(); });
   });
   document.getElementById('reset').addEventListener('click', function () {

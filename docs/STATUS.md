@@ -180,7 +180,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Feature | Status | Notes |
 |---|---|---|
 | `npm run dist:mac` → arm64 and Intel `.dmg` (electron-builder, ad-hoc signed) | ☑️ | Configured; **not built yet** — a `.dmg` can only be made on macOS |
-| Packaged app layout (code in `app.asar`) starts, finds FFmpeg, AI bridge runs from inside it | ✅ | Tested with the Linux build of the same package (`npm run test:packaged`) |
+| Packaged app layout (code in `app.asar`) starts, finds FFmpeg, AI bridge runs from inside it | ✅ | `npm run test:packaged`: passes on Linux and on macOS (arm64, the `dist:dir` .app) |
 | GitHub Actions workflow: macOS tests + `.dmg` build + packaged-app test | ☑️ | Manual trigger (or `v*` tag); not run yet |
 | Notarization / Developer ID signing, auto-update, bundled FFmpeg | ❌ | Needs an Apple Developer account; FFmpeg licensing decision |
 
@@ -323,12 +323,18 @@ and caption tools, and disconnecting when AI control is turned off.
 **Checked by looking at screenshots (not asserted):** layout of all panels, the export dialog,
 progress/result screens, missing-media state and the gap rendering.
 
+**On macOS (30 Oct 2026, the owner's Mac, arm64, Homebrew `ffmpeg-full`):** all automated tests pass —
+270/270 unit + integration, all 16 end-to-end scripts, the MCP test and the packaged-app test
+(`npm run dist:dir` + `npm run test:packaged`). That run found and fixed FFmpeg 9 differences (output
+colour tags, ProRes sound rounding) and the move of zscale/vid.stab/rubberband to `ffmpeg-full`
+(commit `6212064`). The three MCP steps added after it (versions, export queue, proxy mode) have only
+run on Linux so far.
+
 **Not verified yet:**
-- Running on macOS / Apple Silicon. All runs so far were on Linux; Electron and FFmpeg are
-  cross-platform, but macOS-specific behaviour (menus, dialogs, HEVC hardware decoding,
-  Homebrew paths, the window-close prompt) hasn't been exercised. The macOS workflow
-  (Actions → "macOS app (.dmg)") runs every automated test on a Mac runner when started.
-- The `.dmg` itself, and the VideoToolbox hardware encoder (both need a Mac).
+- macOS behaviour the automated tests don't reach: the native menus and their shortcuts, file
+  dialogs (tests replace them), the window-close prompt, HEVC hardware decoding with real footage.
+- The `.dmg` itself, and a real VideoToolbox hardware encode (no test encodes with it; the tests only
+  check its arguments and that it is refused where unavailable).
 - Playback smoothness with real camera footage (4K, long GOP, high bitrate) and long timelines,
   and with picture-in-picture (two videos decoding at once).
 - Real phone footage (VFR, HDR, Dolby Vision, rotation variants), MOV files from cameras, 44.1 kHz or 5.1 audio.

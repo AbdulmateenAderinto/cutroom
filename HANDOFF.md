@@ -6,9 +6,14 @@ what still needs checking on a Mac, and where to look in the code.
 Repository: https://github.com/AbdulmateenAderinto/cutroom (branch `main`)
 
 **Status at hand-off (30 Oct 2026):** Phases 1–4 of the feature plan are built, tested and pushed.
-In the cloud (Linux) session: typecheck clean, 270/270 unit + real-FFmpeg tests, 16/16 end-to-end
-suites (real app, preview compared with export), MCP 21/21. Nothing has been run on a Mac yet —
-that is section 6. Phase 5 (notarized release, bundled FFmpeg) is waiting on you (section 11).
+
+- **On your Mac (arm64, Homebrew `ffmpeg-full`), 30 Oct:** 270/270 unit + real-FFmpeg tests, all 16
+  end-to-end suites (the real app, preview compared with export), the MCP test and the packaged-app
+  test (`npm run dist:dir`) pass — after the FFmpeg 9 fixes in commit `6212064`.
+- **In the cloud (Linux):** the same, plus the 3 MCP steps added afterwards (versions, export queue,
+  proxy mode; MCP 21/21). Re-run `npm run test:mcp` on the Mac to cover those.
+- **Still to check by hand on the Mac** (section 6): real footage and devices, the hardware encoder,
+  the `.dmg`, the microphone. Phase 5 (notarized release, bundled FFmpeg) is waiting on you (section 11).
 
 ---
 
@@ -109,7 +114,8 @@ Projects save as `.cutroom` files (format version 7; older ones open fine).
 
 ## 6. Verify on your Mac (not possible in the cloud session)
 
-Tick these off; anything that fails is worth a GitHub issue or a message to Claude.
+The automated tests already pass on your Mac (last item). The rest needs real footage, devices or
+hardware. Tick these off; anything that fails is worth a GitHub issue or a message to Claude.
 
 - [ ] `npm run dev` opens the window; FFmpeg is found (no red banner).
 - [ ] Import a few iPhone clips (HEVC, portrait, **HDR/HLG**: check the tone-mapped picture looks right) and **HEIC photos** (converted with macOS's sips — untested so far).
@@ -128,7 +134,7 @@ Tick these off; anything that fails is worth a GitHub issue or a message to Clau
 - [ ] Noise reduction on a real noisy voice recording (use **Listen**); stabilize a real handheld clip.
 - [ ] Move a project's media to another drive, reopen, and use **Manage… → Relink missing from a folder**.
 - [ ] Save a version, change things, restore it, undo.
-- [ ] Run the automated tests on the Mac (section 7).
+- [x] Run the automated tests on the Mac (section 7). **Passed 30 Oct** with `ffmpeg-full`: 270/270, 16/16 e2e, MCP, packaged. Re-run `npm run test:mcp` for the 3 newer MCP steps.
 
 ## 7. Tests
 
@@ -190,8 +196,9 @@ and used by both the preview and the export, so they can't drift apart. Keep it 
 cd ~/cutroom && claude
 ```
 
-A good first message: *"Read HANDOFF.md and docs/STATUS.md, run `npm test` and `npm run test:e2e`
-on this Mac, and fix anything that fails. Then work through the checklist in HANDOFF.md section 6."*
+A good first message: *"Read HANDOFF.md and docs/STATUS.md, run `npm run test:mcp` on this Mac
+(the newest MCP steps haven't run here yet) and fix anything that fails. Then help me work through
+the checklist in HANDOFF.md section 6."*
 
 ## 11. What's next
 
