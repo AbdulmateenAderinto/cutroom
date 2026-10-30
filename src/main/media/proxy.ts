@@ -14,7 +14,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { inputRecipe, inputTransformChain, sourceColorSteps } from '../../shared/exportPlan';
+import { inputRecipe, inputTransformChain, isKeyed, sourceColorSteps } from '../../shared/exportPlan';
 import type { MediaInfo, MediaInput, MediaRef } from '../../shared/model';
 import { ticksToSeconds } from '../../shared/time';
 import { ffmpegPath } from './ffbin';
@@ -24,9 +24,11 @@ import { ensureLut, getLutDir } from './luts';
 const VERSION = 1; // bump to invalidate cached copies after changing the recipes below
 
 export function proxyPath(dir: string, file: string, mode: NonNullable<MediaInfo['preview']>, recipe = ''): string {
+  // Keyed copies keep their transparency: VP9 with alpha in WebM (Chromium plays it).
+  const keyed = recipe.includes('key:');
   const st = statSync(file);
   const key = createHash('sha1').update(`${path.resolve(file)}|${st.size}|${st.mtimeMs}|${mode}|v${VERSION}${recipe ? `|${recipe}` : ''}`).digest('hex');
-  const ext = mode === 'image' ? 'png' : mode === 'audio' ? 'm4a' : 'mp4';
+  const ext = mode === 'image' ? 'png' : mode === 'audio' ? 'm4a' : keyed ? 'webm' : 'mp4';
   return path.join(dir, `${key}.${ext}`);
 }
 
@@ -54,7 +56,16 @@ export function proxyArgs(file: string, info: MediaInfo, mode: NonNullable<Media
   const xform = inputTransformChain({ info, input } as MediaRef, platform);
   const c = sourceColorSteps(info, platform);
   const inM = c.matrix === 'bt601' ? ':in_color_matrix=bt601' : ':in_color_matrix=bt709';
-  // With an input transform (tone mapping, LUT) the export's own chain makes RGB first.
+  // With an input transform (tone mapping, LUT, key) the export's own chain makes RGB(A) first.
+  if (isKeyed({ info, input } as MediaRef)) {
+    return [
+      ...head, ...maps, '-vf', `${xform}scale=w=${w}:h=${h}:flags=bicubic:out_color_matrix=bt709:out_range=tv,format=yuva420p,setsar=1`,
+      '-fps_mode', 'passthrough', '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p', '-auto-alt-ref', '0', '-deadline', 'realtime', '-cpu-used', '8',
+      '-row-mt', '1', '-crf', '18', '-b:v', '0', '-g', '15',
+      '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
+      ...(info.hasAudio ? ['-c:a', 'libopus', '-b:a', '160k', '-ac', '2'] : []), '-f', 'webm', out,
+    ];
+  }
   const vf = xform
     ? `${xform}scale=w=${w}:h=${h}:flags=bicubic:out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1`
     : `${c.tagSource}${c.toBt709}scale=w=${w}:h=${h}:flags=bicubic${inM}:in_range=${c.range}:out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1`;

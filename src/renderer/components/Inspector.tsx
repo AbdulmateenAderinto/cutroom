@@ -482,6 +482,31 @@ function MediaInspector({ m }: { m: MediaRef }) {
             {m.input?.lut && <button className="btn tiny ghost" onClick={() => A.setMediaInput(m.id, { lut: undefined })}>Remove</button>}
           </div>
           <p className="muted small">A 3D LUT is applied to this file wherever it is used (e.g. to turn log footage into normal colours), before the clip’s own colour settings.</p>
+          <label className="check">
+            <input
+              type="checkbox"
+              aria-label="Key out a colour"
+              checked={!!m.input?.key}
+              onChange={(e) => A.setMediaInput(m.id, { key: e.target.checked ? { color: '#00ff00', similarity: 0.3, blend: 0.1 } : undefined })}
+            />
+            Key out a colour (green screen)
+          </label>
+          {m.input?.key && (
+            <>
+              <div className="row gap center">
+                <label className="field">
+                  <span className="field-label">Colour</span>
+                  <input type="color" aria-label="Key colour" value={m.input.key.color} onChange={(e) => A.setMediaInput(m.id, { key: { ...m.input!.key!, color: e.target.value } })} />
+                </label>
+                <NumberField label="Similarity" value={Math.round(m.input.key.similarity * 100)} suffix="%" min={1} max={100} step={1}
+                  hint="How close to the colour a pixel must be to disappear"
+                  onCommit={(v) => A.setMediaInput(m.id, { key: { ...m.input!.key!, similarity: v / 100 } })} />
+                <NumberField label="Soft edge" value={Math.round(m.input.key.blend * 100)} suffix="%" min={0} max={100} step={1}
+                  onCommit={(v) => A.setMediaInput(m.id, { key: { ...m.input!.key!, blend: v / 100 } })} />
+              </div>
+              <p className="muted small">Keyed parts are see-through: put the clip on an overlay track (⧉ PiP → Full frame) over a background clip. Each change makes a new preview copy.</p>
+            </>
+          )}
           {preparing && <p className="muted small">Making a preview copy with these settings… {Math.round((preparing.fraction ?? 0) * 100)}%</p>}
         </Section>
       )}

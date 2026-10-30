@@ -319,8 +319,11 @@ export const CONTROL_TOOLS: ToolDef[] = [
   {
     name: 'set_media_picture',
     runs: 'renderer',
-    description: 'How a media file\'s picture is read, wherever it is used: tone_map (HDR → SDR BT.709; on by default for HDR files) and/or a 3D LUT (.cube) given by absolute path (e.g. to turn log footage into normal colours; applied before each clip\'s own colour settings). remove_lut removes it. A new preview copy is made in the background.',
-    inputSchema: obj({ media_id: str('media id'), tone_map: bool('tone-map HDR to SDR'), lut_path: str('absolute path of a .cube 3D LUT'), remove_lut: bool('remove the LUT') }, ['media_id']),
+    description: 'How a media file\'s picture is read, wherever it is used: tone_map (HDR → SDR BT.709; on by default for HDR files), a 3D LUT (.cube) given by absolute path (e.g. to turn log footage into normal colours; applied before each clip\'s own colour settings; remove_lut removes it), and a chroma key (key_color "#rrggbb" makes that colour transparent, e.g. a green screen; key_similarity 0.01..1, key_blend 0..1 soft edge; key_color null removes it — put the clip on an overlay track over a background). A new preview copy is made in the background.',
+    inputSchema: obj({
+      media_id: str('media id'), tone_map: bool('tone-map HDR to SDR'), lut_path: str('absolute path of a .cube 3D LUT'), remove_lut: bool('remove the LUT'),
+      key_color: { anyOf: [{ type: 'null' }, str('#rrggbb')] }, key_similarity: num('0.01..1 (default 0.3)'), key_blend: num('0..1 (default 0.1)'),
+    }, ['media_id']),
   },
   // ---- Markers ----
   {

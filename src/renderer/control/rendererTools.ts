@@ -389,6 +389,13 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
           if (!m.info.isHDR && args.tone_map) throw new ToolError(`${m.name} is not HDR; there is nothing to tone-map.`);
           patch.toneMap = !!args.tone_map;
         }
+        if (args.key_color === null) patch.key = undefined;
+        else if (args.key_color !== undefined || args.key_similarity !== undefined || args.key_blend !== undefined) {
+          const cur = m.input?.key ?? { color: '#00ff00', similarity: 0.3, blend: 0.1 };
+          const color = args.key_color ?? cur.color;
+          if (!isHexColor(color)) throw new ToolError('key_color must be "#rrggbb".');
+          patch.key = { color, similarity: Math.min(1, Math.max(0.01, Number(args.key_similarity ?? cur.similarity))), blend: Math.min(1, Math.max(0, Number(args.key_blend ?? cur.blend))) };
+        }
         if (args.remove_lut) patch.lut = undefined;
         else if (args.lut_path) {
           const r = await window.cutroom.importLut(String(args.lut_path));
@@ -397,7 +404,7 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         }
         A.setMediaInput(m.id, patch);
         const n = findMedia(store.get().project, m.id)!;
-        return ok({ media_id: n.id, hdr: n.info.isHDR, tone_map: !!n.input?.toneMap, lut: n.input?.lut?.name ?? null, note: 'A new preview copy is being made; get_frame (timeline) shows the new look once it is ready. Exports use it right away.' });
+        return ok({ media_id: n.id, hdr: n.info.isHDR, tone_map: !!n.input?.toneMap, lut: n.input?.lut?.name ?? null, key: n.input?.key ?? null, note: 'A new preview copy is being made; get_frame (timeline) shows the new look once it is ready. Exports use it right away.' });
       }
       // ---- markers ----
       case 'add_marker': {

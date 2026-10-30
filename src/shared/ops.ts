@@ -581,6 +581,7 @@ export function setMediaInput(project: Project, mediaId: string, patch: Partial<
       const input = { ...m.input, ...patch };
       if (!input.toneMap) delete input.toneMap;
       if (!input.lut) delete input.lut;
+      if (!input.key) delete input.key;
       const { input: _old, ...rest } = m;
       return Object.keys(input).length ? { ...rest, input } : rest;
     }),

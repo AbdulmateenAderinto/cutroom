@@ -92,6 +92,11 @@ export interface MediaRef {
 export interface MediaInput {
   /** HDR (PQ/HLG) → SDR BT.709, so it looks right in an SDR edit and export. */
   toneMap?: boolean;
+  /**
+   * Chroma key ("green screen"): pixels near this colour become transparent (FFmpeg colorkey on
+   * RGB): similarity 0.01..1 (how near), blend 0..1 (soft edge).
+   */
+  key?: { color: string; similarity: number; blend: number };
   /** A 3D LUT (.cube), e.g. to turn log footage into normal colours. */
   lut?: {
     file: string; // the app's copy: <sha1>.cube in its LUT folder (a safe name for FFmpeg)

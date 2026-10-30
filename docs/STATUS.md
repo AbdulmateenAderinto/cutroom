@@ -141,7 +141,8 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 |---|---|---|
 | Blur per clip (Gaussian, σ as a fraction of the picture width; moves and scales with it) | ✅ | Export: `gblur` (6 steps) — an edge's profile within 8/255 of the true Gaussian; preview: SVG feGaussianBlur. Preview vs export 1.7/255 |
 | Masks: ellipse or rectangle with a soft edge, inverted ellipse, presets (circle, soft oval, vignette, letterbox) | ✅ | Export: alpha from the shared formula (`geq`, pixel centres), checked point by point for 4 masks and on a scaled, rotated PiP; preview: CSS mask-image gradients with the same ramps |
-| AI tool `set_effects` | ✅ | |
+| Chroma key (green screen) per media file: colour, similarity, soft edge | ✅ | Export: FFmpeg `colorkey` in the input transform; preview: a VP9-with-alpha WebM copy made with the same chain (Chromium plays the transparency). Preview vs export 2.7–2.9/255. Each change makes a new preview copy (a few seconds per minute of footage) |
+| AI tool `set_effects`; chroma key via `set_media_picture` | ✅ | |
 
 ## Overlay tracks (picture-in-picture)
 

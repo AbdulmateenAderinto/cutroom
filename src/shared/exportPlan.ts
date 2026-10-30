@@ -28,6 +28,7 @@ import {
   computeClipRect,
   evenDim,
   findMedia,
+  isHexColor,
   layoutSequence,
   sourceAt,
   sourceColor,
@@ -282,13 +283,23 @@ export function sourceColorSteps(info: MediaInfo, platform: PreviewPlatform) {
 
 /** A media file whose picture goes through an input transform (tone mapping and/or a LUT). */
 export function hasInputTransform(m: MediaRef): boolean {
-  return m.info.kind === 'video' && (!!(m.input?.toneMap && m.info.isHDR) || !!m.input?.lut);
+  return m.info.kind === 'video' && (!!(m.input?.toneMap && m.info.isHDR) || !!m.input?.lut || !!m.input?.key);
+}
+
+/** A chroma-keyed file: its picture has transparency (preview copy: VP9 with alpha in WebM). */
+export function isKeyed(m: MediaRef): boolean {
+  return m.info.kind === 'video' && !!m.input?.key && isHexColor(m.input.key.color);
 }
 
 /** Identifies the input transform, for cache keys of preview copies. */
 export function inputRecipe(m: MediaRef): string {
   if (!hasInputTransform(m)) return '';
-  return [m.input?.toneMap && m.info.isHDR ? 'tm1' : '', m.input?.lut ? `lut:${m.input.lut.file}` : ''].filter(Boolean).join('|');
+  const k = m.input?.key;
+  return [
+    m.input?.toneMap && m.info.isHDR ? 'tm1' : '',
+    m.input?.lut ? `lut:${m.input.lut.file}` : '',
+    k && isKeyed(m) ? `key:${k.color}:${k.similarity}:${k.blend}` : '',
+  ].filter(Boolean).join('|');
 }
 
 /**
@@ -316,6 +327,12 @@ export function inputTransformChain(m: MediaRef, platform: PreviewPlatform): str
   if (m.input?.lut) {
     if (!/^[0-9a-f]{40}\.cube$/.test(m.input.lut.file)) throw new Error(`Unexpected LUT file name for ${m.name}.`);
     chain += `lut3d=file=${m.input.lut.file}:interp=tetrahedral,format=rgb24,`;
+  }
+  if (isKeyed(m)) {
+    // Ends in RGBA: keyed pixels are transparent.
+    const k = m.input!.key!;
+    const n = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number(v) || 0)).toFixed(3);
+    chain += `format=rgba,colorkey=color=0x${k.color.slice(1)}:similarity=${n(k.similarity, 0.01, 1)}:blend=${n(k.blend, 0, 1)},`;
   }
   return chain;
 }
@@ -441,7 +458,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       ? ':out_color_matrix=bt709:out_range=tv'
       : `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${range === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
     // Transparent PNG/WebP keep their alpha so the background colour shows through.
-    const fgFormat = layer || (isImage && info.hasAlpha) || mask ? 'yuva420p' : 'yuv420p';
+    const fgFormat = layer || (isImage && info.hasAlpha) || mask || isKeyed(media) ? 'yuva420p' : 'yuv420p';
     const speed = clipSpeed(item);
     // Speed: timestamps are divided by the speed (frames shown sooner/later); sound is time-stretched
     // with its pitch kept (tempoFilter), like the preview (HTMLMediaElement.preservesPitch).
