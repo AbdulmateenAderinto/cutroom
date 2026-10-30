@@ -16,9 +16,9 @@ import {
 import { clipLayout } from '../../shared/overlays';
 import { TICKS_PER_SECOND, type Ticks, formatDuration, formatTimecode, snapToFrame, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
-import { needsProxy, proxySource } from '../preview/mediaUrl';
+import { lowKey, needsProxy, proxySource, wantsLowProxy } from '../preview/mediaUrl';
 import { playhead } from './playhead';
-import { commit, isDirty, loadProject, redo, selectedItemIds, store, toast, undo } from './store';
+import { commit, isDirty, loadProject, redo, selectedItemIds, store, toast, undo, writePref } from './store';
 
 const api = () => window.cutroom;
 
@@ -97,30 +97,51 @@ function setProxy(id: string, v: ReturnType<typeof store.get>['proxies'][string]
   store.set((st) => ({ proxies: { ...st.proxies, [id]: v } }));
 }
 
-/** Start making preview copies for media that need one (cached by the app, so quick when already made). */
+/**
+ * Start making preview copies for media that need one, and in proxy mode the smaller copies of
+ * large video (cached by the app, so quick when already made).
+ */
 export function ensureProxies() {
   const s = store.get();
-  for (const m of s.project.media) {
-    if (!needsProxy(m) || s.missing[m.id]) continue;
+  const make = (m: MediaRef, key: string, low: boolean) => {
     const source = proxySource(m);
-    const cur = s.proxies[m.id];
-    if (cur && cur.source === source && cur.status !== 'failed') continue;
-    if (cur?.status === 'failed' && cur.source === source) continue; // don't retry in a loop
-    setProxy(m.id, { source, status: 'making', fraction: 0 });
-    void api().makeProxy(m.path, m.info, m.input).then((r) => {
-      if (store.get().proxies[m.id]?.source !== source) return; // relinked or changed meanwhile
-      setProxy(m.id, r.ok ? { source, status: 'ready', path: r.path } : { source, status: 'failed', error: r.error });
-      if (!r.ok) toast(`Could not prepare a preview of ${m.name}: ${r.error}. Export still uses the original.`, 'error');
+    const cur = store.get().proxies[key];
+    if (cur && cur.source === source) return; // made, being made, or failed (don't retry in a loop)
+    setProxy(key, { source, status: 'making', fraction: 0 });
+    void api().makeProxy(m.path, m.info, m.input, low).then((r) => {
+      if (store.get().proxies[key]?.source !== source) return; // relinked or changed meanwhile
+      setProxy(key, r.ok ? { source, status: 'ready', path: r.path } : { source, status: 'failed', error: r.error });
+      if (!r.ok) {
+        toast(
+          low
+            ? `Could not make a proxy of ${m.name}: ${r.error}. The preview uses the full-size file.`
+            : `Could not prepare a preview of ${m.name}: ${r.error}. Export still uses the original.`,
+          'error',
+        );
+      }
     });
+  };
+  for (const m of s.project.media) {
+    if (s.missing[m.id]) continue;
+    if (needsProxy(m)) make(m, m.id, false);
+    if (s.proxyMode && wantsLowProxy(m)) make(m, lowKey(m.id), true);
   }
 }
 
+/** Proxy mode on/off (remembered on this computer). */
+export function setProxyMode(on: boolean) {
+  store.set({ proxyMode: on });
+  writePref('cutroom.proxyMode', on ? '1' : '0');
+  if (on) ensureProxies();
+}
+
 /** Progress events from the main process (by file path). */
-export function proxyProgress(path: string, fraction: number) {
+export function proxyProgress(path: string, fraction: number, low = false) {
   const s = store.get();
   for (const m of s.project.media) {
-    const p = s.proxies[m.id];
-    if (m.path === path && p?.status === 'making') setProxy(m.id, { ...p, fraction });
+    const key = low ? lowKey(m.id) : m.id;
+    const p = s.proxies[key];
+    if (m.path === path && p?.status === 'making') setProxy(key, { ...p, fraction });
   }
 }
 
@@ -603,6 +624,110 @@ export function removeMedia(mediaId: string) {
     (s.project.overlays ?? []).filter((o) => o.mediaId === mediaId).length;
   if (uses && !confirm(`Remove “${m?.name}”? ${uses} clip${uses > 1 ? 's' : ''} on the timeline use it and will be removed too. (The file on disk is not touched.)`)) return;
   commit((p) => ops.removeMedia(p, mediaId), { selection: null, previewMediaId: s.previewMediaId === mediaId ? null : s.previewMediaId });
+}
+
+/** Relink every missing file found (by name, same size preferred) in a chosen folder. */
+export async function relinkFromFolder(): Promise<{ relinked: string[]; notFound: string[] } | null> {
+  const s = store.get();
+  const missing = s.project.media.filter((m) => s.missing[m.id]);
+  if (!missing.length) {
+    toast('No files are missing.');
+    return { relinked: [], notFound: [] };
+  }
+  const folder = await api().pickFolder('Choose a folder to search for the missing files');
+  if (!folder) return null;
+  const found = await api().findInFolder(folder, missing.map((m) => ({ name: m.name, size: m.info.fileSize || undefined })));
+  const relinked: string[] = [];
+  const notFound: string[] = [];
+  let p = store.get().project;
+  for (const m of missing) {
+    const path = found[m.name];
+    const r = path ? await api().probeMedia(path) : null;
+    if (!path || !r?.ok) {
+      notFound.push(m.name);
+      continue;
+    }
+    p = ops.relinkMedia(p, m.id, path, r.info, r.warnings);
+    relinked.push(m.name);
+  }
+  if (relinked.length) {
+    commit(() => p);
+    store.set((st) => {
+      const miss = { ...st.missing };
+      for (const m of missing) if (relinked.includes(m.name)) miss[m.id] = false;
+      return { missing: miss };
+    });
+    for (const m of store.get().project.media) if (relinked.includes(m.name)) loadThumbnail(m);
+  }
+  toast(
+    relinked.length
+      ? `Relinked ${relinked.length} file${relinked.length > 1 ? 's' : ''}${notFound.length ? `; not found: ${notFound.join(', ')}` : '.'}`
+      : `None of the missing files were found in that folder.`,
+    notFound.length ? 'warn' : 'info',
+    8000,
+  );
+  return { relinked, notFound };
+}
+
+/** Remove media that no clip uses (one undo step). */
+export function removeUnusedMedia() {
+  const ids = ops.unusedMedia(store.get().project);
+  if (!ids.length) return toast('Every media file is used.');
+  commit((p) => ({ ...p, media: p.media.filter((m) => !ids.includes(m.id)) }));
+  toast(`Removed ${ids.length} unused file${ids.length > 1 ? 's' : ''} from the project (the files on disk are not touched).`);
+}
+
+/**
+ * Copy every media file the project uses into one folder and point the project at the copies
+ * (e.g. to move or archive a project). Originals are not touched; nothing is overwritten.
+ */
+export async function collectMedia() {
+  const s = store.get();
+  const files = s.project.media.filter((m) => !s.missing[m.id]).map((m) => m.path);
+  if (!files.length) return toast('There is nothing to collect.');
+  const folder = await api().pickFolder('Choose a folder to copy the media into');
+  if (!folder) return;
+  setWorking('collect', true);
+  try {
+    const r = await api().collectFiles(files, folder);
+    if (!r.ok) return toast(`Could not copy the files: ${r.error}`, 'error');
+    commit((p) => ({ ...p, media: p.media.map((m) => (r.map[m.path] ? { ...m, path: r.map[m.path], relativePath: undefined } : m)) }));
+    toast(`Copied ${files.length} file${files.length > 1 ? 's' : ''} into ${folder}. Save the project to keep the new locations.`);
+  } finally {
+    setWorking('collect', false);
+  }
+}
+
+/** Save a named snapshot of the project next to it (the project must have been saved). */
+export async function saveVersion(label: string): Promise<boolean> {
+  const s = store.get();
+  if (!s.projectPath) {
+    toast('Save the project first: versions are kept next to the project file.');
+    return false;
+  }
+  const r = await api().saveVersion(s.projectPath, s.project, label.trim() || 'Version');
+  if (!r.ok) {
+    toast(`Could not save the version: ${r.error}`, 'error');
+    return false;
+  }
+  toast(`Saved the version “${r.name}”.`);
+  return true;
+}
+
+/** Replace the current edit with a saved version (one undo step). */
+export async function restoreVersion(file: string, name: string) {
+  const s = store.get();
+  if (!s.projectPath) return;
+  const r = await api().loadVersion(s.projectPath, file);
+  if (!r.ok) return toast(`Could not open the version: ${r.error}`, 'error');
+  commit(() => ({ ...r.project, id: s.project.id }), { selection: null });
+  store.set((st) => {
+    const missing = { ...st.missing };
+    for (const m of r.project.media) missing[m.id] = r.missingMediaIds.includes(m.id);
+    return { missing, dialog: null };
+  });
+  engine.seek(0);
+  toast(`Restored “${name}”. Undo (⌘Z) brings back what you had.`);
 }
 
 export async function relink(mediaId: string) {

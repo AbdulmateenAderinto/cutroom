@@ -90,6 +90,7 @@ export function TopBar() {
         <button className="btn" onClick={A.newProject} title={`New project (${m}N)`}>New</button>
         <button className="btn" onClick={() => A.openProject()} title={`Open a project (${m}O)`}>Open…</button>
         <button className="btn" onClick={() => A.saveProject()} title={`Save (${m}S). Save As: ${m}⇧S`}>Save</button>
+        <button className="btn" onClick={() => store.set({ dialog: 'versions' })} title="Save a named version of the project, or go back to one">Versions…</button>
       </div>
       <div className="project-name" title={path ?? 'Not saved yet'}>
         {name}
@@ -102,6 +103,7 @@ export function TopBar() {
       <div className="spacer" />
       <CanvasControl />
       <AiControlButton />
+      <QueueButton />
       <button className="btn ghost" onClick={() => store.set({ dialog: 'shortcuts' })} title="Keyboard shortcuts (?)">
         Shortcuts
       </button>
@@ -114,5 +116,21 @@ export function TopBar() {
         Export…
       </button>
     </header>
+  );
+}
+
+/** Shown once something has been queued: how many exports are left, and the running one's progress. */
+function QueueButton() {
+  const left = useStore((s) => s.exportQueue.filter((q) => q.status === 'waiting' || q.status === 'running').length);
+  const total = useStore((s) => s.exportQueue.length);
+  const pct = useStore((s) => {
+    const run = s.exportQueue.find((q) => q.status === 'running');
+    return run ? Math.round((run.progress?.fraction ?? 0) * 100) : null;
+  });
+  if (!total) return null;
+  return (
+    <button className="btn ghost" onClick={() => store.set({ dialog: 'queue' })} title="Export queue">
+      Queue {left ? `${left} left${pct !== null ? ` · ${pct}%` : ''}` : '✓'}
+    </button>
   );
 }

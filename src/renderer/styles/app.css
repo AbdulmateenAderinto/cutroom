@@ -356,3 +356,17 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .curves-diag { stroke: rgba(255, 255, 255, 0.18); stroke-dasharray: 3 3; }
 .curves-pt { fill: #fff; stroke: #000; stroke-width: 1.5; cursor: grab; }
 .rec-on { animation: rec-blink 1s infinite; } @keyframes rec-blink { 50% { opacity: 0.6; } }
+
+/* Media manager */
+.media-manager { width: min(980px, 94vw); }
+.media-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+.media-table th { text-align: left; font-weight: 600; color: var(--muted, #999); padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.media-table td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.media-table tr.missing td { background: rgba(229, 83, 75, 0.1); }
+.mm-name { font-weight: 600; }
+.mm-path { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Export queue */
+.modal.queue { width: min(640px, 92vw); }
+.queue-status { min-width: 140px; }
+.progress.small { height: 6px; margin: 4px 0; }

@@ -147,6 +147,23 @@ export function addMedia(project: Project, media: MediaRef[]): Project {
   return { ...project, media: [...project.media, ...media] };
 }
 
+/** How many clips (main track, overlays, audio tracks) use each media file. */
+export function mediaUses(project: Project): Record<string, number> {
+  const n: Record<string, number> = {};
+  const add = (id: string) => (n[id] = (n[id] ?? 0) + 1);
+  for (const i of project.sequence.items) if (i.kind === 'clip') add(i.mediaId);
+  for (const o of project.overlays ?? []) add(o.mediaId);
+  for (const t of project.audioTracks ?? []) for (const c of t.clips) add(c.mediaId);
+  return n;
+}
+
+/** Media files no clip uses (and that no reversed/stabilized copy in use was made from). */
+export function unusedMedia(project: Project): string[] {
+  const uses = mediaUses(project);
+  const sources = new Set(project.media.filter((m) => uses[m.id] && m.derived).map((m) => m.derived!.mediaId));
+  return project.media.filter((m) => !uses[m.id] && !sources.has(m.id)).map((m) => m.id);
+}
+
 /** Removes a media item and every clip that uses it (gaps closed). */
 export function removeMedia(project: Project, mediaId: string): Project {
   const p: Project = {
@@ -473,10 +490,17 @@ export function relinkMedia(project: Project, mediaId: string, path: string, inf
   };
   // The replacement file may be shorter: keep every clip that uses it inside the new duration.
   const media = findMedia(p, mediaId)!;
+  const q: Project = {
+    ...p,
+    ...(p.overlays ? { overlays: p.overlays.map((o) => (o.mediaId === mediaId ? { ...o, ...legalRange(p, media, o.sourceIn, o.sourceOut, 'in', clipSpeed(asClip(o))) } : o)) } : {}),
+    ...(p.audioTracks
+      ? { audioTracks: p.audioTracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.mediaId === mediaId && c.sourceOut > info.duration ? { ...c, sourceOut: Math.max(c.sourceIn + 1, snapToFrame(info.duration, p.frameRate, 'floor')) } : c)) })) }
+      : {}),
+  };
   return withItems(
-    p,
-    p.sequence.items.map((i) =>
-      i.kind === 'clip' && i.mediaId === mediaId ? { ...i, ...legalRange(p, media, i.sourceIn, i.sourceOut, 'in') } : i,
+    q,
+    q.sequence.items.map((i) =>
+      i.kind === 'clip' && i.mediaId === mediaId ? { ...i, ...legalRange(q, media, i.sourceIn, i.sourceOut, 'in', clipSpeed(i)) } : i,
     ),
   );
 }

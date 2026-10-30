@@ -6,6 +6,7 @@
  *   transcode H.264 copy, at most 1920×1080, every frame kept at its original time
  *   audio     AAC copy of a sound file
  *   image     PNG copy of a still image (HEIC: the JPEG made by heic.ts)
+ *   low       (proxy mode) a transcode at most 960×540, for smooth playback of large footage
  *
  * Colours: the transcode reads the source with the same matrix/range the export uses and writes
  * BT.709, so preview and export agree.
@@ -32,16 +33,20 @@ export function proxyPath(dir: string, file: string, mode: NonNullable<MediaInfo
   return path.join(dir, `${key}.${ext}`);
 }
 
-/** Fit within 1920×1080 (either orientation), even sizes, square pixels. */
-export function proxySize(info: MediaInfo): { w: number; h: number } {
+/** Proxy mode copies fit in this box (either orientation). */
+export const LOW_BOX = { long: 960, short: 540 };
+
+/** Fit within 1920×1080 (960×540 for proxy mode; either orientation), even sizes, square pixels. */
+export function proxySize(info: MediaInfo, low = false): { w: number; h: number } {
   const long = Math.max(info.displayWidth, info.displayHeight);
   const short = Math.min(info.displayWidth, info.displayHeight);
-  const k = Math.min(1, 1920 / long, 1080 / short);
+  const box = low ? LOW_BOX : { long: 1920, short: 1080 };
+  const k = Math.min(1, box.long / long, box.short / short);
   const even = (v: number) => Math.max(2, 2 * Math.round(v / 2));
   return { w: even(info.displayWidth * k), h: even(info.displayHeight * k) };
 }
 
-export function proxyArgs(file: string, info: MediaInfo, mode: NonNullable<MediaInfo['preview']>, out: string, input?: MediaInput): string[] {
+export function proxyArgs(file: string, info: MediaInfo, mode: NonNullable<MediaInfo['preview']>, out: string, input?: MediaInput, low = false): string[] {
   const head = ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats', '-i', file];
   const sound = ['-c:a', 'aac', '-b:a', '192k', '-ac', '2'];
   if (mode === 'audio') return [...head, '-vn', '-map', '0:a:0', ...sound, '-f', 'mp4', out];
@@ -50,7 +55,7 @@ export function proxyArgs(file: string, info: MediaInfo, mode: NonNullable<Media
   if (mode === 'remux') {
     return [...head, ...maps, '-c:v', 'copy', ...(info.hasAudio ? sound : []), '-movflags', '+faststart', '-f', 'mp4', out];
   }
-  const { w, h } = proxySize(info);
+  const { w, h } = proxySize(info, low);
   // Same colour interpretation as the export (and the preview of the original would use).
   const platform = process.platform === 'darwin' ? 'mac' : 'other';
   const xform = inputTransformChain({ info, input } as MediaRef, platform);
@@ -83,9 +88,11 @@ const running = new Map<string, Promise<string>>();
 /**
  * Make (or reuse) the preview copy. Remuxing falls back to transcoding if the copy can't be made.
  * A file with an input transform (tone mapping, LUT) always gets a transcoded copy with it applied.
+ * `low`: the smaller proxy-mode copy (always transcoded; video only).
  */
-export function makeProxy(dir: string, file: string, info: MediaInfo, onProgress?: (fraction: number) => void, input?: MediaInput): Promise<string> {
-  const recipe = inputRecipe({ info, input } as MediaRef);
+export function makeProxy(dir: string, file: string, info: MediaInfo, onProgress?: (fraction: number) => void, input?: MediaInput, low = false): Promise<string> {
+  if (low && (info.kind ?? 'video') !== 'video') return Promise.reject(new Error('Proxy copies are made for video only.'));
+  const recipe = inputRecipe({ info, input } as MediaRef) + (low ? '|low' : '');
   const mode = recipe ? 'transcode' : info.preview;
   if (!mode || mode === 'native') return Promise.resolve(file);
   if (mode === 'image' && isHeic(file)) return heicToJpeg(getConvertDir() ?? path.join(dir, '..', 'converted'), file);
@@ -98,7 +105,7 @@ export function makeProxy(dir: string, file: string, info: MediaInfo, onProgress
   const key = out;
   let job = running.get(key);
   if (!job) {
-    job = run(dir, file, info, mode, out, onProgress, input).catch((e) => {
+    job = run(dir, file, info, mode, out, onProgress, input, low).catch((e) => {
       if (mode !== 'remux') throw e;
       return run(dir, file, info, 'transcode', proxyPath(dir, file, 'transcode'), onProgress);
     }).finally(() => running.delete(key));
@@ -107,13 +114,13 @@ export function makeProxy(dir: string, file: string, info: MediaInfo, onProgress
   return job;
 }
 
-function run(dir: string, file: string, info: MediaInfo, mode: NonNullable<MediaInfo['preview']>, out: string, onProgress?: (f: number) => void, input?: MediaInput): Promise<string> {
+function run(dir: string, file: string, info: MediaInfo, mode: NonNullable<MediaInfo['preview']>, out: string, onProgress?: (f: number) => void, input?: MediaInput, low = false): Promise<string> {
   if (existsSync(out)) return Promise.resolve(out);
   mkdirSync(dir, { recursive: true });
   const partial = `${out}.partial${path.extname(out)}`;
   const total = ticksToSeconds(info.duration);
   return new Promise((resolve, reject) => {
-    const p = spawn(ffmpegPath(), proxyArgs(file, info, mode, partial, input), { stdio: ['ignore', 'pipe', 'pipe'], cwd: input?.lut ? getLutDir() : undefined });
+    const p = spawn(ffmpegPath(), proxyArgs(file, info, mode, partial, input, low), { stdio: ['ignore', 'pipe', 'pipe'], cwd: input?.lut ? getLutDir() : undefined });
     let err = '';
     p.stderr.on('data', (d) => {
       err = (err + d.toString()).slice(-10000);

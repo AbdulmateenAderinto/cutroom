@@ -106,9 +106,16 @@ export function MediaBin() {
     >
       <header className="panel-head">
         <h2>Media</h2>
-        <button className="btn primary small" onClick={A.pickAndImport} title="Import MP4 or MOV files (⌘I)">
-          Import…
-        </button>
+        <span className="row gap">
+          {media.length > 0 && (
+            <button className="btn ghost small" onClick={() => store.set({ dialog: 'media' })} title="All files: where they are used, missing files, relink from a folder, collect">
+              Manage…
+            </button>
+          )}
+          <button className="btn primary small" onClick={A.pickAndImport} title="Import video, audio and photos (⌘I)">
+            Import…
+          </button>
+        </span>
       </header>
       <div className="panel-body">
         {media.length === 0 && importing.length === 0 && (

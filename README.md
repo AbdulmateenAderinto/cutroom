@@ -21,6 +21,12 @@ to black/white). A crossfade needs a little footage past the cut, so trim the cl
 
 **Titles:** text rows with styles (title, lower third, quote…), fonts, box/outline/shadow looks,
   drag-to-position in the preview, and fade/rise/pop/typewriter animations.
+- **Project and media:** **Versions…** keeps named snapshots next to the project; **Manage…** in the
+  Media panel lists every file and where it is used, relinks a whole folder of moved files at once,
+  removes unused files and collects everything into one folder. **Proxy** under the preview plays small
+  copies of large footage (export always uses the originals).
+- **Export queue:** **Add to queue** in the Export dialog renders exports one after another while you
+  keep editing; “Render in parallel parts” splits a long export across CPU cores.
 - **AI control (MCP):** let Claude Desktop or Claude Code edit with you. See [docs/AI.md](docs/AI.md).
 
 Picking this up on your own machine? Start with [HANDOFF.md](HANDOFF.md).

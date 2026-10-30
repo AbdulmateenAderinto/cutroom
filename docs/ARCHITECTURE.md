@@ -75,10 +75,25 @@ H.264/HEVC on macOS via VideoToolbox).
   shuttle, re-seeked only on real drift (> 0.1 s), seeked exactly when paused. They are positioned with
   the same `applyStyle()` as main clips, via `overlayLayout()` (an overlay seen as a laid-out clip).
 
-If preview of heavy footage (4K HEVC, long GOP) becomes sluggish, the hook for proxies is
-`elementFor()` in the engine. It would load a proxy URL instead of the original, while export keeps using originals.
+Every element's URL comes from `previewUrl()` (src/renderer/preview/mediaUrl.ts): the original, its
+preview copy (formats Chromium can't play, or an input transform such as a LUT), or in proxy mode a
+copy at most 960×540 (`proxies["low:<id>"]`, made by `makeProxy(..., low)` in main/media/proxy.ts).
+The engine reloads an element when its URL changes (`forgetStaleSources`). The export never uses copies.
+
+Project versions (main/project/versions.ts) are ordinary `.cutroom` files in “<project> versions”;
+restoring is one `commit()`. Media housekeeping (main/media/manage.ts): `findInFolder` (relink by
+name, same size preferred) and `collectFiles` (copy, never overwrite).
 
 ## Export (src/shared/exportPlan.ts, src/main/export/exportRunner.ts)
+
+Export queue (renderer/state/exportQueue.ts): a list of {project snapshot, settings}; one export at a
+time through the same `export:start` IPC (it waits and retries if another export holds the encoder).
+
+Parallel export (`settings.parallel`): `segmentRanges()` splits the output frames into 2–4 parts;
+each part is an ordinary range export (`ExportExtras.segment`: picture to a .mov in the export codec,
+mix to float WAV), all run at once in “<output>.partial-parts/”; `joinSegmentsArgs()` concatenates the
+pictures without re-encoding and encodes the joined sound once (loudness measured on it). Range exports
+are frame-exact, so the parts join to the same frames as one pass (tested with ProRes: identical).
 
 One FFmpeg process. For each timeline item:
 

@@ -38,9 +38,10 @@ import { cssMask } from '../../shared/effects';
 import { previewUrl } from './mediaUrl';
 import { overlayEnd, overlayLayout, overlays } from '../../shared/overlays';
 
-/** Which preview copies are ready (changes when one finishes, so the preview can show it). */
+/** Which preview copies are ready, and proxy mode (changes when one finishes, so the preview can show it). */
 function readyProxies(): string {
-  return Object.entries(store.get().proxies).filter(([, p]) => p.status === 'ready').map(([id]) => id).join(',');
+  const s = store.get();
+  return `${s.proxyMode}:` + Object.entries(s.proxies).filter(([, p]) => p.status === 'ready').map(([id]) => id).join(',');
 }
 import { type LayerFx, type ResolvedTransition, dipColour, isDip, resolveTransitions, transitionLook, transitionMix } from '../../shared/transitions';
 import { playhead } from '../state/playhead';

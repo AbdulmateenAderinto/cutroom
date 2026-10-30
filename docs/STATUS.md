@@ -187,6 +187,19 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 Not planned yet: generative tools, background removal, motion tracking, optical flow,
 plugins, blend modes, proxies, other transition shapes (circles, pushes with blur…).
 
+## Project and media management, proxies, export queue
+
+| Feature | Status | Notes |
+|---|---|---|
+| Media manager (**Manage…** in the Media panel): every file with where it is used, size, missing/unused | ✅ | Files on disk are never changed or deleted from here |
+| Remove unused media from the project | ✅ | Keeps the originals of reversed/stabilized copies in use |
+| Relink all missing files from a folder (searched by name, sub-folders included; same size preferred) | ✅ | Overlays and audio-track clips are relinked too, and kept inside a shorter replacement file |
+| Collect files: copy every media file into one folder and use the copies | ✅ | Never overwrites (adds “ 2”, “ 3”…); originals untouched |
+| Versions (**Versions…**): named snapshots saved as ordinary `.cutroom` files in “<project> versions” next to the project; restore one (one undo step) | ✅ | Needs a saved project. Only files in that folder can be restored from it |
+| Proxy mode (**Proxy** button under the preview): the preview plays copies of large video at most 960×540; export reads the originals | ✅ | Preview vs export compared with proxies on (1080p sources); the copy is made once per file and cached. Until it is ready the full-size file plays |
+| Export queue: **Add to queue** in the Export dialog; exports run one after another while you keep editing, each from the timeline as it was when queued | ✅ | Queue dialog with progress, cancel/remove, show in Finder. The queue lives in the window (closing the app stops it) |
+| Parallel export (“Render in parallel parts”): 2–4 parts rendered at once and joined without re-encoding the picture; the sound is rendered as PCM per part and encoded once (loudness measured on the joined mix) | ✅ | With ProRes the result is identical frame for frame and sample for sample to a one-pass export, across a transition, an overlay and a speed change at part boundaries. H.264/HEVC parts start with a keyframe each; tags (`avc1`/`hvc1`) and BT.709 kept. Whether it is faster depends on the machine and the timeline — **not benchmarked** |
+
 ## Verification
 
 **Automated (`npm test`, 197 tests, about 60 s):**
@@ -339,7 +352,8 @@ progress/result screens, missing-media state and the gap rendering.
   make exports slower and use more memory. Wide-gamut (Display P3) photos are treated as sRGB.
 - **Variable frame rate:** export conforms to the project frame rate. A frame can occasionally differ
   from the preview. In-points are snapped to the file's nominal (`r_frame_rate`) grid.
-- **HDR / colour:** no tone mapping. HDR files are flagged and will look wrong. Sources are
+- **HDR / colour:** HDR (PQ/HLG) files can be tone-mapped to SDR per media file (needs FFmpeg's
+  `zscale`); untouched HDR files are flagged and look wrong. **Not tried with real iPhone HDR footage.** Sources are
   interpreted like the preview (tag, else SD by size; on macOS SD primaries are converted) and
   exported as BT.709. 10-bit sources are exported as 8-bit. Other matrices and primaries (e.g. BT.2020
   SDR) are passed through unconverted. On macOS:
@@ -352,8 +366,8 @@ progress/result screens, missing-media state and the gap rendering.
 - **Mismatched frame rates** (e.g. 25 fps clip in a 30 fps project): splitting can shift the
   right-hand part by under one source frame (audio moves with it, so sync is kept).
 - **Timecode display** is "real seconds + frame number", not SMPTE drop-frame.
-- **Timeline:** one video track (plus audio tracks); a video clip's own sound always travels with it.
-- **Transitions:** crossfade and dips only. In the preview, a letterboxed (Fit) clip crossfading with a
+- **Timeline:** a magnetic main track, overlay tracks (V2…) and audio tracks.
+- **Transitions:** crossfade, dips, wipes, slides and zoom, between clips on the main track only. In the preview, a letterboxed (Fit) clip crossfading with a
   clip of another shape mixes slightly differently in the bars than the export (which mixes whole frames).
   How smooth preview playback is at a crossfade's cut (where the clips swap layers) has not been
   measured; a brief stutter there is possible.
@@ -369,10 +383,10 @@ progress/result screens, missing-media state and the gap rendering.
   builds the timeline from the start (clips before the range are not decoded, but their length is
   rendered as background), so it is quick but not instant.
   Each clip opens its own decoder in one FFmpeg process, which is fine for dozens of clips; very
-  long timelines (hundreds of clips) may need segment-by-segment rendering.
+  long timelines (hundreds of clips) may need parallel parts (each part only opens the clips it shows).
 - **Packaging:** the `.dmg` is ad-hoc signed, not notarized (right-click → Open the first time when
   downloaded). FFmpeg must be installed separately (Homebrew).
-- **Animation:** no rotation keyframes yet; position is rounded to whole output pixels per frame
+- **Animation:** position is rounded to whole output pixels per frame
   (sub-pixel drift is not visible at normal speeds). An animated clip is scaled from the full
   frame each output frame; extreme zooms (> 8192 px) are clamped.
 - **Scene detection** uses brightness changes: cuts between shots of similar brightness and colour
@@ -382,14 +396,14 @@ progress/result screens, missing-media state and the gap rendering.
   Homebrew's does) −51 ms at 0.25×, −30 ms at 0.5×, +8…+15 ms at 2×; with the `atempo` fallback up to
   −118 ms at 0.25×, −44 ms at 0.5×, −15 ms at 2×. Normal-speed clips are unaffected (sample-exact).
   The preview uses Chromium's own time stretch, whose offset has not been measured. Speed ramps
-  (changing speed within a clip) are not supported.
+  are stepped (a clip split into parts of increasing/decreasing speed), not a continuous curve.
 - **Colour:** adjustments work on gamma-encoded RGB (like most simple editors), not in linear light, so
   exposure is a gain on the encoded values rather than a physical exposure change. A clip with colour
-  adjustments goes through 8-bit RGB in the export (slightly more banding in smooth gradients). No curves,
-  LUTs, or per-shot colour matching.
+  adjustments goes through 8-bit RGB in the export (slightly more banding in smooth gradients). No
+  per-shot colour matching.
 - **Titles:** fonts are the ones installed on the computer (a fallback is used if one is missing), so a
   project can look different on another Mac. Text is drawn at the output resolution, so export is sharp;
-  the preview draws at the on-screen size. No per-word styling, rotation or keyframed motion for titles yet.
+  the preview draws at the on-screen size. No per-word styling.
   Right-to-left and complex scripts are untested.
 - **Captions:** one caption track for the whole project; per-word timing comes from whisper.cpp and can be
   off by ~0.1–0.3 s; editing a line's text spreads the new words evenly across its time span.

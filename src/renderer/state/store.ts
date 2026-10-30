@@ -20,7 +20,7 @@ export type Selection =
   | { kind: 'overlay'; id: string } // clip on an overlay video track (V2+)
   | { kind: 'marker'; id: string } // timeline marker
   | null;
-export type DialogName = 'export' | 'shortcuts' | 'ai' | 'speech' | null;
+export type DialogName = 'export' | 'shortcuts' | 'ai' | 'speech' | 'media' | 'versions' | 'queue' | null;
 
 export interface Toast {
   id: number;
@@ -45,7 +45,11 @@ export interface AppState {
   snapping: boolean;
   /** In/out points for exporting part of the timeline (I / O keys); null ends = timeline start/end. Not saved. */
   marks: { in: Ticks | null; out: Ticks | null };
-  /** Preview copies of media the preview can't play directly, by media id. */
+  /** Exports waiting, running and finished in this session (see exportQueue.ts). */
+  exportQueue: import('./exportQueue').QueueItem[];
+  /** Proxy mode: preview smaller copies of large video (a preference; the export uses originals). */
+  proxyMode: boolean;
+  /** Preview copies of media the preview can't play directly, by media id ("low:<id>" = proxy mode copy). */
   proxies: Record<string, { source: string; status: 'making' | 'ready' | 'failed'; path?: string; fraction?: number; error?: string }>;
   pxPerSecond: number;
   previewMediaId: string | null; // non-null while previewing a source file instead of the timeline
@@ -92,6 +96,22 @@ function createStore<T>(initial: T) {
 
 const initialProject = createProject();
 
+/** Per-machine preferences (may be unavailable; never required). */
+export function readPref(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+export function writePref(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* not saved; fine */
+  }
+}
+
 export const store = createStore<AppState>({
   project: initialProject,
   projectPath: null,
@@ -102,6 +122,8 @@ export const store = createStore<AppState>({
   snapping: true,
   marks: { in: null, out: null },
   proxies: {},
+  exportQueue: [],
+  proxyMode: readPref('cutroom.proxyMode') === '1',
   pxPerSecond: 60,
   previewMediaId: null,
   thumbs: {},

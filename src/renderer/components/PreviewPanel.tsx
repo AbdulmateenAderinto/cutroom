@@ -235,10 +235,30 @@ export function PreviewPanel() {
         </button>
         <button className="btn" onClick={() => engine.step(1)} title="Next frame (→). Shift+→ = 10 frames">1f ▶</button>
         <button className="btn" onClick={A.seekToEnd} title="Go to end (End)">⏭</button>
+        <ProxyToggle />
         <span className="timecode mono" title="Current time / total (HH:MM:SS:frames)">
           {formatTimecode(time, rate)} <span className="muted">/ {formatTimecode(duration, rate)}</span>
         </span>
       </footer>
     </main>
+  );
+}
+
+/** Proxy mode: smaller preview copies of large video for smooth playback. Export uses the originals. */
+function ProxyToggle() {
+  const on = useStore((s) => s.proxyMode);
+  const making = useStore((s) => {
+    const low = Object.entries(s.proxies).filter(([k, p]) => k.startsWith('low:') && p.status === 'making');
+    return low.length ? Math.round((low.reduce((a, [, p]) => a + (p.fraction ?? 0), 0) / low.length) * 100) : null;
+  });
+  return (
+    <button
+      className={`btn small${on ? ' on' : ''}`}
+      aria-pressed={on}
+      onClick={() => A.setProxyMode(!on)}
+      title="Proxy mode: the preview plays smaller copies (at most 960×540) of large video so playback stays smooth. Export always uses the original files."
+    >
+      Proxy {on ? (making !== null ? `${making}%` : 'on') : 'off'}
+    </button>
   );
 }

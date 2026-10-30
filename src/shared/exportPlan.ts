@@ -81,6 +81,12 @@ export interface ExportSettings {
   chapters?: boolean;
   /** Normalize the loudness of the whole mix to this integrated level (LUFS), e.g. −14; null = off. */
   loudness?: number | null;
+  /**
+   * Render the picture in several parts at once (each part is a range export, so its frames are
+   * the same as a one-pass export's), then join them without re-encoding the picture. The sound
+   * is rendered as PCM per part and encoded once over the joined mix. See segmentRanges.
+   */
+  parallel?: boolean;
 }
 
 export const LOUDNESS_TARGETS: { lufs: number; label: string }[] = [
@@ -254,6 +260,66 @@ export interface ExportExtras {
    * applies a linear gain with the measured values.
    */
   loudness?: 'measure' | LoudnessMeasurement;
+  /**
+   * Parallel export part: the picture alone goes to the output file (QuickTime, the export's codec)
+   * and the mix to `audioFile` as 32-bit float WAV. No loudness or chapters (added when joining).
+   */
+  segment?: { audioFile: string };
+}
+
+/** The loudnorm filter that applies a measured correction (linear gain), back at the project rate. */
+export function loudnormApply(target: number, L: LoudnessMeasurement, sampleRate: number, samples: number): string {
+  return (
+    `loudnorm=I=${target}:TP=${TRUE_PEAK}:LRA=11:measured_I=${L.input_i}:measured_TP=${L.input_tp}:measured_LRA=${L.input_lra}:measured_thresh=${L.input_thresh}:offset=${L.target_offset}:linear=true,` +
+    // loudnorm works at 192 kHz; back to the project rate, same length.
+    `aresample=${sampleRate},atrim=end_sample=${samples}`
+  );
+}
+export function loudnormMeasure(target: number): string {
+  return `loudnorm=I=${target}:TP=${TRUE_PEAK}:LRA=11:print_format=json`;
+}
+
+/**
+ * Split output frames [a, b) into `parts` ranges at frame boundaries (timeline ticks). Fewer parts
+ * when the export is short: each part is at least `minSeconds` long. One range = no splitting.
+ */
+export function segmentRanges(span: { start: Ticks; end: Ticks }, rate: Rational, parts: number, minSeconds = 2): { start: Ticks; end: Ticks }[] {
+  const a = ticksToFrame(span.start, rate, 'round');
+  const b = ticksToFrame(span.end, rate, 'round');
+  const minFrames = Math.ceil(minSeconds * rateToFloat(rate));
+  const n = Math.max(1, Math.min(parts, Math.floor((b - a) / Math.max(1, minFrames))));
+  const out: { start: Ticks; end: Ticks }[] = [];
+  for (let i = 0; i < n; i++) {
+    const f0 = a + Math.round(((b - a) * i) / n);
+    const f1 = a + Math.round(((b - a) * (i + 1)) / n);
+    out.push({ start: frameToTicks(f0, rate), end: frameToTicks(f1, rate) });
+  }
+  return out;
+}
+
+/**
+ * Join parallel export parts: picture copied (not re-encoded), sound encoded once from the joined
+ * PCM (with the loudness correction, if any), chapters added. The lists are ffconcat files.
+ */
+export function joinSegmentsArgs(
+  s: ExportSettings, videoList: string, audioList: string, outputFile: string, sampleRate: number, samples: number,
+  extras: { chaptersFile?: string; loudness?: LoudnessMeasurement } = {},
+): string[] {
+  const codec = s.codec ?? 'h264';
+  const tag = codec === 'hevc' ? ['-tag:v', 'hvc1'] : codec === 'h264' ? ['-tag:v', 'avc1'] : [];
+  const audio = codec === 'prores' ? ['-c:a', 'pcm_s16le'] : ['-c:a', 'aac', '-b:a', `${s.audioBitrateKbps}k`];
+  const loud = extras.loudness && s.loudness !== undefined && s.loudness !== null ? ['-af', loudnormApply(s.loudness, extras.loudness, sampleRate, samples)] : [];
+  return [
+    '-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats',
+    '-f', 'concat', '-safe', '0', '-i', videoList,
+    '-f', 'concat', '-safe', '0', '-i', audioList,
+    ...(extras.chaptersFile ? ['-f', 'ffmetadata', '-i', extras.chaptersFile] : []),
+    '-map', '0:v:0', '-map', '1:a:0', '-map_metadata', '-1', '-map_chapters', extras.chaptersFile ? '2' : '-1',
+    '-c:v', 'copy', ...tag,
+    ...loud, ...audio, '-ar', String(sampleRate), '-ac', '2',
+    '-movflags', '+faststart',
+    '-f', containerOf(s.outputPath), outputFile,
+  ];
 }
 
 /**
@@ -699,8 +765,9 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const f1 = Math.min(fr(lo.end), totalFrames);
     if (f1 <= f0) return;
     const [ov, oa] = renderClip(lo, f0, f1, true);
-    const t0 = f6(ticksToSeconds(frameToTicks(f0, rate)));
-    filters.push(`${ov}setpts=PTS-STARTPTS+${t0}/TB[ovs${oi}]`);
+    // Start frame as an exact fraction, rounded: setpts truncates, so 5.333333/TB would land on
+    // frame 159 instead of 160 (the overlay one frame early).
+    filters.push(`${ov}setpts=PTS-STARTPTS+round(${f0}*${rate.den}/(${rate.num}*TB))[ovs${oi}]`);
     filters.push(`${vMain}[ovs${oi}]overlay=x=0:y=0:eof_action=pass:format=auto,format=yuv420p[vov${oi}]`);
     vMain = `[vov${oi}]`;
     if (o.muted || o.volume === 0 || !findMedia(project, o.mediaId)?.info.hasAudio) return;
@@ -805,15 +872,12 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   }
 
   // Loudness normalization of the finished mix (EBU R128 loudnorm, two passes, linear gain).
-  if (s.loudness !== undefined && s.loudness !== null && extras.loudness) {
-    const base = `loudnorm=I=${s.loudness}:TP=${TRUE_PEAK}:LRA=11`;
+  if (s.loudness !== undefined && s.loudness !== null && extras.loudness && !extras.segment) {
     const L = extras.loudness;
     filters.push(
       L === 'measure'
-        ? `${audioOut}${base}:print_format=json[aloud]`
-        : `${audioOut}${base}:measured_I=${L.input_i}:measured_TP=${L.input_tp}:measured_LRA=${L.input_lra}:measured_thresh=${L.input_thresh}:offset=${L.target_offset}:linear=true,` +
-            // loudnorm works at 192 kHz; back to the project rate, same length.
-            `aresample=${sr},atrim=end_sample=${ticksToSamples(rangeEndT - rangeStartT, sr)}[aloud]`,
+        ? `${audioOut}${loudnormMeasure(s.loudness)}[aloud]`
+        : `${audioOut}${loudnormApply(s.loudness, L, sr, ticksToSamples(rangeEndT - rangeStartT, sr))}[aloud]`,
     );
     audioOut = '[aloud]';
   }
@@ -847,8 +911,28 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   // ProRes goes with uncompressed PCM sound (as cameras and Final Cut use); otherwise AAC.
   const audio = codec === 'prores' ? ['-c:a', 'pcm_s16le'] : ['-c:a', 'aac', '-b:a', `${s.audioBitrateKbps}k`];
   // Chapters come only from the markers (never copied from a source file).
-  const chapterInput = extras.chaptersFile ? inputIndex++ : -1;
-  if (extras.chaptersFile) inputs.push('-f', 'ffmetadata', '-i', extras.chaptersFile);
+  const chapterInput = extras.chaptersFile && !extras.segment ? inputIndex++ : -1;
+  if (extras.chaptersFile && !extras.segment) inputs.push('-f', 'ffmetadata', '-i', extras.chaptersFile);
+  if (extras.segment) {
+    // Parallel export part: picture → outputFile (QuickTime), mix → 32-bit float WAV.
+    return {
+      args: [
+        '-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats',
+        ...inputs, '-filter_complex', filters.join(';\n'),
+        '-map', '[vout]', '-map_metadata', '-1',
+        ...video,
+        '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
+        '-r', `${rate.num}/${rate.den}`, '-an', '-f', 'mov', outputFile,
+        '-map', audioOut, '-c:a', 'pcm_f32le', '-ar', String(sr), '-ac', '2', '-f', 'wav', extras.segment.audioFile,
+      ],
+      totalFrames: outB - outA,
+      timelineFrames: totalFrames,
+      durationSeconds: ticksToSeconds(frameToTicks(outB - outA, rate)),
+      span: { start: rangeStartT, end: rangeEndT },
+      width: s.width,
+      height: s.height,
+    };
+  }
   if (extras.loudness === 'measure') {
     // Measuring pass: render everything, encode nothing, keep loudnorm's report (info level).
     return {

@@ -21,11 +21,13 @@ import { makeProxy } from './media/proxy';
 import { setConvertDir } from './media/heic';
 import { makeFreezeFrame, makeReversed, makeStabilized } from './media/derived';
 import { importLut, setLutDir } from './media/luts';
+import { collectFiles, findInFolder } from './media/manage';
 import { thumbnailDataUrl } from './media/thumbnails';
 import { noiseFloor, waveformPeaks } from './media/waveform';
 import { allowMediaPath, handleMediaProtocol, registerSchemePrivileges } from './mediaProtocol';
 import { loadProjectFile, saveProjectFile } from './project/projectFiles';
 import { RecoveryStore } from './project/recovery';
+import { listVersions, loadVersion, saveVersion } from './project/versions';
 
 registerSchemePrivileges();
 // Lets automated tests use a throwaway settings folder.
@@ -186,8 +188,8 @@ function registerIpc() {
     thumbnailDataUrl(path.join(app.getPath('userData'), 'thumbnails'), p, at),
   );
 
-  ipcMain.handle('media:proxy', (e, p: string, info: MediaInfo, input?: MediaInput) =>
-    makeProxy(path.join(app.getPath('userData'), 'proxies'), p, info, (fraction) => e.sender.send('media:proxyProgress', { path: p, fraction }), input)
+  ipcMain.handle('media:proxy', (e, p: string, info: MediaInfo, input?: MediaInput, low?: boolean) =>
+    makeProxy(path.join(app.getPath('userData'), 'proxies'), p, info, (fraction) => e.sender.send('media:proxyProgress', { path: p, fraction, low: !!low }), input, !!low)
       .then((out) => {
         allowMediaPath(out);
         return { ok: true as const, path: out };
@@ -265,6 +267,24 @@ function registerIpc() {
     }
   });
 
+  ipcMain.handle('project:saveVersion', (_e, projectPath: string, project: Project, label: string) => {
+    try {
+      return { ok: true as const, ...saveVersion(projectPath, project, label) };
+    } catch (e) {
+      return { ok: false as const, error: (e as Error).message };
+    }
+  });
+  ipcMain.handle('project:listVersions', (_e, projectPath: string) => listVersions(projectPath));
+  ipcMain.handle('project:loadVersion', (_e, projectPath: string, file: string) => {
+    try {
+      const loaded = loadVersion(projectPath, file);
+      for (const m of loaded.project.media) if (existsSync(m.path)) allowMediaPath(m.path);
+      return { ok: true as const, project: loaded.project, missingMediaIds: loaded.missingMediaIds };
+    } catch (e) {
+      return { ok: false as const, error: (e as Error).message };
+    }
+  });
+
   ipcMain.handle('project:open', async (_e, filePath?: string) => {
     let target = filePath;
     if (!target) {
@@ -293,6 +313,20 @@ function registerIpc() {
     });
     return r.canceled ? null : r.filePaths[0] ?? null;
   });
+
+  ipcMain.handle('dialog:pickFolder', async (_e, title: string) => {
+    const r = await dialog.showOpenDialog(win!, { title, properties: ['openDirectory', 'createDirectory'] });
+    return r.canceled ? null : r.filePaths[0] ?? null;
+  });
+  ipcMain.handle('media:findInFolder', (_e, folder: string, wanted: { name: string; size?: number }[]) => findInFolder(folder, wanted));
+  ipcMain.handle('media:collect', (e, files: string[], folder: string) =>
+    collectFiles(files, folder, (done, total) => e.sender.send('media:collectProgress', { done, total }))
+      .then((map) => {
+        for (const f of Object.values(map)) allowMediaPath(f); // the preview plays the copies from now on
+        return { ok: true as const, map };
+      })
+      .catch((err) => ({ ok: false as const, error: (err as Error).message })),
+  );
 
   ipcMain.handle('dialog:lut', async () => {
     const r = await dialog.showOpenDialog(win!, {

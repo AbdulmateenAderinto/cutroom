@@ -24,6 +24,7 @@ import { evenDim, layoutSequence } from '../../shared/model';
 import { COMMON_FRAME_RATES, type Rational, formatTimecode, frameToTicks, rateLabel, sameRate, ticksToFrame, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
 import { markedRange } from '../state/actions';
+import { queueExport } from '../state/exportQueue';
 import { store, useStore } from '../state/store';
 import { Disclosure, formatBytes } from './controls';
 
@@ -80,6 +81,8 @@ export function ExportDialog() {
   const markerCount = project.markers?.length ?? 0;
   const [loudness, setLoudness] = useState<number | null>(remembered?.loudness ?? null);
   const [chapters, setChapters] = useState(markerCount > 0);
+  const [parallel, setParallel] = useState(remembered.parallel ?? false);
+  const queueBusy = useStore((s) => s.exportQueue.some((q) => q.status === 'running' || q.status === 'waiting'));
   const [presetId, setPresetId] = useState(remembered.presetId ?? '');
   const [saved, setSaved] = useState<ExportPreset[]>(loadSavedPresets);
   const [naming, setNaming] = useState<string | null>(null);
@@ -124,6 +127,7 @@ export function ExportDialog() {
     range: activeRange,
     chapters: chapters && markerCount > 0,
     loudness,
+    parallel,
   };
   const errors = validateExportSettings(project, settings, (m) => !missing[m.id]);
   if (aspectMismatch && !mapping) errors.push('Choose how the canvas fits the different output shape.');
@@ -300,6 +304,10 @@ export function ExportDialog() {
                 <label className={`check${markerCount ? '' : ' disabled'}`} title={markerCount ? 'Players such as QuickTime and VLC show them as chapters' : 'Press M on the timeline to add markers'}>
                   <input type="checkbox" disabled={!markerCount} checked={chapters && markerCount > 0} onChange={(e) => setChapters(e.target.checked)} aria-label="Chapters from markers" />
                   {markerCount ? `Chapters from the ${markerCount} marker${markerCount > 1 ? 's' : ''}` : 'Chapters from markers — none (press M on the timeline)'}
+                </label>
+                <label className="check" title="Renders several parts of the video at the same time, then joins them (the picture is not re-encoded when joining). Faster on computers with many cores for heavy timelines; the frames are the same as a one-pass export. Exports shorter than about 4 seconds are rendered in one pass.">
+                  <input type="checkbox" checked={parallel} onChange={(e) => setParallel(e.target.checked)} aria-label="Render in parallel parts" />
+                  Render in parallel parts (faster on many-core computers)
                 </label>
               </div>
             </div>
@@ -579,7 +587,25 @@ export function ExportDialog() {
           {phase.kind === 'settings' && (
             <>
               <button className="btn" onClick={close}>Cancel</button>
-              <button className="btn primary" disabled={errors.length > 0} onClick={start}>Export</button>
+              <button
+                className="btn"
+                disabled={errors.length > 0}
+                onClick={() => {
+                  remembered = { ...settings, outputPath: undefined, canvasMapping: mapping ?? undefined, sizeKey, presetId, range: undefined };
+                  if (queueExport(project, settings)) store.set({ dialog: null });
+                }}
+                title="Render this export after the ones already queued, with the timeline as it is now. You can keep editing meanwhile."
+              >
+                Add to queue
+              </button>
+              <button
+                className="btn primary"
+                disabled={errors.length > 0 || queueBusy}
+                onClick={start}
+                title={queueBusy ? 'The export queue is running: add this export to the queue, or wait for the queue to finish.' : undefined}
+              >
+                Export
+              </button>
             </>
           )}
           {phase.kind === 'running' && (

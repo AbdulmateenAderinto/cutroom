@@ -17,6 +17,9 @@ import { eqResponseDb } from '../shared/audioFx';
 import { engine } from './preview/engine';
 import * as A from './state/actions';
 import { installClipboardHandlers, runShortcut } from './shortcuts';
+import { MediaManager } from './components/MediaManager';
+import { VersionsDialog } from './components/VersionsDialog';
+import { QueueDialog } from './components/QueueDialog';
 import { playhead } from './state/playhead';
 import { isDirty, store, useStore } from './state/store';
 
@@ -88,7 +91,7 @@ export function App() {
     const offMenu = api.onMenu(runAction);
     installClipboardHandlers();
     // Preview copies: start them whenever media is added, opened or relinked.
-    const offProxy = api.onProxyProgress(({ path, fraction }) => A.proxyProgress(path, fraction));
+    const offProxy = api.onProxyProgress(({ path, fraction, low }) => A.proxyProgress(path, fraction, low));
     let lastMedia = store.get().project.media;
     let lastMissing = store.get().missing;
     A.ensureProxies();
@@ -146,6 +149,9 @@ export function App() {
       <Timeline />
       {dialog === 'export' && <ExportDialog />}
       {dialog === 'shortcuts' && <ShortcutsDialog />}
+      {dialog === 'media' && <MediaManager />}
+      {dialog === 'versions' && <VersionsDialog />}
+      {dialog === 'queue' && <QueueDialog />}
       {dialog === 'ai' && <AiControlDialog />}
       {dialog === 'speech' && <SpeechSetupDialog />}
       {recovery.length > 0 && (

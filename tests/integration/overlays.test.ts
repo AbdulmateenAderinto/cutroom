@@ -170,4 +170,23 @@ describe('overlay tracks in export', () => {
     expect(frames.filter((f, i) => f !== 30 + i).slice(0, 5)).toEqual([]);
     expect(Math.abs(inside[40].y - samplePatch(file, rect.x + rect.w / 2, rect.y + rect.h / 2)[100].y)).toBeLessThan(4);
   });
+
+  it('starts on its exact frame when that time is not a whole number of seconds (also in a range)', async () => {
+    // 40/30 s = 1.3333… s: FFmpeg's setpts truncates, so a start written in rounded seconds
+    // landed one frame early. Ranges starting at 50/30 s too.
+    const q = moveOverlay(p, p.overlays![0].id, (40 * S) / 30, p.overlays![0].row);
+    for (const [name, range, first] of [['ov-third.mp4', null, 0], ['ov-third-range.mp4', { start: (50 * S) / 30, end: (100 * S) / 30 }, 50]] as const) {
+      const f = await exp(q, name, { range });
+      const inside = samplePatch(f, rect.x + rect.w / 2, rect.y + rect.h / 2);
+      const wrong: string[] = [];
+      inside.forEach((px, i) => {
+        const t = first + i; // timeline frame
+        if (t >= 40 && t < 100) {
+          const got = decodeCodedFrame(px, 30).frame;
+          if (got !== t - 40) wrong.push(`${t}: ${got}`);
+        } else if (Math.abs(px.y - inside[0].y) > 4 && first === 0) wrong.push(`${t}: luma ${px.y}`);
+      });
+      expect(wrong.slice(0, 5), name).toEqual([]);
+    }
+  });
 });

@@ -104,19 +104,29 @@ export interface CutroomApi {
   mediaUrl(path: string): string;
   saveProject(project: Project, path: string | null): Promise<SaveResult>;
   openProject(path?: string): Promise<OpenResult>;
+  /** Named snapshots of a saved project ("<name> versions/" next to it). */
+  saveVersion(projectPath: string, project: Project, label: string): Promise<{ ok: true; file: string; name: string } | { ok: false; error: string }>;
+  listVersions(projectPath: string): Promise<{ file: string; name: string; savedAt: number }[]>;
+  loadVersion(projectPath: string, file: string): Promise<{ ok: true; project: Project; missingMediaIds: string[] } | { ok: false; error: string }>;
   pickRelinkFile(originalName: string): Promise<string | null>;
+  pickFolder(title: string): Promise<string | null>;
+  /** Files with these names under a folder (same size preferred): name → path. */
+  findInFolder(folder: string, wanted: { name: string; size?: number }[]): Promise<Record<string, string>>;
+  /** Copy files into a folder (never overwriting): old path → new path. */
+  collectFiles(files: string[], folder: string): Promise<{ ok: true; map: Record<string, string> } | { ok: false; error: string }>;
   chooseExportPath(defaultName: string): Promise<string | null>;
   startExport(project: Project, settings: ExportSettings): Promise<ExportResult>;
   cancelExport(): Promise<void>;
   /** Render `seconds` of the timeline from `start` (ticks) through the export, to listen to. */
   audition(project: Project, start: number, seconds: number): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   /** Make (or reuse) the preview copy of a file the preview can't play directly. */
-  makeProxy(path: string, info: MediaInfo, input?: MediaInput): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /** `low`: the smaller proxy-mode copy (video only). */
+  makeProxy(path: string, info: MediaInfo, input?: MediaInput, low?: boolean): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   /** Pick a .cube LUT; it is checked and copied into the app's LUT folder. null = cancelled. */
   pickLut(): Promise<{ ok: true; lut: NonNullable<MediaInput['lut']> } | { ok: false; error: string } | null>;
   /** Check and copy a .cube LUT given by path (for AI control). */
   importLut(path: string): Promise<{ ok: true; lut: NonNullable<MediaInput['lut']> } | { ok: false; error: string }>;
-  onProxyProgress(cb: (p: { path: string; fraction: number }) => void): () => void;
+  onProxyProgress(cb: (p: { path: string; fraction: number; low: boolean }) => void): () => void;
   /** Save the source frame shown at `at` (source ticks) as a PNG (next to the project if saved). */
   freezeFrame(path: string, info: MediaInfo, at: number, projectPath: string | null): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   /** A reversed copy of [sourceIn, sourceOut) of a video file. */

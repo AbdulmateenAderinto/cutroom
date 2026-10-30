@@ -7,15 +7,17 @@
  * or cancel the partial file is deleted, so an unfinished export never looks like a finished video.
  */
 import { execFile, spawn } from 'node:child_process';
-import { accessSync, constants, existsSync, mkdtempSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { MediaRef, PreviewPlatform, Project } from '../../shared/model';
 import { chapterMetadata } from '../../shared/markers';
 import type { LoudnessMeasurement } from '../../shared/exportPlan';
 import { ensureLut, getLutDir } from '../media/luts';
-import { type CaptionTrack, type ExportSettings, buildExportPlan, canvasInOutput, validateExportSettings } from '../../shared/exportPlan';
-import { type Rational, parseRational, rateToFloat } from '../../shared/time';
+import {
+  type CaptionTrack, type ExportSettings, buildExportPlan, canvasInOutput, joinSegmentsArgs, loudnormMeasure, segmentRanges, validateExportSettings,
+} from '../../shared/exportPlan';
+import { type Rational, parseRational, rateToFloat, ticksToSamples } from '../../shared/time';
 import { ffmpegPath, ffprobePath } from '../media/ffbin';
 import { hasFilter, timeStretchFilter } from './encoders';
 
@@ -85,6 +87,13 @@ export interface RunExportOptions {
   timeStretch?: 'rubberband' | 'atempo';
   /** Match the preview of this platform's Chromium (default: the one running). */
   previewPlatform?: PreviewPlatform;
+  /** Parallel export (settings.parallel): how many parts (default: half the CPU cores, 2–4). */
+  parts?: number;
+}
+
+/** How many parts a parallel export uses by default. */
+export function defaultParts(): number {
+  return Math.max(2, Math.min(4, Math.floor(os.cpus().length / 2)));
 }
 
 /**
@@ -169,8 +178,11 @@ export async function runExport(project: Project, settings: ExportSettings, opts
       writeFileSync(chaptersFile, meta);
     }
   }
-  /** Run FFmpeg, reporting progress mapped into [from, to] of the bar; cancellable. */
-  function runFfmpeg(bin: string, args: string[], durationSeconds: number, from: number, to: number) {
+  /**
+   * Run FFmpeg, reporting progress mapped into [from, to] of the bar (or to `report`, given the
+   * seconds written); cancellable.
+   */
+  function runFfmpeg(bin: string, args: string[], durationSeconds: number, from: number, to: number, report?: (sec: number, speed: string | null) => void, signal = opts.signal) {
     return new Promise<{ code: number | null; cancelled: boolean; stderr: string }>((resolve) => {
       const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], cwd: lutCwd });
       let stderr = '';
@@ -186,7 +198,8 @@ export async function runExport(project: Project, settings: ExportSettings, opts
           if (k === 'speed') speed = v?.trim() ?? null;
           if (k === 'out_time_us' || k === 'out_time_ms') {
             const sec = Number(v) / 1e6; // both keys are in microseconds in FFmpeg's progress output
-            if (Number.isFinite(sec) && sec >= 0) {
+            if (Number.isFinite(sec) && sec >= 0 && report) report(sec, speed);
+            else if (Number.isFinite(sec) && sec >= 0) {
               opts.onProgress?.({ fraction: from + (to - from) * Math.min(0.999, sec / durationSeconds), outTimeSeconds: sec, speed });
             }
           }
@@ -200,11 +213,11 @@ export async function runExport(project: Project, settings: ExportSettings, opts
         child.kill('SIGTERM');
         setTimeout(() => { if (child.exitCode === null) child.kill('SIGKILL'); }, 3000);
       };
-      if (opts.signal?.aborted) onAbort();
-      else opts.signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+      else signal?.addEventListener('abort', onAbort, { once: true });
       child.on('error', (e) => { stderr += `\n${e.message}`; });
       child.on('close', (code) => {
-        opts.signal?.removeEventListener('abort', onAbort);
+        signal?.removeEventListener('abort', onAbort);
         resolve({ code, cancelled, stderr });
       });
     });
@@ -223,6 +236,11 @@ export async function runExport(project: Project, settings: ExportSettings, opts
 
   let bin: string;
   try { bin = ffmpegPath(); } catch (e) { return fail((e as Error).message); }
+
+  if (settings.parallel) {
+    const ranges = segmentRanges(probePlan().span, settings.frameRate, opts.parts ?? defaultParts());
+    if (ranges.length > 1) return encodeParallel(bin, ranges, extras);
+  }
 
   // Loudness normalization: measure the finished mix first (first half of the progress bar).
   const loud = settings.loudness !== undefined && settings.loudness !== null;
@@ -255,6 +273,99 @@ export async function runExport(project: Project, settings: ExportSettings, opts
     tryUnlink(partial);
     return fail(humanizeFfmpegError(outcome.stderr), outcome.stderr);
   }
+  return verify(plan.durationSeconds, outcome.stderr);
+  }
+
+  /**
+   * Parallel export: every part is a range export rendered at the same time (picture encoded,
+   * sound as PCM), then the parts are joined: picture copied, sound encoded once (after measuring
+   * the joined mix's loudness when normalizing). Parts live in a folder next to the output and are
+   * deleted afterwards, whatever happens.
+   */
+  async function encodeParallel(bin: string, ranges: { start: number; end: number }[], extras: Parameters<typeof buildExportPlan>[4] & object): Promise<ExportResult> {
+    const partsDir = `${partial}-parts`;
+    rmSync(partsDir, { recursive: true, force: true });
+    mkdirSync(partsDir, { recursive: true });
+    const local = new AbortController();
+    const onOuter = () => local.abort();
+    opts.signal?.addEventListener('abort', onOuter, { once: true });
+    if (opts.signal?.aborted) local.abort();
+    try {
+      const mediaPath = opts.mediaPath ?? ((m: MediaRef) => m.path);
+      const plans = ranges.map((range, i) => {
+        let captionTrack: string | undefined;
+        if (opts.captions) {
+          // Each part reads its own caption list, sized to the frames it renders.
+          const d = path.join(partsDir, `captions${i}`);
+          mkdirSync(d);
+          const frames = buildExportPlan(project, { ...settings, range, loudness: null }, path.join(partsDir, `v${i}.mov`), mediaPath, { ...extras, captionTrack: undefined }).timelineFrames;
+          captionTrack = writeCaptionTrack(d, opts.captions, frames, settings.frameRate);
+        }
+        return buildExportPlan(project, { ...settings, range, loudness: null }, path.join(partsDir, `v${i}.mov`), mediaPath, {
+          ...extras, captionTrack, loudness: undefined, chaptersFile: undefined, segment: { audioFile: path.join(partsDir, `a${i}.wav`) },
+        });
+      });
+      const total = plans.reduce((a, p) => a + p.durationSeconds, 0);
+      const done = plans.map(() => 0);
+      const loud = settings.loudness !== undefined && settings.loudness !== null;
+      const partsShare = loud ? 0.9 : 0.95;
+      const report = () => opts.onProgress?.({ fraction: Math.min(0.999, (partsShare * done.reduce((a, b) => a + b, 0)) / total), outTimeSeconds: done.reduce((a, b) => a + b, 0), speed: null });
+      const results = await Promise.all(
+        plans.map((p, i) =>
+          runFfmpeg(bin, p.args, p.durationSeconds, 0, 1, (sec) => ((done[i] = Math.min(sec, p.durationSeconds)), report()), local.signal).then((r) => {
+            if (r.code !== 0 && !r.cancelled) local.abort(); // one part failed: stop the others
+            return r;
+          }),
+        ),
+      );
+      if (opts.signal?.aborted) return { status: 'cancelled' };
+      const bad = results.find((r) => r.code !== 0 && !r.cancelled) ?? results.find((r) => r.code !== 0);
+      if (bad) return fail(humanizeFfmpegError(bad.stderr), bad.stderr);
+
+      writeFileSync(path.join(partsDir, 'video.ffconcat'), ['ffconcat version 1.0', ...plans.map((_, i) => `file 'v${i}.mov'`)].join('\n') + '\n');
+      writeFileSync(path.join(partsDir, 'audio.ffconcat'), ['ffconcat version 1.0', ...plans.map((_, i) => `file 'a${i}.wav'`)].join('\n') + '\n');
+      const videoList = path.join(partsDir, 'video.ffconcat');
+      const audioList = path.join(partsDir, 'audio.ffconcat');
+      const sr = project.audio.sampleRate;
+      const span = probePlan().span;
+      const samples = ticksToSamples(span.end - span.start, sr);
+
+      let measured: LoudnessMeasurement | undefined;
+      if (loud) {
+        const m = await runFfmpeg(
+          bin,
+          ['-hide_banner', '-nostdin', '-y', '-loglevel', 'info', '-progress', 'pipe:1', '-nostats', '-f', 'concat', '-safe', '0', '-i', audioList, '-af', loudnormMeasure(settings.loudness!), '-f', 'null', '-'],
+          total, 0.9, 0.95, undefined, local.signal,
+        );
+        if (m.cancelled) return { status: 'cancelled' };
+        if (m.code !== 0) return fail(humanizeFfmpegError(m.stderr), m.stderr);
+        const json = /\{[^{}]*"input_i"[^{}]*\}/.exec(m.stderr)?.[0];
+        try {
+          measured = JSON.parse(json ?? '');
+        } catch {
+          return fail('Could not measure the loudness of the mix.', m.stderr);
+        }
+        if (!measured || !Number.isFinite(Number(measured.input_i))) measured = undefined; // silence
+      }
+      const join = await runFfmpeg(bin, joinSegmentsArgs(settings, videoList, audioList, partial, sr, samples, { chaptersFile, loudness: measured }), total, 0.95, 1, undefined, local.signal);
+      if (join.cancelled) {
+        tryUnlink(partial);
+        return { status: 'cancelled' };
+      }
+      if (join.code !== 0) {
+        tryUnlink(partial);
+        return fail(humanizeFfmpegError(join.stderr), join.stderr);
+      }
+      return verify(probePlan().durationSeconds, join.stderr);
+    } finally {
+      opts.signal?.removeEventListener('abort', onOuter);
+      rmSync(partsDir, { recursive: true, force: true });
+    }
+  }
+
+  async function verify(expectedSeconds: number, stderr: string): Promise<ExportResult> {
+  const plan = { durationSeconds: expectedSeconds };
+  const outcome = { stderr };
 
   // Verify the actual file — a zero exit code alone is not proof of a good export.
   let info: any;

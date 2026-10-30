@@ -87,6 +87,8 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Effects | Blur, masks (ellipse/rectangle, soft edge; circle PiP), chroma key (green screen), stabilization |
 | Smart tools | Remove pauses, split at scenes, transcribe (whisper.cpp), remove filler words, captions |
 | Export | H.264, HEVC (Apple `hvc1`) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
+| Project & media | Versions (named snapshots, restore with undo), media manager (uses, remove unused, relink a whole folder, collect files), proxy mode for smooth 4K preview |
+| Export queue | Queue several exports and keep editing; optional parallel parts (same frames as one pass) |
 | AI | 56 MCP tools so Claude can edit, look at frames and export |
 
 Projects save as `.cutroom` files (format version 7; older ones open fine).
@@ -98,7 +100,8 @@ Tick these off; anything that fails is worth a GitHub issue or a message to Clau
 - [ ] `npm run dev` opens the window; FFmpeg is found (no red banner).
 - [ ] Import a few iPhone clips (HEVC, portrait, **HDR/HLG**: check the tone-mapped picture looks right) and **HEIC photos** (converted with macOS's sips — untested so far).
 - [ ] Import a ProRes or camera file (.mov/.mts/.mxf): "Preparing…" then preview; export matches.
-- [ ] Playback is smooth with real 4K footage; music stays in sync.
+- [ ] Playback is smooth with real 4K footage; music stays in sync. Then turn on **Proxy** and compare.
+- [ ] Queue two exports with “Render in parallel parts” on and off: is parallel faster on your Mac?
 - [ ] Picture-in-picture: two 4K clips at once (main + PiP) still play smoothly; the PiP stays in sync.
 - [ ] Export with **Apple hardware — VideoToolbox** in the export dialog (it is only offered if a test encode works).
 - [ ] AirDrop an *Apple devices — HEVC* export to an iPhone; open it in Photos. Open a ProRes export in Final Cut Pro.
@@ -115,13 +118,13 @@ Tick these off; anything that fails is worth a GitHub issue or a message to Clau
 npm test
 ```
 
-Unit + real-FFmpeg export tests (~150, about 40 s).
+Unit + real-FFmpeg export tests (~270, about 2 minutes).
 
 ```bash
 npm run test:e2e
 ```
 
-Drives the real app through every feature (10 scripts) and compares the preview with the exported video.
+Drives the real app through every feature (15 scripts) and compares the preview with the exported video.
 
 ```bash
 npm run test:mcp
@@ -140,9 +143,9 @@ Screenshots and exported files from the tests go to `tests/.output/`.
 ## 8. Known limits (short version — full list in `docs/STATUS.md`)
 
 - Speed changes: sound is time-stretched and lands slightly early/late (≈ −50 ms at 0.25×, −30 ms at 0.5×, +8…15 ms at 2×). Normal speed is exact.
-- One video track; no wipes/slides; no curves/LUTs; no rotation keyframes.
-- HDR is flagged, not tone-mapped. ProRes, MKV, WebM are rejected.
-- `.dmg` not notarized; FFmpeg must come from Homebrew.
+- HDR tone mapping, LUTs, noise reduction, voice-over and the hardware encoder have not been tried with real Mac footage/hardware.
+- Noise reduction is export-only (use “Listen” to hear it). Speed ramps are stepped.
+- `.dmg` not notarized; FFmpeg must come from Homebrew. Phase 5 (notarized release, bundled FFmpeg) is waiting on your Apple Developer account and an FFmpeg licensing decision.
 - Crossfade playback in the preview: smoothness at the cut has not been measured; a brief stutter is possible.
 
 ## 9. Where things live
