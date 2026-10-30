@@ -6,10 +6,11 @@ import { execFile } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { ToolDef } from '../../shared/controlTools';
-import { type ExportSettings, aspectDiffers, suggestBitrateMbps } from '../../shared/exportPlan';
-import { type MediaRef, type Project, evenDim, findMedia } from '../../shared/model';
-import { COMMON_FRAME_RATES, type Rational, ticksToSeconds } from '../../shared/time';
+import { type ExportSettings, aspectDiffers, suggestBitrateMbps, validateExportSettings } from '../../shared/exportPlan';
+import { type MediaRef, type Project, evenDim, findMedia, layoutSequence } from '../../shared/model';
+import { COMMON_FRAME_RATES, type Rational, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { lastExport, startExport } from '../export/exportJobs';
+import { encoderAvailability } from '../export/encoders';
 import { ffmpegPath } from '../media/ffbin';
 import { probeMedia } from '../media/probe';
 import { type ToolResult, textResult } from './controlServer';
@@ -118,12 +119,30 @@ export async function runMainTool(tool: ToolDef, args: Record<string, any>, deps
         videoBitrateMbps: args.bitrate_mbps ?? suggestBitrateMbps(width, height, frameRate),
         x264Preset: 'medium',
         audioBitrateKbps: 192,
+        rateControl: args.crf !== undefined ? 'crf' : 'bitrate',
+        crf: args.crf,
+        encoder: args.encoder === 'videotoolbox' ? 'videotoolbox' : 'x264',
+        range: args.start !== undefined || args.end !== undefined
+          ? { start: secondsToTicks(args.start ?? 0), end: Math.min(secondsToTicks(args.end ?? Infinity), layoutSequence(project).duration) }
+          : null,
       };
+      if (settings.encoder === 'videotoolbox') {
+        const hw = await encoderAvailability();
+        if (!hw.videotoolbox) return textResult(hw.reason ?? 'The hardware encoder is not available.', true);
+      }
+      const problems = validateExportSettings(project, settings, (m) => existsSync(m.path));
+      if (problems.length) return textResult(problems.join('\n'), true);
       deps.notify(`AI started an export to ${path.basename(out)}`);
       void startExport(project, settings, 'ai', undefined, deps.renderCaptions && (() => deps.renderCaptions!(project, settings))).then((r) => {
         deps.notify(r.status === 'done' ? `Export finished: ${path.basename(out)}` : r.status === 'cancelled' ? 'Export cancelled.' : `Export failed: ${r.message}`);
       });
-      return textResult({ started: true, path: out, width, height, frame_rate: `${frameRate.num}/${frameRate.den}`, bitrate_mbps: settings.videoBitrateMbps, next: 'Poll get_export_status.' });
+      return textResult({
+        started: true, path: out, width, height, frame_rate: `${frameRate.num}/${frameRate.den}`,
+        ...(settings.rateControl === 'crf' ? { crf: settings.crf } : { bitrate_mbps: settings.videoBitrateMbps }),
+        encoder: settings.encoder,
+        ...(settings.range ? { range_s: [ticksToSeconds(settings.range.start), ticksToSeconds(settings.range.end)] } : {}),
+        next: 'Poll get_export_status.',
+      });
     }
 
     case 'get_export_status': {

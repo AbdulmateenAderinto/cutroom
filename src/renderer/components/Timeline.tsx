@@ -48,6 +48,7 @@ export function Timeline() {
   const project = useStore((s) => s.project);
   const pps = useStore((s) => s.pxPerSecond);
   const snapping = useStore((s) => s.snapping);
+  const marks = useStore((s) => s.marks);
   const selection = useStore((s) => s.selection);
   const thumbs = useStore((s) => s.thumbs);
   const missing = useStore((s) => s.missing);
@@ -238,6 +239,12 @@ export function Timeline() {
           Snapping
         </label>
         <span className="spacer" />
+        {(marks.in !== null || marks.out !== null) && (
+          <span className="chip small on" title="Marked range for export (I / O keys)">
+            Range {formatTimecode(marks.in ?? 0, rate)}–{formatTimecode(Math.min(marks.out ?? lay.duration, lay.duration), rate)}
+            <button className="chip-x" onClick={A.clearMarks} title="Clear the range (Alt+X)" aria-label="Clear the marked range">✕</button>
+          </span>
+        )}
         <span className="muted small">Total {formatTimecode(lay.duration, rate)}</span>
         <span className="sep" />
         <span className="muted small">Zoom</span>
@@ -294,6 +301,7 @@ export function Timeline() {
             duration={lay.duration}
             snap={freeSnap}
           />
+          <RangeMarks tToX={tToX} duration={lay.duration} />
           <Playhead pps={pps} scrollRef={scrollRef} />
         </div>
       </div>
@@ -402,6 +410,24 @@ function formatClock(s: number): string {
   const m = Math.floor(s / 60);
   const sec = Math.round(s - m * 60);
   return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+/** The marked in/out range (I / O keys), shaded across the ruler. */
+function RangeMarks({ tToX, duration }: { tToX: (t: Ticks) => number; duration: Ticks }) {
+  const marks = useStore((s) => s.marks);
+  if (marks.in === null && marks.out === null) return null;
+  const a = marks.in ?? 0;
+  const b = Math.min(marks.out ?? duration, duration);
+  return (
+    <div
+      className="tl-range"
+      style={{ left: tToX(a), width: Math.max(1, tToX(b) - tToX(a)) }}
+      title={`Marked range ${formatTimecode(a, store.get().project.frameRate)} – ${formatTimecode(b, store.get().project.frameRate)} (export it from the Export dialog). Alt+X clears.`}
+    >
+      {marks.in !== null && <span className="tl-range-in" />}
+      {marks.out !== null && <span className="tl-range-out" />}
+    </div>
+  );
 }
 
 function Playhead(props: { pps: number; scrollRef: React.RefObject<HTMLDivElement | null> }) {

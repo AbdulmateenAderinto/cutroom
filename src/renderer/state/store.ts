@@ -8,6 +8,7 @@
 import { useSyncExternalStore } from 'react';
 import type { FfmpegStatus } from '../../preload/api';
 import { type Project, createProject } from '../../shared/model';
+import type { Ticks } from '../../shared/time';
 
 export type Selection =
   | { kind: 'item'; id: string } // video track item
@@ -39,6 +40,8 @@ export interface AppState {
   future: Project[];
   selection: Selection;
   snapping: boolean;
+  /** In/out points for exporting part of the timeline (I / O keys); null ends = timeline start/end. Not saved. */
+  marks: { in: Ticks | null; out: Ticks | null };
   pxPerSecond: number;
   previewMediaId: string | null; // non-null while previewing a source file instead of the timeline
   thumbs: Record<string, string>;
@@ -86,6 +89,7 @@ export const store = createStore<AppState>({
   future: [],
   selection: null,
   snapping: true,
+  marks: { in: null, out: null },
   pxPerSecond: 60,
   previewMediaId: null,
   thumbs: {},

@@ -99,8 +99,8 @@ await step('preview matches the export (static, mid-animation, two titles)', asy
   await shoot('both', 75); // 2.5 s: both fully in
   const file = path.join(out, 'titles.mp4');
   await h.exportTo(file, { fps: 30 });
-  // Accurate input seeking returns the first frame at or after -ss, so seek to exactly f/30.
-  const at = (f) => ['-ss', (f / 30).toFixed(4), '-i', file];
+  // Accurate input seeking returns the first frame at or after -ss: seek just before frame f's time.
+  const at = (f) => ['-ss', (f / 30 - 0.005).toFixed(4), '-i', file];
   // Compare inside each title's region (the rest of the frame is the same video in both).
   const regions = { lower: [0.02, 0.7, 0.3, 0.24], chapter: [0.25, 0.38, 0.5, 0.24] };
   const grid = [24, 12]; // coarse: glyph edges rasterise differently at the stage size and the output size

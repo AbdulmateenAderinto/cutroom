@@ -351,13 +351,17 @@ export const CONTROL_TOOLS: ToolDef[] = [
     name: 'export_video',
     runs: 'main',
     description:
-      'Start exporting an MP4 (H.264/AAC). Returns immediately; poll get_export_status. Defaults: canvas size, project frame rate, a suggested bitrate. Will not overwrite an existing file unless overwrite=true.',
+      'Start exporting an MP4 (H.264/AAC). Returns immediately; poll get_export_status. Defaults: whole timeline, canvas size, project frame rate, a suggested bitrate, software encoder. Will not overwrite an existing file unless overwrite=true.',
     inputSchema: obj({
       path: str('absolute output path ending in .mp4'),
       width: num('output width (even)'),
       height: num('output height (even)'),
       frame_rate: num('frames per second'),
       bitrate_mbps: num('target average video bitrate in Mb/s'),
+      crf: num('constant quality instead of a bitrate: 12..35, lower = better and larger (18–22 typical). Software encoder only.'),
+      encoder: str('x264 (software, default) or videotoolbox (Apple hardware, macOS only; faster, bitrate mode only)', { enum: ['x264', 'videotoolbox'] }),
+      start: num('export only from this timeline time (seconds)'),
+      end: num('export only up to this timeline time (seconds)'),
       fit: str('when the output shape differs from the canvas: fit (bars) or fill (crop)', { enum: ['fit', 'fill'] }),
       overwrite: bool('replace an existing file'),
     }, ['path']),

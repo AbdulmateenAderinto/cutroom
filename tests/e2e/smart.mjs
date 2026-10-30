@@ -128,7 +128,7 @@ await step('captioned preview matches the export (two moments)', async () => {
   // the output size, so glyph edges rasterise differently; compare on a coarse 24×8 grid.
   const band = [0.34, 0.72, 0.32, 0.12];
   const grid = [24, 8];
-  const at = (f) => ['-ss', (f / 30).toFixed(4), '-i', video];
+  const at = (f) => ['-ss', (f / 30 - 0.005).toFixed(4), '-i', video];
   const res = frames.map((f, i) => ({
     f,
     caption: compareFrames(['-i', shots[i]], at(f), band, grid),

@@ -27,6 +27,7 @@ import {
 } from './model';
 import {
   type Rational,
+  type Ticks,
   frameDuration,
   frameToTicks,
   rateToFloat,
@@ -48,7 +49,18 @@ export interface ExportSettings {
   videoBitrateMbps: number;
   x264Preset: X264Preset;
   audioBitrateKbps: number;
+  /** 'bitrate' (default): average target bitrate. 'crf': constant quality (libx264 only). */
+  rateControl?: 'bitrate' | 'crf';
+  /** libx264 constant-quality value: lower = better and larger (18 ≈ visually lossless, 23 = default). */
+  crf?: number;
+  /** 'x264' (default, software) or 'videotoolbox' (Apple hardware encoder, macOS only). */
+  encoder?: VideoEncoder;
+  /** Export only this part of the timeline (timeline ticks, end exclusive). */
+  range?: { start: Ticks; end: Ticks } | null;
 }
+
+export type VideoEncoder = 'x264' | 'videotoolbox';
+export const CRF_RANGE = { min: 12, max: 35, default: 20 };
 
 export const AUDIO_BITRATES = [128, 160, 192, 256, 320];
 export const X264_PRESETS: { id: X264Preset; label: string }[] = [
@@ -65,7 +77,10 @@ export const MAX_ANIMATED_DIM = 8192;
 export interface ExportPlan {
   args: string[];
   durationSeconds: number;
+  /** Frames in the output file (the range, if one is set). */
   totalFrames: number;
+  /** Frames rendered before the range start is trimmed off (the caption/title image track covers them). */
+  timelineFrames: number;
   width: number;
   height: number;
 }
@@ -108,6 +123,15 @@ export function validateExportSettings(project: Project, s: ExportSettings, medi
   if (!(s.width >= 16 && s.height >= 16 && s.width <= 7680 && s.height <= 7680)) errors.push('Output size must be between 16 and 7680 pixels.');
   if (s.width % 2 || s.height % 2) errors.push('H.264 output needs even width and height.');
   if (!(s.videoBitrateMbps >= 0.1 && s.videoBitrateMbps <= 400)) errors.push('Video bitrate must be between 0.1 and 400 Mb/s.');
+  if (s.rateControl === 'crf') {
+    if (s.encoder === 'videotoolbox') errors.push('Constant quality is not available with the hardware encoder. Use a target bitrate, or the software encoder.');
+    if (!(Number.isFinite(s.crf) && s.crf! >= CRF_RANGE.min && s.crf! <= CRF_RANGE.max)) errors.push(`Quality (CRF) must be between ${CRF_RANGE.min} and ${CRF_RANGE.max}.`);
+  }
+  if (s.range) {
+    const dur = layoutSequence(project).duration;
+    const one = frameDuration(s.frameRate);
+    if (!(s.range.start >= 0 && s.range.end <= dur + one && s.range.end - s.range.start >= one)) errors.push('The marked range is empty or outside the timeline. Mark it again (I and O keys) or export the whole timeline.');
+  }
   const missing = new Set<string>();
   const used = [...clips.map((c) => (c.kind === 'clip' ? c.mediaId : '')), ...tracks(project).flatMap((t) => t.clips.map((c) => c.mediaId))];
   for (const id of used) {
@@ -177,9 +201,17 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   let totalFrames = 0;
   let inputIndex = 0;
 
+  // Range export: frames [rangeA, rangeB) of the timeline. The timeline is built only up to rangeB
+  // (the clip straddling it renders fewer frames; its animation still uses its full length), clips
+  // wholly before rangeA are plain background (never decoded), and the start is trimmed off. So
+  // every frame inside the range is identical to a full export. (Cutting the end with a trim
+  // instead can stall FFmpeg 6 when it falls inside an animated clip's split/blend graph.)
+  const rangeA = s.range ? Math.max(0, ticksToFrame(s.range.start, rate, 'round')) : 0;
+  const rangeB = s.range ? ticksToFrame(s.range.end, rate, 'round') : Number.MAX_SAFE_INTEGER;
+
   items.forEach((l, n) => {
     const f0 = ticksToFrame(l.start, rate, 'round');
-    const f1 = ticksToFrame(l.end, rate, 'round');
+    const f1 = Math.min(ticksToFrame(l.end, rate, 'round'), rangeB);
     const frames = f1 - f0;
     if (frames <= 0) return; // shorter than one output frame
     const samples = ticksToSamples(frameToTicks(f1, rate), sr) - ticksToSamples(frameToTicks(f0, rate), sr);
@@ -190,7 +222,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const silence = `anullsrc=r=${sr}:cl=stereo,atrim=end_sample=${samples}[${a}]`;
 
     const item = l.item;
-    if (item.kind === 'gap') {
+    if (item.kind === 'gap' || f1 <= rangeA) {
       filters.push(`[bg${n}]format=yuv420p[${v}]`);
       filters.push(silence);
       concatPads.push(`[${v}][${a}]`);
@@ -329,20 +361,27 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     filters.push('[vcat0]null[vcat]');
   }
   if (bw === s.width && bh === s.height) {
-    filters.push('[vcat]setsar=1,format=yuv420p[vout]');
+    filters.push('[vcat]setsar=1,format=yuv420p[vfull]');
   } else if (s.canvasMapping === 'fill') {
     const crop = `crop=${s.width}:${s.height}:${Math.floor((bw - s.width) / 2)}:${Math.floor((bh - s.height) / 2)}`;
-    filters.push(`[vcat]${crop},setsar=1,format=yuv420p[vout]`);
+    filters.push(`[vcat]${crop},setsar=1,format=yuv420p[vfull]`);
   } else {
     // Letterbox: place the canvas on a background of the output size (same colour handling as above).
     filters.push(`${background(s.width, s.height, totalFrames)}[obg]`);
     const x = Math.floor((s.width - bw) / 2);
     const y = Math.floor((s.height - bh) / 2);
-    filters.push(`[obg][vcat]overlay=x=${x}:y=${y}:format=auto,setsar=1,format=yuv420p[vout]`);
+    filters.push(`[obg][vcat]overlay=x=${x}:y=${y}:format=auto,setsar=1,format=yuv420p[vfull]`);
   }
+
+  const outA = Math.min(rangeA, Math.max(0, totalFrames - 1));
+  const outB = totalFrames; // already ends at the range end
+  const ranged = outA > 0;
+  filters.push(ranged ? `[vfull]trim=start_frame=${outA},setpts=PTS-STARTPTS[vout]` : '[vfull]null[vout]');
 
   // ---- Audio tracks (music, voice-over), mixed under the video track's audio ----
   const totalSamples = ticksToSamples(frameToTicks(totalFrames, rate), sr);
+  const rangeStartT = frameToTicks(outA, rate);
+  const rangeEndT = frameToTicks(outB, rate);
   const projectEnd = frameToTicks(totalFrames, rate);
   const speech = speechIntervals(project);
   const trackPads: string[] = [];
@@ -354,6 +393,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       if (!m || !m.info.hasAudio || c.volume === 0) return;
       const startSample = ticksToSamples(c.start, sr);
       if (startSample >= totalSamples) return; // starts after the video ends
+      if (audioClipEnd(c) <= rangeStartT || c.start >= rangeEndT) return; // not heard in the range
       const durSamples = Math.min(ticksToSamples(audioClipEnd(c), sr), totalSamples) - startSample;
       const durSec = durSamples / sr;
       inputs.push('-ss', f6(ticksToSeconds(c.sourceIn)), '-t', f6(durSec + 0.1), '-i', mediaPath(m));
@@ -395,7 +435,26 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     audioOut = '[amix]';
   }
 
+  if (ranged) {
+    const sA = ticksToSamples(rangeStartT, sr);
+    const sB = ticksToSamples(rangeEndT, sr);
+    filters.push(`${audioOut}atrim=start_sample=${sA}:end_sample=${sB},asetpts=PTS-STARTPTS[arange]`);
+    audioOut = '[arange]';
+  }
+
   const kbps = Math.round(s.videoBitrateMbps * 1000);
+  const video =
+    s.encoder === 'videotoolbox'
+      ? // Apple's hardware encoder: average bitrate only (its constant-quality mode is not used).
+        ['-c:v', 'h264_videotoolbox', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-b:v', `${kbps}k`]
+      : [
+          '-c:v', 'libx264', '-preset', s.x264Preset, '-profile:v', 'high', '-pix_fmt', 'yuv420p',
+          ...(s.rateControl === 'crf'
+            ? ['-crf', String(s.crf ?? CRF_RANGE.default)]
+            : // Average-bitrate mode with a VBV cap: the encoder aims for this average; it is not
+              // constant and the final size is approximate.
+              ['-b:v', `${kbps}k`, '-maxrate', `${kbps * 2}k`, '-bufsize', `${kbps * 2}k`]),
+        ];
   const args = [
     '-hide_banner', '-nostdin', '-y',
     '-loglevel', 'error',
@@ -403,10 +462,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     ...inputs,
     '-filter_complex', filters.join(';\n'),
     '-map', '[vout]', '-map', audioOut,
-    '-c:v', 'libx264', '-preset', s.x264Preset, '-profile:v', 'high', '-pix_fmt', 'yuv420p',
-    // Average-bitrate mode with a VBV cap: the encoder aims for this average; it is not constant
-    // and the final size is approximate.
-    '-b:v', `${kbps}k`, '-maxrate', `${kbps * 2}k`, '-bufsize', `${kbps * 2}k`,
+    ...video,
     '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
     '-r', `${rate.num}/${rate.den}`,
     '-c:a', 'aac', '-b:a', `${s.audioBitrateKbps}k`, '-ar', String(sr), '-ac', '2',
@@ -415,8 +471,9 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   ];
   return {
     args,
-    totalFrames,
-    durationSeconds: ticksToSeconds(frameToTicks(totalFrames, rate)),
+    totalFrames: outB - outA,
+    timelineFrames: totalFrames,
+    durationSeconds: ticksToSeconds(frameToTicks(outB - outA, rate)),
     width: s.width,
     height: s.height,
   };

@@ -9,7 +9,7 @@ import {
   removeAudioTrack, setSpeech, soundFromSilence, splitAudioClip, updateAudioClip,
 } from '../../shared/audio';
 import { type TitlePreset, addTitle, deleteTitle, duplicateTitle, splitTitle } from '../../shared/titles';
-import { TICKS_PER_SECOND, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
+import { TICKS_PER_SECOND, type Ticks, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
 import { playhead } from './playhead';
 import { commit, isDirty, loadProject, redo, store, toast, undo } from './store';
@@ -81,6 +81,30 @@ export async function loadWaveform(mediaId: string) {
   } finally {
     waveLoading.delete(mediaId);
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// In/out marks (export a range)
+
+export function markIn() {
+  const t = playhead.get().time;
+  const { out } = store.get().marks;
+  store.set({ marks: { in: t, out: out !== null && out <= t ? null : out } });
+}
+export function markOut() {
+  const t = playhead.get().time;
+  const { in: i } = store.get().marks;
+  store.set({ marks: { in: i !== null && i >= t ? null : i, out: t } });
+}
+export function clearMarks() {
+  store.set({ marks: { in: null, out: null } });
+}
+/** The marked range, or null when nothing is marked. */
+export function markedRange(): { start: Ticks; end: Ticks } | null {
+  const { in: i, out } = store.get().marks;
+  if (i === null && out === null) return null;
+  const dur = layoutSequence(store.get().project).duration;
+  return { start: i ?? 0, end: Math.min(out ?? dur, dur) };
 }
 
 /** Add a title at the playhead (on the lowest free text row) and select it. */

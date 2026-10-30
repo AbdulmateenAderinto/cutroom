@@ -133,7 +133,7 @@ export async function runExport(project: Project, settings: ExportSettings, opts
     if (opts.captions.width !== bw || opts.captions.height !== bh) return fail('Internal error: caption images have the wrong size.');
     captionDir = mkdtempSync(path.join(os.tmpdir(), 'cutroom-captions-'));
     const probePlan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path));
-    captionTrack = writeCaptionTrack(captionDir, opts.captions, probePlan.totalFrames, settings.frameRate);
+    captionTrack = writeCaptionTrack(captionDir, opts.captions, probePlan.timelineFrames, settings.frameRate);
   }
   try {
     return await encode();

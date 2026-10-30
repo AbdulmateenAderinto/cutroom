@@ -193,6 +193,10 @@ input[type='color'] { width: 36px; height: 26px; border: 1px solid var(--line-2)
 .clip:hover .trim-handle::after, .clip.selected .trim-handle::after { opacity: 1; }
 .clip-ghost { position: absolute; top: 4px; height: calc(100% - 8px); border: 2px dashed var(--accent); border-radius: 5px; background: var(--accent-soft); pointer-events: none; z-index: 5; }
 .insert-marker { position: absolute; top: -6px; bottom: -6px; width: 3px; background: var(--accent); border-radius: 2px; z-index: 6; pointer-events: none; }
+.tl-range { position: absolute; top: 0; height: 26px; background: rgba(90, 160, 255, 0.28); border-left: 0; pointer-events: none; z-index: 5; }
+.tl-range-in, .tl-range-out { position: absolute; top: 0; bottom: 0; width: 3px; background: #5aa0ff; }
+.tl-range-in { left: 0; }
+.tl-range-out { right: 0; }
 .playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: #ff5f57; pointer-events: none; z-index: 10; }
 .playhead-head { position: absolute; top: 0; left: -6px; width: 13px; height: 14px; background: #ff5f57; clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%); }
 
@@ -303,3 +307,5 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .tl-audio-add { display: flex; gap: 10px; align-items: center; padding: 8px 4px; border-top: 1px dashed var(--line); position: sticky; left: 0; }
 .audio-thumb { font-size: 26px; color: #8fe3c4; background: linear-gradient(135deg, #1f3a32, #12201c); }
 .title-text { width: 100%; resize: vertical; font-family: inherit; min-height: 54px; }
+.indent { margin-left: 22px; }
+.chip-x { background: none; border: 0; color: inherit; cursor: pointer; padding: 0 0 0 6px; font-size: 10px; }

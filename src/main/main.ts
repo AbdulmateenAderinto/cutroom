@@ -12,6 +12,7 @@ import { setupAnalysis } from './analysis/analysisTools';
 import { setupAiControl } from './control/aiControl';
 import { setupTranscription } from './transcribe/transcribeService';
 import { cancelExport, startExport } from './export/exportJobs';
+import { encoderAvailability } from './export/encoders';
 import { checkFfmpeg, resolveBinaries } from './media/ffbin';
 import { SUPPORTED_EXTENSIONS, probeMedia } from './media/probe';
 import { thumbnailDataUrl } from './media/thumbnails';
@@ -219,6 +220,7 @@ function registerIpc() {
     startExport(project, settings, 'user', (p) => win?.webContents.send('export:progress', p), () => ai.renderCaptions(project, settings)),
   );
   ipcMain.handle('export:cancel', () => cancelExport());
+  ipcMain.handle('export:encoders', () => encoderAvailability());
 
   ipcMain.handle('shell:showInFolder', (_e, p: string) => shell.showItemInFolder(p));
 

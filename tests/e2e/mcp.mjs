@@ -223,6 +223,28 @@ await step('export_video via MCP, poll status, verify the file', async () => {
   await page.screenshot({ path: path.join(out, 'after-mcp.png') });
 });
 
+await step('export_video with a range and constant quality; hardware encoder refused readably where missing', async () => {
+  const target = path.join(out, 'ai range.mp4');
+  const r = await call('export_video', { path: target, start: 0.5, end: 1.5, crf: 23, frame_rate: 30, width: 540, height: 960 });
+  assert(r.json.started && r.json.crf === 23 && r.json.range_s[0] === 0.5, r.text);
+  let st;
+  for (let i = 0; i < 240; i++) {
+    st = (await call('get_export_status')).json;
+    if (st.status !== 'running') break;
+    await new Promise((res) => setTimeout(res, 500));
+  }
+  assert(st.status === 'done', JSON.stringify(st));
+  const frames = Number(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-select_streams', 'v', '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', target]).toString().trim());
+  assert(frames === 30, `frames ${frames}`);
+  const bad = await client.callTool({ name: 'export_video', arguments: { path: path.join(out, 'x.mp4'), start: 3, end: 2 } });
+  assert(bad.isError && bad.content[0].text.includes('range'), bad.content[0].text);
+  const hw = await page.evaluate(() => window.cutroom.encoders());
+  if (!hw.videotoolbox) {
+    const v = await client.callTool({ name: 'export_video', arguments: { path: path.join(out, 'hw.mp4'), encoder: 'videotoolbox' } });
+    assert(v.isError && v.content[0].text === hw.reason, v.content[0].text);
+  }
+});
+
 let talkId;
 await step('analysis tools: detect_silence, remove_silence (one undo step), detect_scenes, split_at_scenes', async () => {
   const r = await call('import_media', { paths: [TALK, SHOTS] });

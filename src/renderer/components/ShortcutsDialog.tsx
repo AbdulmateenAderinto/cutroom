@@ -12,6 +12,8 @@ export function ShortcutsDialog() {
     [m + 'D', 'Duplicate selected clip'],
     [m + 'Z / ' + m + '⇧Z', 'Undo / redo'],
     ['T', 'Add a title at the playhead'],
+    ['I / O', 'Mark the start / end of a range to export'],
+    ['Alt+X', 'Clear the marked range'],
     ['N', 'Toggle snapping (hold Alt while dragging to bypass)'],
     ['+ / −', 'Zoom timeline (or ' + m + ' + scroll wheel)'],
     [m + 'I', 'Import media'],

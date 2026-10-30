@@ -23,6 +23,7 @@ const api: CutroomApi = {
   chooseExportPath: (name) => ipcRenderer.invoke('dialog:exportPath', name),
   startExport: (project, settings) => ipcRenderer.invoke('export:start', project, settings),
   cancelExport: () => ipcRenderer.invoke('export:cancel'),
+  encoders: () => ipcRenderer.invoke('export:encoders'),
   onExportProgress: (cb) => on('export:progress', cb),
   showInFolder: (path) => ipcRenderer.invoke('shell:showInFolder', path),
   writeRecovery: (project, projectPath) => ipcRenderer.invoke('recovery:write', project, projectPath),

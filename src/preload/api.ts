@@ -100,6 +100,8 @@ export interface CutroomApi {
   chooseExportPath(defaultName: string): Promise<string | null>;
   startExport(project: Project, settings: ExportSettings): Promise<ExportResult>;
   cancelExport(): Promise<void>;
+  /** Whether the hardware encoder works here (checked once with a test encode). */
+  encoders(): Promise<{ videotoolbox: boolean; reason?: string }>;
   onExportProgress(cb: (p: ExportProgress) => void): () => void;
   showInFolder(path: string): Promise<void>;
   writeRecovery(project: Project, projectPath: string | null): Promise<void>;

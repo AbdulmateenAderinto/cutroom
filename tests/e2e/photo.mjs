@@ -124,7 +124,7 @@ await step('transparent PNG: background shows through in the preview', async () 
 await step('export matches the preview (photo, zoom, transparent PNG)', async () => {
   const file = path.join(out, 'photos.mp4');
   await h.exportTo(file, { fps: 30 });
-  const at = (f) => ['-ss', (f / 30).toFixed(4), '-i', file]; // first frame at or after -ss
+  const at = (f) => ['-ss', (f / 30 - 0.005).toFixed(4), '-i', file]; // first frame at or after -ss
   for (const [name, { png, frame }] of Object.entries(shots)) {
     const same = compareFrames(['-i', png], at(frame));
     const other = name === 'zoom' ? compareFrames(['-i', png], at(63)) : compareFrames(['-i', png], at(30));

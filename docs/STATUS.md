@@ -28,6 +28,10 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Autosave and crash recovery | ☑️ | Logic is tested only through the app; the crash path itself has not been simulated |
 | Unsaved-changes prompt on close / new / open | ☑️ | |
 | Export MP4 H.264/AAC: resolution, frame rate, target bitrate | ✅ | Verified with ffprobe and decoded frames |
+| Constant quality (CRF 12–35) | ✅ | |
+| Export a marked range (I / O on the timeline, Alt+X clears) | ✅ | Frame-exact: same frames as the full export |
+| Presets: 5 built-in, save your own (stored on this computer), delete | ✅ | Sizes by short edge, so presets keep the canvas shape |
+| Hardware encoding (VideoToolbox) | ☑️ | Offered only after a test encode succeeds. **Not tested on a Mac yet** (Linux: correctly shown as unavailable) |
 | Explicit fit/crop when output aspect ≠ canvas | ✅ | Export is blocked until you choose |
 | Size estimate, progress, cancel, readable errors | ✅ | |
 | Safe export (`.partial` → verify → rename) | ✅ | |
@@ -77,11 +81,10 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 
 ## Planned, in this order
 
-1. 🔜 Export presets, constant quality (CRF), export a marked range, hardware encoding (VideoToolbox)
-2. 🔜 Constant-speed changes
-3. 🔜 Transitions (crossfade, dip to colour)
-4. 🔜 Exposure, contrast, saturation, temperature
-5. 🔜 `.app`/`.dmg` packaging
+1. 🔜 Constant-speed changes
+2. 🔜 Transitions (crossfade, dip to colour)
+3. 🔜 Exposure, contrast, saturation, temperature
+4. 🔜 `.app`/`.dmg` packaging
 
 Not planned yet: generative tools, background removal, motion tracking, optical flow,
 plugins, complex compositing, proxies.
@@ -149,6 +152,11 @@ row), multi-line text, the Lower third style, dragging in the preview plus undo,
 inside each title's area at a settled frame, mid-“rise” and mid-“pop” (the matching export frame is
 clearly closer than frames 2 away), and save/reopen.
 
+**Export options UI run (sixth script, 6 steps):** I/O marks shown on the ruler and toolbar, the
+dialog preselects the range, a CRF 24 export of the range has exactly 45 frames starting at source
+frame 30, presets apply/save/reload/delete, the hardware encoder is disabled with its reason when it
+doesn't work, and Alt+X clears the range.
+
 **MCP run (`npm run test:mcp`, 12 steps):** security checks (no token, wrong token, browser origin
 all refused), tool listing, import, contact sheet and frames, `build_timeline`, editing plus undo/redo,
 readable errors for bad input, timeline frame capture, export with polling, analysis tools, speech
@@ -191,7 +199,10 @@ progress/result screens, missing-media state and the gap rendering.
 - **Audio tracks:** fades are linear; ducking reacts to any sound in the video (not just speech) and
   needs the video's audio analysed once (cached). The export limiter catches peaks above −0.2 dBFS
   when boosted tracks add up.
-- **Export:** CPU encoding (libx264) only; constant quality and hardware encoding are planned.
+- **Export:** the hardware encoder (VideoToolbox) uses an average bitrate only and needs more bits than
+  libx264 for the same quality; it has not been tried on a Mac yet. A range late in a long timeline still
+  builds the timeline from the start (clips before the range are not decoded, but their length is
+  rendered as background), so it is quick but not instant.
   Each clip opens its own decoder in one FFmpeg process, which is fine for dozens of clips; very
   long timelines (hundreds of clips) may need segment-by-segment rendering.
 - **Packaging:** no signed `.app` yet; FFmpeg must be installed separately.

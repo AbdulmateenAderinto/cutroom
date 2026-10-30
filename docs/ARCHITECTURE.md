@@ -94,6 +94,15 @@ Safety: FFmpeg writes `name.mp4.partial`. The result is checked with ffprobe (co
 duration, audio present) and only then renamed to `name.mp4`. On failure or cancel the partial file is
 deleted. Arguments are always an array (`spawn`, never a shell), so any file name is safe.
 
+**Range export** builds the timeline only up to the range end (the clip straddling it renders fewer
+frames, with its animation still timed on its full length), renders clips wholly before the range as
+plain background without decoding them, and trims the start off video and audio. So every frame in the
+range is the frame a full export would have. (Cutting the end with `trim` instead stalled FFmpeg 6 when
+it fell inside an animated clip's `split`/`blend` graph.)
+
+**Encoders:** libx264 with an average bitrate (VBV-capped) or CRF; or `h264_videotoolbox` with an
+average bitrate, offered only after a one-frame test encode succeeds (`src/main/export/encoders.ts`).
+
 Audio tracks are mixed after the concat:
 
 ```

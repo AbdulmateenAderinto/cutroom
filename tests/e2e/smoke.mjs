@@ -506,7 +506,7 @@ await step('animation: presets and keyframes via the UI; animated preview matche
   const mad = (x, y) => x.reduce((s, val, i) => s + Math.abs(val - y[i]), 0) / x.length;
   const results = frames.map((f, i) => {
     const a = raw(['-i', shots[i]]);
-    const b = raw(['-ss', (f / 30).toFixed(4), '-i', exported]);
+    const b = raw(['-ss', (f / 30 - 0.005).toFixed(4), '-i', exported]);
     const other = raw(['-ss', (frames[1 - i] / 30).toFixed(4), '-i', exported]); // a different moment, as a control
     return { f, diff: mad(a, b), control: mad(a, other) };
   });
