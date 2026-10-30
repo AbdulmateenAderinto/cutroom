@@ -4,7 +4,7 @@
  * detaching a clip's sound for an L-cut, a speed ramp (preview vs export, playback rates), a
  * freeze frame and a reversed clip (both: preview vs export), EQ (the preview's Web Audio response vs
  * the shared formula), noise reduction with “Listen”, a loudness-normalized export, and recording a
- * voice-over (fake microphone).
+ * voice-over (fake microphone), and stabilizing a shaky clip (preview vs export).
  *
  * Run: npm run test:e2e   (Linux without a display: xvfb-run -a npm run test:e2e)
  */
@@ -20,6 +20,9 @@ const grad = (r, g, b) => `nullsrc=s=640x360:r=30:d=4,format=rgb24,geq=r='${r}':
 const clip = (name, src, f0) => fixture(name, (f) => ff(['-f', 'lavfi', '-i', src, '-f', 'lavfi', '-i', `sine=f=${f0}:d=4`,
   '-c:v', 'libx264', '-preset', 'veryfast', '-g', '15', '-pix_fmt', 'yuv420p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
   '-c:a', 'aac', '-shortest', f]));
+const shaky = fixture('edit-shaky.mp4', (f) => ff(['-f', 'lavfi', '-i',
+  "testsrc2=s=720x420:r=30:d=0.04,loop=loop=89:size=1,crop=640:360:x='40+14*sin(n*1.9)+9*sin(n*0.7)':y='30+11*sin(n*1.3)',setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+  '-f', 'lavfi', '-i', 'sine=f=330:d=3', '-t', '3', '-c:v', 'libx264', '-crf', '12', '-pix_fmt', 'yuv420p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-c:a', 'aac', '-shortest', f]));
 const a = clip('edit-a.mp4', grad('40+50*T', '60+120*X/W', '200-150*Y/H'), 440);
 const b = clip('edit-b.mp4', grad('220-150*X/W', '30+50*T', '60+100*Y/H'), 880);
 
@@ -346,6 +349,54 @@ await step('record a voice-over from 1 s (fake microphone): it lands on a “Voi
   const peak = f.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
   assert(peak > 0.05, `the recording is silent (peak ${peak})`);
   console.log(`      recorded ${len.toFixed(2)} s, placed at ${(clip.start / TPS).toFixed(3)} s, peak ${peak.toFixed(2)}`);
+});
+
+await step('stabilize a shaky clip: a stabilized copy is used; preview matches export; back to the original', async () => {
+  await page.evaluate(() => window.__cutroom.store.set((st) => ({ project: { ...st.project, sequence: { items: [] }, audioTracks: [], overlays: [] }, selection: null })));
+  await h.stubOpen([shaky]);
+  await page.click('button:has-text("Import…")');
+  await page.waitForFunction(() => window.__cutroom.store.get().project.media.some((m) => m.name === 'edit-shaky.mp4'));
+  const idx = (await h.state()).media.findIndex((m) => m.name === 'edit-shaky.mp4');
+  await page.click(`.media-item >> nth=${idx} >> button:has-text("Add to timeline")`);
+  // Baseline: the same comparison on the original (this test picture's hard edges never match exactly).
+  await page.keyboard.press('Escape');
+  await page.addStyleTag({ content: '.toasts { display: none !important; }' });
+  const shoot = async (name, f) => {
+    await h.seekFrame(f);
+    await h.previewReady();
+    await page.waitForTimeout(400);
+    const png = path.join(out, `${name}-${f}.png`);
+    await page.locator('.stage').screenshot({ path: png });
+    return png;
+  };
+  const at = (file, x) => ['-ss', (x / 30 - 0.005).toFixed(4), '-i', file];
+  const basePng = await shoot('shaky', 20);
+  const baseFile = path.join(out, 'shaky.mp4');
+  await h.exportTo(baseFile, { fps: 30 });
+  const baseline = compareFrames(['-i', basePng], at(baseFile, 20), undefined, [32, 18]);
+  await page.click('.tl-track .clip >> nth=0');
+  const before = (await h.state()).sequence.items[0];
+  await page.click('.inspector button:has-text("Stabilize")');
+  await page.waitForFunction((id) => {
+    const s = window.__cutroom.store.get();
+    return s.working.length === 0 && s.project.sequence.items[0].mediaId !== id;
+  }, before.mediaId, { timeout: 120000 });
+  const s = await h.state();
+  const m = s.media.find((x) => x.id === s.sequence.items[0].mediaId);
+  assert(m.derived?.kind === 'stabilize' && s.sequence.items[0].sourceOut === before.sourceOut - before.sourceIn, JSON.stringify(m.derived));
+  await page.keyboard.press('Escape');
+  const png = await shoot('stable', 20);
+  const playing = await page.evaluate(() => [...document.querySelectorAll('video.stage-video')].find((v) => v.style.display === 'block')?.src ?? '');
+  assert(/stabilized/.test(decodeURIComponent(playing)), `the preview is not playing the stabilized copy: ${playing}`);
+  const file = path.join(out, 'stable.mp4');
+  await h.exportTo(file, { fps: 30 });
+  const same = compareFrames(['-i', png], at(file, 20), undefined, [32, 18]);
+  console.log(`      stabilized frame 20: preview vs export ${same.toFixed(2)} (the original clip, same test: ${baseline.toFixed(2)})`);
+  assert(same < baseline * 1.2 + 1, `preview and export differ more than for the original clip (${same.toFixed(2)} vs ${baseline.toFixed(2)})`);
+  await page.click('.tl-track .clip >> nth=0');
+  await page.click('.inspector button:has-text("Use original footage")');
+  const back = (await h.state()).sequence.items[0];
+  assert(back.mediaId === before.mediaId && back.sourceIn === before.sourceIn && back.sourceOut === before.sourceOut, JSON.stringify(back));
 });
 
 await h.close();

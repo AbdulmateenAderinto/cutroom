@@ -551,13 +551,39 @@ export function useReversed(project: Project, clipId: string, reversed: MediaRef
   });
 }
 
-/** The original footage of a reversed clip, if its file is still in the project. */
+/**
+ * Swap a clip to a stabilized copy of its footage (`stable`, made from [sourceIn, sourceOut) of
+ * the clip's file, frame for frame). Everything is kept; keyframes move with the footage.
+ */
+export function useStabilized(project: Project, clipId: string, stable: MediaRef): Project {
+  return updateClip(project, clipId, (c) => {
+    const len = snapToFrame(stable.info.duration, stable.info.frameRate, 'floor');
+    const shift = -c.sourceIn;
+    return { ...shiftKeyframes(c, shift), mediaId: stable.id, ...legalRange(project, stable, 0, len, 'in', clipSpeed(c)) };
+  });
+}
+
+function shiftKeyframes(c: ClipItem, delta: Ticks): ClipItem {
+  const k = c.animation?.keyframes;
+  if (!k) return c;
+  const moved = Object.fromEntries(Object.entries(k).map(([prop, keys]) => [prop, keys?.map((x) => ({ ...x, at: x.at + delta }))]));
+  return { ...c, animation: { ...c.animation, keyframes: moved } };
+}
+
+/** The original footage of a reversed or stabilized clip, if its file is still in the project. */
 export function unreverse(project: Project, clipId: string): Project | null {
-  const c = getItem(project, clipId);
-  if (!c || c.kind !== 'clip') return null;
+  const c = getItem(project, clipId) ?? (project.overlays ?? []).find((o) => o.id === clipId);
+  if (!c || c.kind === 'gap') return null;
   const d = findMedia(project, c.mediaId)?.derived;
-  const orig = d?.kind === 'reverse' ? findMedia(project, d.mediaId) : undefined;
+  const orig = d && (d.kind === 'reverse' || d.kind === 'stabilize') ? findMedia(project, d.mediaId) : undefined;
   if (!d || !orig) return null;
+  if (d.kind === 'stabilize') {
+    return updateClip(project, clipId, (x) => ({
+      ...shiftKeyframes(x, d.sourceIn),
+      mediaId: orig.id,
+      ...legalRange(project, orig, d.sourceIn + x.sourceIn, Math.min(d.sourceOut, d.sourceIn + x.sourceOut), 'in', clipSpeed(x)),
+    }));
+  }
   return updateClip(project, clipId, (x) => {
     // Reversed time s maps back to original time (end − s): the clip's range flips.
     const sIn = d.sourceOut - x.sourceOut;

@@ -472,6 +472,53 @@ export async function listenToExport(seconds = 5) {
   }
 }
 
+/**
+ * Stabilize a clip: a stabilized copy of the footage it uses is made (vid.stab, two passes) and the
+ * clip switches to it. On a stabilized clip, switches back to the original.
+ */
+export async function stabilizeClip(clipId: string, strength = 0.5): Promise<{ mediaId: string } | { error: string }> {
+  const p0 = store.get().project;
+  const fail = (error: string) => {
+    toast(error, 'warn');
+    return { error };
+  };
+  const l = clipLayout(p0, clipId);
+  if (!l || l.item.kind !== 'clip') return fail('Select a video clip first.');
+  const clip = l.item;
+  const m = findMedia(p0, clip.mediaId);
+  if (m?.derived?.kind === 'stabilize') {
+    const back = ops.unreverse(p0, clipId);
+    if (back) {
+      commit(() => back);
+      return { mediaId: m.derived.mediaId };
+    }
+  }
+  if (!m || m.info.kind !== 'video') return fail('Only video clips can be stabilized.');
+  if (store.get().missing[m.id]) return fail(`${m.name} is offline; relink it first.`);
+  const key = `stabilize:${clipId}`;
+  if (store.get().working.includes(key)) return { error: 'already stabilizing' };
+  setWorking(key, true);
+  toast(`Stabilizing ${formatDuration(clip.sourceOut - clip.sourceIn)} of ${m.name}… (analysis, then a smoothed copy)`);
+  try {
+    const r = await api().stabilizeClip(m.path, m.info, clip.sourceIn, clip.sourceOut, strength, store.get().projectPath);
+    if (!r.ok) return fail(`Could not stabilize the clip: ${r.error}`);
+    const ref = await importDerived(r.path, `${m.name} (stabilized)`, { kind: 'stabilize', mediaId: m.id, sourceIn: clip.sourceIn, sourceOut: clip.sourceOut });
+    if (!ref) return { error: 'unreadable' };
+    const now = clipLayout(store.get().project, clipId);
+    const same = now?.item.kind === 'clip' && now.item.mediaId === clip.mediaId && now.item.sourceIn === clip.sourceIn && now.item.sourceOut === clip.sourceOut;
+    if (!same) {
+      commit((p) => ops.addMedia(p, [ref]));
+      return fail('The clip changed while it was being stabilized; the stabilized copy was added to the Media panel.');
+    }
+    commit((p) => ops.useStabilized(ops.addMedia(p, [ref]), clipId, ref));
+    loadThumbnail(ref);
+    toast('Stabilized. (Undo, or “Use original footage”, returns to the original.)');
+    return { mediaId: ref.id };
+  } finally {
+    setWorking(key, false);
+  }
+}
+
 /** M: add a marker at the playhead (or select the one already there). */
 export function addMarkerAction() {
   const r = addMarker(store.get().project, playhead.get().time);

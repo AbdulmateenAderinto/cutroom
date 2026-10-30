@@ -84,7 +84,7 @@ export interface MediaRef {
   /** Where the file's audio is not silent (SOURCE time); used to lower music under speech. */
   speech?: { start: Ticks; end: Ticks }[];
   /** Made by Cutroom from part of another file (freeze frame, reversed clip). */
-  derived?: { kind: 'freeze' | 'reverse'; mediaId: string; sourceIn: Ticks; sourceOut: Ticks };
+  derived?: { kind: 'freeze' | 'reverse' | 'stabilize'; mediaId: string; sourceIn: Ticks; sourceOut: Ticks };
   /** How the file's picture is read before anything else (HDR tone mapping, a camera LUT). */
   input?: MediaInput;
 }

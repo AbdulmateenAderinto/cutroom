@@ -58,7 +58,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 55 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 56 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -142,7 +142,8 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Blur per clip (Gaussian, σ as a fraction of the picture width; moves and scales with it) | ✅ | Export: `gblur` (6 steps) — an edge's profile within 8/255 of the true Gaussian; preview: SVG feGaussianBlur. Preview vs export 1.7/255 |
 | Masks: ellipse or rectangle with a soft edge, inverted ellipse, presets (circle, soft oval, vignette, letterbox) | ✅ | Export: alpha from the shared formula (`geq`, pixel centres), checked point by point for 4 masks and on a scaled, rotated PiP; preview: CSS mask-image gradients with the same ramps |
 | Chroma key (green screen) per media file: colour, similarity, soft edge | ✅ | Export: FFmpeg `colorkey` in the input transform; preview: a VP9-with-alpha WebM copy made with the same chain (Chromium plays the transparency). Preview vs export 2.7–2.9/255. Each change makes a new preview copy (a few seconds per minute of footage) |
-| AI tool `set_effects`; chroma key via `set_media_picture` | ✅ | |
+| Stabilize a clip: a stabilized copy of its footage (vid.stab, two passes, slight automatic zoom; FFmpeg's deshake if vid.stab is missing) is made and used; “Use original footage” or undo returns | ✅ | Shake on a test clip 16.3 → 2.5 (vid.stab); every frame and the sound kept; keyframes move with the footage; **one generation of re-encoding** |
+| AI tools `set_effects`, `stabilize_clip`; chroma key via `set_media_picture` | ✅ | |
 
 ## Overlay tracks (picture-in-picture)
 
@@ -290,6 +291,10 @@ export (2.3–5.5/255 vs 16–21 for another moment), and “Play forwards again
 a title with position and rotation keyframes, and preview vs export at four moments (2.1–3.0/255 vs
 23–53 for a moment with a different angle or position); then a wipe (out of the rotated clip), a
 slide and a zoom, each compared at three frames inside the transition (2.2–3.3/255 vs 25–55).
+
+**Effects** are covered in the editing run (stabilize: the preview plays the stabilized copy and
+matches the export as closely as the original clip does), the motion run (blur + circle mask, 1.7/255)
+and the overlays run (green screen keyed over the main track, 2.7–2.9/255).
 
 **Overlays UI run (twelfth script, 7 steps):** **⧉ PiP** adds the clip at the playhead on a V2 row
 and selects it; dragging and resizing it in the preview and the “Top left” preset (the main clip's

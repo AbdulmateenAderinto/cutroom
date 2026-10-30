@@ -14,12 +14,12 @@ import { setupAiControl } from './control/aiControl';
 import { setupTranscription } from './transcribe/transcribeService';
 import { cancelExport, startExport } from './export/exportJobs';
 import { runExport } from './export/exportRunner';
-import { encoderAvailability } from './export/encoders';
+import { encoderAvailability, hasFilter } from './export/encoders';
 import { checkFfmpeg, ffmpegPath, resolveBinaries } from './media/ffbin';
 import { SUPPORTED_EXTENSIONS, probeMedia } from './media/probe';
 import { makeProxy } from './media/proxy';
 import { setConvertDir } from './media/heic';
-import { makeFreezeFrame, makeReversed } from './media/derived';
+import { makeFreezeFrame, makeReversed, makeStabilized } from './media/derived';
 import { importLut, setLutDir } from './media/luts';
 import { thumbnailDataUrl } from './media/thumbnails';
 import { noiseFloor, waveformPeaks } from './media/waveform';
@@ -203,6 +203,9 @@ function registerIpc() {
     job.then((out) => ({ ok: true as const, path: out })).catch((err) => ({ ok: false as const, error: (err as Error).message }));
   ipcMain.handle('media:freeze', (_e, p: string, info: MediaInfo, at: number, projectPath: string | null) =>
     wrap(makeFreezeFrame(derivedDir(projectPath), p, info, at)),
+  );
+  ipcMain.handle('media:stabilize', async (e, p: string, info: MediaInfo, sourceIn: number, sourceOut: number, strength: number, projectPath: string | null) =>
+    wrap(makeStabilized(derivedDir(projectPath), p, info, sourceIn, sourceOut, strength, await hasFilter('vidstabdetect'), (fraction) => e.sender.send('media:reverseProgress', { path: p, fraction }))),
   );
   ipcMain.handle('media:reverse', (e, p: string, info: MediaInfo, sourceIn: number, sourceOut: number, projectPath: string | null) =>
     wrap(makeReversed(derivedDir(projectPath), p, info, sourceIn, sourceOut, (fraction) => e.sender.send('media:reverseProgress', { path: p, fraction }))),

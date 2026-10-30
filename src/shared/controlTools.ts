@@ -311,6 +311,12 @@ export const CONTROL_TOOLS: ToolDef[] = [
     inputSchema: obj({ clip_id: str('clip id') }, ['clip_id']),
   },
   {
+    name: 'stabilize_clip',
+    runs: 'renderer',
+    description: 'Smooth out camera shake in a clip (main track or overlay): a stabilized copy of the footage it uses is made (vid.stab, two passes; slight zoom so no borders show) and the clip switches to it. strength 0..1 (default 0.5). On a stabilized clip it switches back to the original footage. Takes a while (several seconds per second of 1080p).',
+    inputSchema: obj({ clip_id: str('clip id'), strength: num('0..1') }, ['clip_id']),
+  },
+  {
     name: 'detach_audio',
     runs: 'renderer',
     description: 'Move a video clip\'s sound (main track or overlay) to an audio track at exactly the same time, and mute the clip. Then trim/move the audio clip with set_audio_clip for a J-cut (sound starts before the picture) or L-cut (sound continues after it). Clip must be at 1× speed.',

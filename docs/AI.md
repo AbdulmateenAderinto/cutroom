@@ -61,7 +61,7 @@ copy the config again.
 | Media | `import_media` |
 | Edit | `build_timeline` (whole rough cut in one step), `add_clip`, `set_clip_range`, `split_at`, `delete_clip`, `move_clip`, `duplicate_clip`, `set_framing`, `set_clip_audio`, `set_speed`, `set_transition`, `set_color`, `remove_ranges` |
 | Titles | `add_title` (presets + any style), `set_title`, `set_title_keyframe` (move, zoom, opacity, rotate), `remove_title` |
-| Speed | `speed_ramp` (stepped ramp from one speed to another), `set_speed`, `freeze_frame`, `reverse_clip` |
+| Speed | `speed_ramp` (stepped ramp from one speed to another), `set_speed`, `freeze_frame`, `reverse_clip`, `stabilize_clip` |
 | Picture | `set_media_picture` (HDR tone mapping, .cube LUT per media file), `set_effects` (blur, masks) |
 | Sound | `detach_audio` (clip sound → audio track, for J/L-cuts); EQ and noise reduction via `set_clip_audio` / `set_audio_clip`; `export_video` `loudness` |
 | Markers | `add_marker`, `set_marker`, `remove_marker` (exported as chapters; `export_video` `chapters`) |

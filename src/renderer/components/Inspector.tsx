@@ -147,6 +147,7 @@ function ClipInspector({ clip, project, overlay }: { clip: ClipItem; project: Pr
   const media = findMedia(project, clip.mediaId)!;
   const missing = useStore((s) => !!s.missing[clip.mediaId]);
   const reversing = useStore((s) => s.working.includes(`reverse:${clip.id}`));
+  const stabilizing = useStore((s) => s.working.includes(`stabilize:${clip.id}`));
   const rate = project.frameRate;
   const pf = frameDuration(rate);
   const lay = clipLayout(project, clip.id)!;
@@ -416,9 +417,16 @@ function ClipInspector({ clip, project, overlay }: { clip: ClipItem; project: Pr
                 Freeze frame
               </button>
             )}
-            <button className="btn small" disabled={reversing} onClick={() => void A.reverseClip(id)} title="Play this clip backwards (a reversed copy of its footage is made)">
-              {reversing ? 'Reversing…' : media.derived?.kind === 'reverse' ? 'Play forwards again' : 'Reverse'}
-            </button>
+            {media.derived?.kind !== 'stabilize' && (
+              <button className="btn small" disabled={reversing} onClick={() => void A.reverseClip(id)} title="Play this clip backwards (a reversed copy of its footage is made)">
+                {reversing ? 'Reversing…' : media.derived?.kind === 'reverse' ? 'Play forwards again' : 'Reverse'}
+              </button>
+            )}
+            {media.derived?.kind !== 'reverse' && (
+              <button className="btn small" disabled={stabilizing} onClick={() => void A.stabilizeClip(id)} title="Smooth out camera shake (a stabilized copy of its footage is made; the picture is zoomed in slightly)">
+                {stabilizing ? 'Stabilizing…' : media.derived?.kind === 'stabilize' ? 'Use original footage' : 'Stabilize'}
+              </button>
+            )}
           </div>
         )}
       </Section>

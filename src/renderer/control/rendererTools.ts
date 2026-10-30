@@ -373,6 +373,12 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         if ('error' in r) throw new ToolError(r.error);
         return ok({ clip_id: args.clip_id, media_id: r.mediaId, clip: clipInfo(args.clip_id) });
       }
+      case 'stabilize_clip': {
+        clipOrThrow(p, args.clip_id);
+        const r = await A.stabilizeClip(args.clip_id, Number.isFinite(args.strength) ? Math.min(1, Math.max(0, args.strength)) : 0.5);
+        if ('error' in r) throw new ToolError(r.error);
+        return ok({ clip_id: args.clip_id, media_id: r.mediaId, clip: clipInfo(args.clip_id) });
+      }
       case 'detach_audio': {
         clipOrThrow(p, args.clip_id);
         const r = detachAudio(p, args.clip_id);

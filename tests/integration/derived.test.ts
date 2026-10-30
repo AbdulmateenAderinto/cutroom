@@ -8,13 +8,14 @@ import { existsSync, mkdtempSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { makeFreezeFrame, makeReversed, reverseChunks } from '../../src/main/media/derived';
+import { makeFreezeFrame, makeReversed, makeStabilized, reverseChunks } from '../../src/main/media/derived';
 import { probeMedia } from '../../src/main/media/probe';
 import { runExport } from '../../src/main/export/exportRunner';
 import { type ClipItem, type MediaRef, type Project, createProject, layoutSequence, sourceAt } from '../../src/shared/model';
-import { addClip, addMedia, insertFreezeFrame, setClipRange, unreverse, useReversed } from '../../src/shared/ops';
+import { addClip, addMedia, insertFreezeFrame, setClipRange, unreverse, useReversed, useStabilized } from '../../src/shared/ops';
 import { TICKS_PER_SECOND as S, frameToTicks } from '../../src/shared/time';
-import { FIXTURE_DIR, OUTPUT_DIR, decodeCodedFrame, ensureDirs, makeCoded, makeSync, mediaRefFor, readAudio, samplePatch } from '../helpers/fixtures';
+import { FIXTURE_DIR, OUTPUT_DIR, decodeCodedFrame, ensureDirs, makeCoded, makeSync, mediaRefFor, readAudio, samplePatch, toneFrequency } from '../helpers/fixtures';
+const toneOf = (pcm: Float32Array) => toneFrequency(pcm, 0.5, 1.5);
 
 const R30 = { num: 30, den: 1 };
 const dir = mkdtempSync(path.join(os.tmpdir(), 'cutroom-derived-'));
@@ -128,5 +129,59 @@ describe('reverse', () => {
     // A reversed beep ends where it started; its first sample is the old last one, so it begins
     // at the flash frame (within a few ms: the beep's edges are soft after AAC).
     beeps.forEach((t, i) => expect(Math.abs(t - fl[i])).toBeLessThan(0.006));
+  });
+});
+
+describe('stabilize', () => {
+  // A still picture shaken by a few pixels every frame (as handheld footage), 3 s.
+  let SHAKY: MediaRef;
+  beforeAll(async () => {
+    const f = path.join(FIXTURE_DIR, 'shaky.mp4');
+    if (!existsSync(f)) {
+      execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i',
+        "testsrc2=s=720x420:r=30:d=0.04,loop=loop=89:size=1,crop=640:360:x='40+14*sin(n*1.9)+9*sin(n*0.7)':y='30+11*sin(n*1.3)',setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+        '-f', 'lavfi', '-i', 'sine=f=440:r=48000:d=3', '-t', '3', '-c:v', 'libx264', '-crf', '12', '-pix_fmt', 'yuv420p',
+        '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-c:a', 'aac', '-shortest', f]);
+    }
+    SHAKY = await mediaRefFor(f);
+  });
+
+  /** Mean absolute luma change between consecutive frames (a still picture: all of it is shake). */
+  const motion = (file: string) => {
+    const raw = execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', file, '-vf', 'scale=160:90,format=gray', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 26 });
+    const n = raw.length / (160 * 90);
+    let sum = 0;
+    for (let i = 1; i < n; i++) {
+      let d = 0;
+      // The middle (the edges are zoomed out of view in the stabilized copy).
+      for (let y = 20; y < 70; y++) for (let x = 30; x < 130; x++) d += Math.abs(raw[i * 14400 + y * 160 + x] - raw[(i - 1) * 14400 + y * 160 + x]);
+      sum += d / 5000;
+    }
+    return { mean: sum / (n - 1), frames: n };
+  };
+
+  it('vid.stab removes most of the shake, keeps every frame and the sound; switching back restores the clip', async () => {
+    const file = await makeStabilized(dir, SHAKY.path, SHAKY.info, 0.5 * S, 2.5 * S, 0.8, true);
+    const before = motion(SHAKY.path);
+    const after = motion(file);
+    console.log(`shake: ${before.mean.toFixed(2)} → ${after.mean.toFixed(2)}`);
+    expect(after.frames).toBe(60);
+    expect(after.mean).toBeLessThan(before.mean * 0.4);
+    expect(toneOf(readAudio(file))).toBeCloseTo(440, -1);
+    const stable = await ref(file, { kind: 'stabilize', mediaId: SHAKY.id, sourceIn: 0.5 * S, sourceOut: 2.5 * S });
+    expect(stable.info.duration).toBe(2 * S);
+    let p = addMedia({ ...createProject('st'), canvas: { width: 640, height: 360, preset: 'custom' } }, [SHAKY, stable]);
+    p = addClip(p, SHAKY.id)!.project;
+    const id = p.sequence.items[0].id;
+    p = setClipRange(p, id, 0.5 * S, 2.5 * S, 'in');
+    const q = useStabilized(p, id, stable);
+    expect(q.sequence.items[0]).toMatchObject({ mediaId: stable.id, sourceIn: 0, sourceOut: 2 * S });
+    const trimmed = setClipRange(q, id, 0.5 * S, 1.5 * S, 'in');
+    expect(unreverse(trimmed, id)!.sequence.items[0]).toMatchObject({ mediaId: SHAKY.id, sourceIn: 1 * S, sourceOut: 2 * S });
+  });
+
+  it('deshake (when FFmpeg has no vid.stab) also reduces the shake', async () => {
+    const file = await makeStabilized(dir, SHAKY.path, SHAKY.info, 0, 2 * S, 0.5, false);
+    expect(motion(file).mean).toBeLessThan(motion(SHAKY.path).mean * 0.8);
   });
 });

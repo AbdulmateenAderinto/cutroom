@@ -84,10 +84,10 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Speed | 0.25×–4× per clip, pitch kept; stepped speed ramps (ease into/out of slow motion); freeze frame (**⇧F**); reverse |
 | Transitions | Crossfade, dip to black/white, wipes, slides, zoom |
 | Colour | Exposure, contrast, saturation, temperature, hue, lightness, curves; HDR → SDR tone mapping; .cube LUTs per media file |
-| Effects | Blur, masks (ellipse/rectangle, soft edge; circle PiP), chroma key (green screen) |
+| Effects | Blur, masks (ellipse/rectangle, soft edge; circle PiP), chroma key (green screen), stabilization |
 | Smart tools | Remove pauses, split at scenes, transcribe (whisper.cpp), remove filler words, captions |
 | Export | H.264, HEVC (Apple `hvc1`) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
-| AI | 55 MCP tools so Claude can edit, look at frames and export |
+| AI | 56 MCP tools so Claude can edit, look at frames and export |
 
 Projects save as `.cutroom` files (format version 7; older ones open fine).
 

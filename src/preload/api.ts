@@ -122,6 +122,8 @@ export interface CutroomApi {
   /** A reversed copy of [sourceIn, sourceOut) of a video file. */
   reverseClip(path: string, info: MediaInfo, sourceIn: number, sourceOut: number, projectPath: string | null): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   onReverseProgress(cb: (p: { path: string; fraction: number }) => void): () => void;
+  /** A stabilized copy of [sourceIn, sourceOut) of a video file (strength 0..1). */
+  stabilizeClip(path: string, info: MediaInfo, sourceIn: number, sourceOut: number, strength: number, projectPath: string | null): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   /** Whether the hardware encoder works here (checked once with a test encode). */
   encoders(): Promise<{ videotoolbox: boolean; reason?: string }>;
   onExportProgress(cb: (p: ExportProgress) => void): () => void;

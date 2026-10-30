@@ -151,3 +151,64 @@ export async function makeReversed(
     rmSync(tmp, { recursive: true, force: true });
   }
 }
+
+/**
+ * A stabilized copy of [sourceIn, sourceOut): vid.stab in two passes (motion analysis, then a
+ * smoothed transform with automatic zoom so no borders show), or FFmpeg's one-pass deshake when
+ * this FFmpeg has no vid.stab. Every frame stays at its time (same frame count), so the clip keeps
+ * its timing. `strength` 0..1 sets how much camera movement is smoothed away.
+ */
+export async function makeStabilized(
+  dir: string, file: string, info: MediaInfo, sourceIn: Ticks, sourceOut: Ticks, strength: number, useVidstab: boolean,
+  onProgress?: (fraction: number) => void,
+): Promise<string> {
+  if (info.kind !== 'video') throw new Error('Only video clips can be stabilized.');
+  if (info.isHDR) throw new Error('HDR clips cannot be stabilized yet (the copy would lose the HDR).');
+  if (ticksToSeconds(sourceOut - sourceIn) > MAX_REVERSE_SECONDS) throw new Error(`Clips longer than ${MAX_REVERSE_SECONDS / 60} minutes cannot be stabilized; split it first.`);
+  mkdirSync(dir, { recursive: true });
+  const tmp = mkdtempSync(path.join(dir, '.stabilize-'));
+  const out = path.join(dir, `${base(file)} stabilized ${stamp()}.mp4`);
+  const fd = frameDuration(info.frameRate);
+  const k0 = Math.round(sourceIn / fd);
+  const k1 = Math.round(sourceOut / fd);
+  const frames = k1 - k0;
+  const samples = Math.round(ticksToSeconds(frames * fd) * 48000);
+  const { pre, scaleIn } = colourIn(info);
+  const input = ['-ss', f6(Math.max(0, ticksToSeconds(k0 * fd - Math.floor(fd / 2)))), '-i', file];
+  const lead = ticksToSeconds(k0 * fd) - Math.max(0, ticksToSeconds(k0 * fd - Math.floor(fd / 2)));
+  const smoothing = Math.round(6 + 40 * Math.min(1, Math.max(0, strength)));
+  const runIn = (args: string[]) =>
+    new Promise<void>((resolve, reject) => {
+      const p = spawn(ffmpegPath(), args, { stdio: ['ignore', 'ignore', 'pipe'], cwd: tmp });
+      let err = '';
+      p.stderr.on('data', (d) => (err = (err + d.toString()).slice(-8000)));
+      p.on('error', reject);
+      p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim().split('\n').pop() || `FFmpeg exited with ${code}`))));
+    });
+  const head = ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error'];
+  try {
+    let stab: string;
+    if (useVidstab) {
+      // The transforms file is named plainly and found in the working directory (nothing to escape).
+      await runIn([...head, ...input, '-map', '0:v:0', '-vf', `trim=end_frame=${frames},vidstabdetect=shakiness=6:accuracy=15:result=transforms.trf`, '-f', 'null', '-']);
+      onProgress?.(0.5);
+      stab = `vidstabtransform=input=transforms.trf:smoothing=${smoothing}:optzoom=1:interpol=bicubic,unsharp=5:5:0.6:3:3:0.3,`;
+    } else {
+      stab = `deshake=rx=48:ry=48:edge=clamp,`;
+    }
+    const partial = `${out}.partial.mp4`;
+    await runIn([
+      ...head, ...input, '-map', '0:v:0', ...(info.hasAudio ? ['-map', '0:a:0'] : []),
+      '-vf', `trim=end_frame=${frames},${stab}${pre}scale=w=${info.displayWidth}:h=${info.displayHeight}:flags=bicubic:${scaleIn}:out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1`,
+      ...(info.hasAudio ? ['-af', `atrim=start=${f6(lead)},asetpts=PTS-STARTPTS,aresample=48000,apad,atrim=end_sample=${samples}`, '-c:a', 'aac', '-b:a', '256k'] : []),
+      '-r', `${info.frameRate.num}/${info.frameRate.den}`, '-fps_mode', 'cfr', '-frames:v', String(frames),
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '12', '-g', '30', '-pix_fmt', 'yuv420p',
+      '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-movflags', '+faststart', '-f', 'mp4', partial,
+    ]);
+    renameSync(partial, out);
+    onProgress?.(1);
+    return out;
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}

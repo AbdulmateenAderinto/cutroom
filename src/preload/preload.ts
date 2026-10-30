@@ -34,6 +34,7 @@ const api: CutroomApi = {
   freezeFrame: (p, info, at, projectPath) => ipcRenderer.invoke('media:freeze', p, info, at, projectPath),
   reverseClip: (p, info, a, b, projectPath) => ipcRenderer.invoke('media:reverse', p, info, a, b, projectPath),
   onReverseProgress: (cb) => on('media:reverseProgress', cb),
+  stabilizeClip: (p, info, a, b, strength, projectPath) => ipcRenderer.invoke('media:stabilize', p, info, a, b, strength, projectPath),
   encoders: () => ipcRenderer.invoke('export:encoders'),
   onExportProgress: (cb) => on('export:progress', cb),
   showInFolder: (path) => ipcRenderer.invoke('shell:showInFolder', path),
