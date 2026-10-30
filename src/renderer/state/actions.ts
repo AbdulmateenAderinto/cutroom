@@ -714,12 +714,15 @@ export async function saveVersion(label: string): Promise<boolean> {
   return true;
 }
 
-/** Replace the current edit with a saved version (one undo step). */
-export async function restoreVersion(file: string, name: string) {
+/** Replace the current edit with a saved version (one undo step). Returns an error message, or null. */
+export async function restoreVersion(file: string, name: string, by = ''): Promise<string | null> {
   const s = store.get();
-  if (!s.projectPath) return;
+  if (!s.projectPath) return 'Save the project first: versions are kept next to the project file.';
   const r = await api().loadVersion(s.projectPath, file);
-  if (!r.ok) return toast(`Could not open the version: ${r.error}`, 'error');
+  if (!r.ok) {
+    toast(`Could not open the version: ${r.error}`, 'error');
+    return `Could not open the version: ${r.error}`;
+  }
   commit(() => ({ ...r.project, id: s.project.id }), { selection: null });
   store.set((st) => {
     const missing = { ...st.missing };
@@ -727,7 +730,8 @@ export async function restoreVersion(file: string, name: string) {
     return { missing, dialog: null };
   });
   engine.seek(0);
-  toast(`Restored “${name}”. Undo (⌘Z) brings back what you had.`);
+  toast(`${by}Restored “${name}”. Undo (⌘Z) brings back what you had.`);
+  return null;
 }
 
 export async function relink(mediaId: string) {

@@ -58,7 +58,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 56 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 63 tools, incl. versions (`save_version`, `list_versions`, `restore_version`), the export queue (`queue_export`, `get_export_queue`, `cancel_queued_export`) and `set_proxy_mode`; the official MCP client test drives a full edit, restores a version, runs a queue and makes proxies |
 
 ## Music and photos
 

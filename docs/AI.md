@@ -48,6 +48,7 @@ To use a specific whisper build, set `CUTROOM_WHISPER=/path/to/whisper-cli`.
    - "Give every clip a quick fade-in and a slow zoom."
    - "Show me the frame at 12 s. Is the subject centred? Fix the framing."
    - "Export a 1080×1920 MP4 at 8 Mb/s to ~/Desktop/reel.mp4."
+   - "Save a version, then try a faster cut. Queue a 16:9 and a 9:16 export of it."
 
 The bridge (`build/main/mcp/server.js`) runs on Cutroom's own Electron binary
 (`ELECTRON_RUN_AS_NODE=1`), so you don't need Node.js installed. If you move the Cutroom folder,
@@ -70,7 +71,10 @@ copy the config again.
 | Animate | `set_animation` (in/out/motion presets), `set_keyframe`, `remove_keyframes` |
 | Analyse | `detect_silence`, `remove_silence`, `detect_scenes`, `split_at_scenes` |
 | Speech | `transcribe`, `get_transcript`, `set_captions`, `remove_filler_words` |
-| Project | `set_canvas`, `undo`, `redo`, `seek`, `save_project`, `export_video` (size, frame rate, bitrate or CRF, H.264/HEVC/ProRes, .mp4/.mov, encoder, start/end range), `get_export_status` |
+| Project | `set_canvas`, `undo`, `redo`, `seek`, `save_project`, `export_video` (size, frame rate, bitrate or CRF, H.264/HEVC/ProRes, .mp4/.mov, encoder, start/end range, parallel parts), `get_export_status` |
+| Versions | `save_version` (named snapshot next to the project), `list_versions`, `restore_version` (one undo step) |
+| Export queue | `queue_export` (same options as `export_video`; renders the timeline as it is when queued), `get_export_queue`, `cancel_queued_export` |
+| Preview | `set_proxy_mode` (small preview copies of large video; export still uses the originals) |
 
 All tool definitions live in `src/shared/controlTools.ts`. To add a tool, add its definition there
 and implement it in `src/renderer/control/rendererTools.ts` (edits) or in a main-process module

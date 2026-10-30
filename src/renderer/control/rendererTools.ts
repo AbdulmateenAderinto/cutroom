@@ -39,6 +39,9 @@ import { engine } from '../preview/engine';
 import * as A from '../state/actions';
 import { playhead } from '../state/playhead';
 import { commit, redo, store, toast, undo } from '../state/store';
+import { cancelQueued, queueExport } from '../state/exportQueue';
+import { lowKey, wantsLowProxy } from '../preview/mediaUrl';
+import type { ExportSettings } from '../../shared/exportPlan';
 
 type Args = Record<string, any>;
 const ok = (v: unknown): ToolResult => ({ content: [{ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v, null, 2) }] });
@@ -738,6 +741,80 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         const np = store.get().project;
         return ok({ canvas: np.canvas, frame_rate: rateLabel(np.frameRate), background: np.background, presets: CANVAS_PRESETS.map((c) => c.id) });
       }
+      // ---- Versions ----
+      case 'save_version': {
+        const path = store.get().projectPath;
+        if (!path) return fail('This project has never been saved, and versions are kept next to the project file. Ask the person to save it once (⌘S) to choose a location.');
+        const label = String(args.name ?? '').trim();
+        if (!label) throw new ToolError('Give the version a name.');
+        const r = await window.cutroom.saveVersion(path, store.get().project, label);
+        if (!r.ok) return fail(`Could not save the version: ${r.error}`);
+        toast(`AI saved the version “${r.name}”.`, 'info', 4000);
+        return ok({ saved: r.name, restore_with: `restore_version { "name": ${JSON.stringify(r.name)} }` });
+      }
+      case 'list_versions': {
+        const path = store.get().projectPath;
+        if (!path) return ok({ versions: [], note: 'The project has never been saved, so it has no versions.' });
+        const list = await window.cutroom.listVersions(path);
+        return ok({ versions: list.map((v) => ({ name: v.name, saved_at: new Date(v.savedAt).toISOString() })) });
+      }
+      case 'restore_version': {
+        const path = store.get().projectPath;
+        if (!path) return fail('This project has never been saved, so it has no versions.');
+        const list = await window.cutroom.listVersions(path);
+        const v = list.find((x) => x.name === args.name) ?? list.find((x) => x.name.toLowerCase().endsWith(String(args.name ?? '').toLowerCase()));
+        if (!v) return fail(`No version named “${args.name}”. Versions: ${list.map((x) => x.name).join('; ') || 'none'}.`);
+        const err = await A.restoreVersion(v.file, v.name, 'AI: ');
+        if (err) return fail(err);
+        return ok({ restored: v.name, undo: 'undo brings back the edit from before', timeline: projectSummary(store.get().project).timeline });
+      }
+
+      // ---- Export queue ----
+      case '__queue_export': {
+        const r = queueExport(args.project as Project, args.settings as ExportSettings, 'AI: ');
+        if ('error' in r) return fail(r.error);
+        return ok({ queued: true, id: r.id, path: (args.settings as ExportSettings).outputPath, position: store.get().exportQueue.filter((q) => q.status === 'waiting' || q.status === 'running').length, next: 'Check progress with get_export_queue.' });
+      }
+      case 'get_export_queue':
+        return ok({
+          queue: store.get().exportQueue.map((q) => ({
+            id: q.id,
+            path: q.settings.outputPath,
+            status: q.status,
+            ...(q.status === 'running' ? { percent: Math.round((q.progress?.fraction ?? 0) * 100) } : {}),
+            codec: q.settings.codec ?? 'h264',
+            size: `${q.settings.width}x${q.settings.height}`,
+            ...(q.settings.parallel ? { parallel: true } : {}),
+            ...(q.result?.status === 'done' ? { file_mb: Math.round(q.result.output.sizeBytes / 1e5) / 10, duration_s: q.result.output.durationSeconds } : {}),
+            ...(q.result?.status === 'failed' ? { error: q.result.message } : {}),
+          })),
+        });
+      case 'cancel_queued_export': {
+        const q = store.get().exportQueue.find((x) => x.id === Number(args.id));
+        if (!q) return fail(`No queued export with id ${args.id}.`);
+        if (q.status !== 'waiting' && q.status !== 'running') return fail(`That export has already finished (${q.status}).`);
+        cancelQueued(q.id);
+        toast(`AI cancelled the queued export “${q.settings.outputPath.split(/[\\/]/).pop()}”.`, 'info', 4000);
+        return ok({ cancelled: q.id, was: q.status });
+      }
+
+      // ---- Preview ----
+      case 'set_proxy_mode': {
+        if (typeof args.on !== 'boolean') throw new ToolError('`on` must be true or false.');
+        A.setProxyMode(args.on);
+        toast(`AI turned proxy mode ${args.on ? 'on' : 'off'}.`, 'info', 3000);
+        const s = store.get();
+        const copies = s.project.media.filter(wantsLowProxy).map((m) => {
+          const pr = s.proxies[lowKey(m.id)];
+          return { media: m.name, status: pr?.status ?? (args.on ? 'making' : 'not made'), ...(pr?.status === 'making' ? { percent: Math.round((pr.fraction ?? 0) * 100) } : {}) };
+        });
+        return ok({
+          proxy_mode: s.proxyMode,
+          copies,
+          note: copies.length ? 'Until a copy is ready the preview plays the original. Export always uses the originals.' : 'No media is larger than 960×540, so nothing needs a copy.',
+        });
+      }
+
       case 'undo':
         undo();
         toast('AI: undo', 'info', 2000);

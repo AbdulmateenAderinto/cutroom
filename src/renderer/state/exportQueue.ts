@@ -27,15 +27,17 @@ function patch(id: number, p: Partial<QueueItem>) {
 }
 
 /** Add an export to the queue; refuses a file another queued export will write. */
-export function queueExport(project: Project, settings: ExportSettings): boolean {
+export function queueExport(project: Project, settings: ExportSettings, by = ''): { id: number } | { error: string } {
   if (items().some((q) => (q.status === 'waiting' || q.status === 'running') && q.settings.outputPath === settings.outputPath)) {
-    toast('Another export in the queue writes that file. Choose a different file name.', 'error');
-    return false;
+    const error = 'Another export in the queue writes that file. Choose a different file name.';
+    toast(error, 'error');
+    return { error };
   }
-  store.set((s) => ({ exportQueue: [...s.exportQueue, { id: nextId++, project, settings, status: 'waiting' }] }));
-  toast(`Queued “${settings.outputPath.split(/[\\/]/).pop()}”.`);
+  const id = nextId++;
+  store.set((s) => ({ exportQueue: [...s.exportQueue, { id, project, settings, status: 'waiting' }] }));
+  toast(`${by}Queued “${settings.outputPath.split(/[\\/]/).pop()}”.`);
   void runQueue();
-  return true;
+  return { id };
 }
 
 export function queueRunning(): boolean {

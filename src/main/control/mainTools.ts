@@ -47,6 +47,50 @@ const image = (buf: Buffer, caption: string): ToolResult => ({
   content: [{ type: 'image', data: buf.toString('base64'), mimeType: 'image/jpeg' }, { type: 'text', text: caption }],
 });
 
+/**
+ * Export settings from export_video / queue_export arguments, checked (path, existing file, shape,
+ * encoder, project). Shared so both tools accept exactly the same options.
+ */
+async function aiExportSettings(args: Record<string, any>, deps: MainToolDeps): Promise<{ project: Project; settings: ExportSettings } | { error: ToolResult }> {
+  const err = (m: string) => ({ error: textResult(m, true) });
+  const out = String(args.path);
+  if (!path.isAbsolute(out) || !/\.(mp4|mov)$/i.test(out)) return err('`path` must be an absolute path ending in .mp4 or .mov.');
+  if (!existsSync(path.dirname(out)) || !statSync(path.dirname(out)).isDirectory()) return err(`Folder does not exist: ${path.dirname(out)}`);
+  if (existsSync(out) && !args.overwrite) return err(`${out} already exists. Pass overwrite=true to replace it, or choose another name.`);
+  const project = await getProjectRaw(deps);
+  const width = evenDim(args.width ?? project.canvas.width);
+  const height = evenDim(args.height ?? project.canvas.height);
+  if (aspectDiffers(project.canvas.width, project.canvas.height, width, height) && !args.fit) {
+    return err(`The output shape ${width}×${height} differs from the canvas ${project.canvas.width}×${project.canvas.height}. Pass fit: "fit" (bars) or "fill" (crop).`);
+  }
+  const frameRate = args.frame_rate ? rateFromFps(args.frame_rate) : project.frameRate;
+  const settings: ExportSettings = {
+    outputPath: out, width, height, frameRate,
+    canvasMapping: args.fit === 'fill' ? 'fill' : 'fit',
+    videoBitrateMbps: args.bitrate_mbps ?? suggestBitrateMbps(width, height, frameRate, args.codec === 'hevc' ? 'hevc' : 'h264'),
+    x264Preset: 'medium',
+    audioBitrateKbps: 192,
+    rateControl: args.crf !== undefined ? 'crf' : 'bitrate',
+    crf: args.crf,
+    encoder: args.encoder === 'videotoolbox' ? 'videotoolbox' : 'x264',
+    codec: args.codec === 'hevc' || args.codec === 'prores' ? args.codec : 'h264',
+    proresProfile: args.prores_hq ? 'hq' : 'standard',
+    range: args.start !== undefined || args.end !== undefined
+      ? { start: secondsToTicks(args.start ?? 0), end: Math.min(secondsToTicks(args.end ?? Infinity), layoutSequence(project).duration) }
+      : null,
+    chapters: args.chapters ?? (project.markers?.length ?? 0) > 0,
+    loudness: Number.isFinite(args.loudness) ? Math.min(-5, Math.max(-40, Number(args.loudness))) : null,
+    parallel: !!args.parallel,
+  };
+  if (settings.encoder === 'videotoolbox') {
+    const hw = await encoderAvailability();
+    if (!hw.videotoolbox) return err(hw.reason ?? 'The hardware encoder is not available.');
+  }
+  const problems = validateExportSettings(project, settings, (m) => existsSync(m.path));
+  if (problems.length) return err(problems.join('\n'));
+  return { project, settings };
+}
+
 export async function runMainTool(tool: ToolDef, args: Record<string, any>, deps: MainToolDeps): Promise<ToolResult> {
   const extra = deps.extra?.get(tool.name);
   if (extra) return extra(args);
@@ -102,40 +146,11 @@ export async function runMainTool(tool: ToolDef, args: Record<string, any>, deps
       return deps.callRenderer('__save', {});
 
     case 'export_video': {
-      const out = String(args.path);
-      if (!path.isAbsolute(out) || !/\.(mp4|mov)$/i.test(out)) return textResult('`path` must be an absolute path ending in .mp4 or .mov.', true);
-      if (!existsSync(path.dirname(out)) || !statSync(path.dirname(out)).isDirectory()) return textResult(`Folder does not exist: ${path.dirname(out)}`, true);
-      if (existsSync(out) && !args.overwrite) return textResult(`${out} already exists. Pass overwrite=true to replace it, or choose another name.`, true);
-      const project = await getProjectRaw(deps);
-      const width = evenDim(args.width ?? project.canvas.width);
-      const height = evenDim(args.height ?? project.canvas.height);
-      if (aspectDiffers(project.canvas.width, project.canvas.height, width, height) && !args.fit) {
-        return textResult(`The output shape ${width}×${height} differs from the canvas ${project.canvas.width}×${project.canvas.height}. Pass fit: "fit" (bars) or "fill" (crop).`, true);
-      }
-      const frameRate = args.frame_rate ? rateFromFps(args.frame_rate) : project.frameRate;
-      const settings: ExportSettings = {
-        outputPath: out, width, height, frameRate,
-        canvasMapping: args.fit === 'fill' ? 'fill' : 'fit',
-        videoBitrateMbps: args.bitrate_mbps ?? suggestBitrateMbps(width, height, frameRate, args.codec === 'hevc' ? 'hevc' : 'h264'),
-        x264Preset: 'medium',
-        audioBitrateKbps: 192,
-        rateControl: args.crf !== undefined ? 'crf' : 'bitrate',
-        crf: args.crf,
-        encoder: args.encoder === 'videotoolbox' ? 'videotoolbox' : 'x264',
-        codec: args.codec === 'hevc' || args.codec === 'prores' ? args.codec : 'h264',
-        proresProfile: args.prores_hq ? 'hq' : 'standard',
-        range: args.start !== undefined || args.end !== undefined
-          ? { start: secondsToTicks(args.start ?? 0), end: Math.min(secondsToTicks(args.end ?? Infinity), layoutSequence(project).duration) }
-          : null,
-        chapters: args.chapters ?? (project.markers?.length ?? 0) > 0,
-        loudness: Number.isFinite(args.loudness) ? Math.min(-5, Math.max(-40, Number(args.loudness))) : null,
-      };
-      if (settings.encoder === 'videotoolbox') {
-        const hw = await encoderAvailability();
-        if (!hw.videotoolbox) return textResult(hw.reason ?? 'The hardware encoder is not available.', true);
-      }
-      const problems = validateExportSettings(project, settings, (m) => existsSync(m.path));
-      if (problems.length) return textResult(problems.join('\n'), true);
+      const built = await aiExportSettings(args, deps);
+      if ('error' in built) return built.error;
+      const { project, settings } = built;
+      const out = settings.outputPath;
+      const { width, height, frameRate } = settings;
       deps.notify(`AI started an export to ${path.basename(out)}`);
       void startExport(project, settings, 'ai', undefined, deps.renderCaptions && (() => deps.renderCaptions!(project, settings))).then((r) => {
         deps.notify(r.status === 'done' ? `Export finished: ${path.basename(out)}` : r.status === 'cancelled' ? 'Export cancelled.' : `Export failed: ${r.message}`);
@@ -144,9 +159,17 @@ export async function runMainTool(tool: ToolDef, args: Record<string, any>, deps
         started: true, path: out, width, height, frame_rate: `${frameRate.num}/${frameRate.den}`,
         ...(settings.rateControl === 'crf' ? { crf: settings.crf } : { bitrate_mbps: settings.videoBitrateMbps }),
         encoder: settings.encoder,
+        ...(settings.parallel ? { parallel: true } : {}),
         ...(settings.range ? { range_s: [ticksToSeconds(settings.range.start), ticksToSeconds(settings.range.end)] } : {}),
         next: 'Poll get_export_status.',
       });
+    }
+
+    case 'queue_export': {
+      const built = await aiExportSettings(args, deps);
+      if ('error' in built) return built.error;
+      // The queue lives in the window; it renders this snapshot of the project.
+      return deps.callRenderer('__queue_export', { project: built.project, settings: built.settings });
     }
 
     case 'get_export_status': {

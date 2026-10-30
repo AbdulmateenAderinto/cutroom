@@ -23,7 +23,8 @@ How to work:
 3. Prefer build_timeline for rough cuts (one undoable step), then refine with set_clip_range, split_at, move_clip, set_framing, set_animation, set_keyframe.
 4. Check your work with get_frame at a few timeline times before exporting.
 5. Times are seconds (snapped to frames). Source times are positions inside a media file; timeline times are positions in the edit.
-6. Only export when the user asks. export_video returns at once; poll get_export_status.`;
+6. Only export when the user asks. export_video returns at once; poll get_export_status. For several exports (e.g. 16:9 and 9:16 versions) use queue_export and get_export_queue.
+7. Before a big restructure of an existing edit, offer to save_version first so the user can go back (restore_version).`;
 
 function userDataDir(): string {
   if (process.env.CUTROOM_USER_DATA) return process.env.CUTROOM_USER_DATA;

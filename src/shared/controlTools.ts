@@ -60,6 +60,26 @@ const presetSchema = (list: string[]) => ({
   anyOf: [{ type: 'null' }, obj({ preset: str('preset name', { enum: list }), duration: num('seconds', { minimum: 0.05, maximum: 10 }) }, ['preset'])],
 });
 
+/** Export options shared by export_video and queue_export. */
+const exportProps = {
+  path: str('absolute output path ending in .mp4 or .mov'),
+  codec: str('h264 (default), hevc (H.265, tagged for Apple devices) or prores (ProRes 422, .mov only)', { enum: ['h264', 'hevc', 'prores'] }),
+  prores_hq: bool('ProRes 422 HQ instead of standard ProRes 422'),
+  width: num('output width (even)'),
+  height: num('output height (even)'),
+  frame_rate: num('frames per second'),
+  bitrate_mbps: num('target average video bitrate in Mb/s'),
+  crf: num('constant quality instead of a bitrate: 12..35, lower = better and larger (18–22 typical). Software encoder only.'),
+  encoder: str('x264 (software, default) or videotoolbox (Apple hardware, macOS only; faster, bitrate mode only)', { enum: ['x264', 'videotoolbox'] }),
+  start: num('export only from this timeline time (seconds)'),
+  end: num('export only up to this timeline time (seconds)'),
+  fit: str('when the output shape differs from the canvas: fit (bars) or fill (crop)', { enum: ['fit', 'fill'] }),
+  chapters: bool('write the timeline markers as chapters (default: true when there are markers)'),
+  loudness: num('normalize the whole mix to this integrated loudness in LUFS, e.g. -14 (YouTube/Spotify), -16 (Apple/podcasts), -23 (broadcast); two passes, so it takes about twice as long'),
+  parallel: bool('render in 2–4 parts at once and join them (same frames as one pass; can be faster on many-core computers for long or heavy timelines)'),
+  overwrite: bool('replace an existing file'),
+};
+
 export const CONTROL_TOOLS: ToolDef[] = [
   // ---- Inspect ----
   {
@@ -491,29 +511,65 @@ export const CONTROL_TOOLS: ToolDef[] = [
     runs: 'main',
     description:
       'Start exporting a video (.mp4 or QuickTime .mov, chosen by the path\'s ending). Returns immediately; poll get_export_status. Defaults: H.264, whole timeline, canvas size, project frame rate, a suggested bitrate, software encoder. For Apple devices HEVC gives about half the size; ProRes (.mov only) is for editing in Final Cut Pro. Will not overwrite an existing file unless overwrite=true.',
-    inputSchema: obj({
-      path: str('absolute output path ending in .mp4 or .mov'),
-      codec: str('h264 (default), hevc (H.265, tagged for Apple devices) or prores (ProRes 422, .mov only)', { enum: ['h264', 'hevc', 'prores'] }),
-      prores_hq: bool('ProRes 422 HQ instead of standard ProRes 422'),
-      width: num('output width (even)'),
-      height: num('output height (even)'),
-      frame_rate: num('frames per second'),
-      bitrate_mbps: num('target average video bitrate in Mb/s'),
-      crf: num('constant quality instead of a bitrate: 12..35, lower = better and larger (18–22 typical). Software encoder only.'),
-      encoder: str('x264 (software, default) or videotoolbox (Apple hardware, macOS only; faster, bitrate mode only)', { enum: ['x264', 'videotoolbox'] }),
-      start: num('export only from this timeline time (seconds)'),
-      end: num('export only up to this timeline time (seconds)'),
-      fit: str('when the output shape differs from the canvas: fit (bars) or fill (crop)', { enum: ['fit', 'fill'] }),
-      chapters: bool('write the timeline markers as chapters (default: true when there are markers)'),
-      loudness: num('normalize the whole mix to this integrated loudness in LUFS, e.g. -14 (YouTube/Spotify), -16 (Apple/podcasts), -23 (broadcast); two passes, so it takes about twice as long'),
-      overwrite: bool('replace an existing file'),
-    }, ['path']),
+    inputSchema: obj(exportProps, ['path']),
   },
   {
     name: 'get_export_status',
     runs: 'main',
-    description: 'Progress or result of the most recent export.',
+    description: 'Progress or result of the most recent export (export_video, the Export dialog or the export queue).',
     inputSchema: obj({}),
+  },
+
+  // ---- Export queue ----
+  {
+    name: 'queue_export',
+    runs: 'main',
+    description:
+      'Add an export to the export queue (same options as export_video). Queued exports render one after another, each from the timeline as it is NOW, so you and the person can keep editing (e.g. queue a 16:9 and a 9:16 version, then change the edit). Returns the queue item id; check progress with get_export_queue.',
+    inputSchema: obj(exportProps, ['path']),
+  },
+  {
+    name: 'get_export_queue',
+    runs: 'renderer',
+    description: 'The export queue: each item with id, file, status (waiting, running, done, failed, cancelled), percent, and the result (size, or the error).',
+    inputSchema: obj({}),
+  },
+  {
+    name: 'cancel_queued_export',
+    runs: 'renderer',
+    description: 'Cancel a queued export: a running one is stopped (its unfinished file is deleted), a waiting one is taken off the queue.',
+    inputSchema: obj({ id: num('queue item id from queue_export or get_export_queue') }, ['id']),
+  },
+
+  // ---- Versions ----
+  {
+    name: 'save_version',
+    runs: 'renderer',
+    description:
+      'Save a named snapshot of the project as it is now (a .cutroom file in "<project> versions" next to the project). Good before a big change, so the person can go back. Needs a project that has been saved once.',
+    inputSchema: obj({ name: str('short name, e.g. "Before colour" or "Rough cut v2"') }, ['name']),
+  },
+  {
+    name: 'list_versions',
+    runs: 'renderer',
+    description: 'Saved versions of the project, newest first (name and when it was saved).',
+    inputSchema: obj({}),
+  },
+  {
+    name: 'restore_version',
+    runs: 'renderer',
+    description:
+      'Replace the whole edit with a saved version (by its name from list_versions). One undo step: undo brings back what was there. The version file itself is not changed. Ask the person before restoring unless they asked for it.',
+    inputSchema: obj({ name: str('version name exactly as list_versions gives it') }, ['name']),
+  },
+
+  // ---- Preview ----
+  {
+    name: 'set_proxy_mode',
+    runs: 'renderer',
+    description:
+      'Proxy mode: the preview plays small copies (at most 960×540) of large video so playback stays smooth (made once per file in the background). Export always uses the original files, so quality is unaffected. Returns which copies are ready. A preference on this computer, not part of the project.',
+    inputSchema: obj({ on: bool('true = preview small copies, false = preview the original files') }, ['on']),
   },
 ];
 

@@ -116,7 +116,7 @@ await step('MCP client connects and lists tools', async () => {
   await client.connect(transport);
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  for (const n of ['get_project', 'build_timeline', 'set_animation', 'set_keyframe', 'get_frame', 'export_video']) assert(names.includes(n), `missing ${n}`);
+  for (const n of ['get_project', 'build_timeline', 'set_animation', 'set_keyframe', 'get_frame', 'export_video', 'queue_export', 'get_export_queue', 'cancel_queued_export', 'save_version', 'list_versions', 'restore_version', 'set_proxy_mode']) assert(names.includes(n), `missing ${n}`);
   assert(client.getInstructions()?.includes('get_project'), 'server instructions missing');
 });
 
@@ -357,6 +357,85 @@ await step('set_color: adjusts, reports, resets', async () => {
   assert(bad.isError, 'non-numeric contrast accepted');
   const reset = (await call('set_color', { clip_id: c.id, reset: true })).json;
   assert(reset.color === 'neutral', JSON.stringify(reset));
+});
+
+await step('versions: save_version needs a saved project; save, edit, list, restore (one undo step)', async () => {
+  const unsaved = await client.callTool({ name: 'save_version', arguments: { name: 'x' } });
+  assert(unsaved.isError && unsaved.content[0].text.includes('never been saved'), unsaved.content[0].text);
+  const projectFile = path.join(out, 'mcp project.cutroom');
+  await app.evaluate(({ dialog }, fp) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: fp }); }, projectFile);
+  await page.click('.topbar button:has-text("Save")');
+  await page.waitForFunction(() => window.__cutroom.store.get().projectPath !== null);
+  const before = (await call('get_project')).json.timeline.filter((x) => x.kind === 'clip').length;
+  const saved = (await call('save_version', { name: 'Before AI cut' })).json;
+  assert(saved.saved.endsWith('Before AI cut'), JSON.stringify(saved));
+  assert(existsSync(path.join(out, 'mcp project versions', `${saved.saved}.cutroom`)), 'version file missing');
+  const first = (await call('get_project')).json.timeline.find((x) => x.kind === 'clip');
+  await call('delete_clip', { clip_id: first.id });
+  assert((await call('get_project')).json.timeline.filter((x) => x.kind === 'clip').length === before - 1, 'delete');
+  const list = (await call('list_versions')).json.versions;
+  assert(list.length === 1 && list[0].name === saved.saved, JSON.stringify(list));
+  const missing = await client.callTool({ name: 'restore_version', arguments: { name: 'nope' } });
+  assert(missing.isError && missing.content[0].text.includes('Before AI cut'), 'unknown version should list the real ones');
+  const r = (await call('restore_version', { name: saved.saved })).json;
+  assert(r.timeline.filter((x) => x.kind === 'clip').length === before, JSON.stringify(r).slice(0, 300));
+  await call('undo');
+  assert((await call('get_project')).json.timeline.filter((x) => x.kind === 'clip').length === before - 1, 'undo after restore');
+  await call('redo');
+});
+
+await step('export queue: queue_export ×2 (one parallel), duplicate refused, cancel, get_export_queue', async () => {
+  const dur = (await call('get_project')).json.duration_s;
+  const q1 = path.join(out, 'queued 1.mp4');
+  const q2 = path.join(out, 'queued 2.mov');
+  const q3 = path.join(out, 'queued 3.mp4');
+  const a1 = (await call('queue_export', { path: q1, start: 0, end: Math.min(dur, 5), parallel: true, bitrate_mbps: 2 })).json;
+  const a2 = (await call('queue_export', { path: q2, codec: 'hevc', start: 0, end: Math.min(dur, 2), bitrate_mbps: 2 })).json;
+  assert(a1.queued && a2.queued && a2.id !== a1.id, JSON.stringify([a1, a2]));
+  const dup = await client.callTool({ name: 'queue_export', arguments: { path: q2 } });
+  assert(dup.isError && dup.content[0].text.includes('Another export in the queue'), dup.content[0].text);
+  const a3 = (await call('queue_export', { path: q3, start: 0, end: dur })).json;
+  const c = (await call('cancel_queued_export', { id: a3.id })).json;
+  assert(c.cancelled === a3.id, JSON.stringify(c));
+  let q;
+  for (let i = 0; i < 480; i++) {
+    q = (await call('get_export_queue')).json.queue;
+    if (q.every((x) => x.status !== 'waiting' && x.status !== 'running')) break;
+    await new Promise((res) => setTimeout(res, 500));
+  }
+  const by = (id) => q.find((x) => x.id === id);
+  assert(by(a1.id).status === 'done' && by(a2.id).status === 'done', JSON.stringify(q));
+  assert(by(a3.id).status === 'cancelled' && !existsSync(q3), 'cancelled export left a file');
+  assert(by(a1.id).parallel === true && by(a1.id).file_mb > 0, JSON.stringify(by(a1.id)));
+  const probe = (f) => JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', f]).toString());
+  assert(Math.abs(Number(probe(q1).format.duration) - Math.min(dur, 5)) < 0.1, `q1 ${probe(q1).format.duration}`);
+  const v2 = probe(q2).streams.find((x) => x.codec_type === 'video');
+  assert(v2.codec_name === 'hevc' && v2.codec_tag_string === 'hvc1', `${v2.codec_name} ${v2.codec_tag_string}`);
+  const gone = await client.callTool({ name: 'cancel_queued_export', arguments: { id: a1.id } });
+  assert(gone.isError && gone.content[0].text.includes('already finished'), 'cancelling a finished export');
+});
+
+await step('set_proxy_mode: on makes 960×540 copies of large media, off goes back to the originals', async () => {
+  const on = (await call('set_proxy_mode', { on: true })).json;
+  assert(on.proxy_mode === true && on.copies.some((x) => x.media === 'mcp landscape.mp4'), JSON.stringify(on));
+  assert(!on.copies.some((x) => x.media === 'mcp shots.mp4'), 'a 320×240 file should not get a proxy');
+  await page.waitForFunction(() => {
+    const s = window.__cutroom.store.get();
+    const m = s.project.media.find((x) => x.name === 'mcp landscape.mp4');
+    return s.proxies[`low:${m.id}`]?.status === 'ready';
+  }, null, { timeout: 120000 });
+  const low = await page.evaluate(() => {
+    const s = window.__cutroom.store.get();
+    return s.proxies[`low:${s.project.media.find((x) => x.name === 'mcp landscape.mp4').id}`].path;
+  });
+  const wh = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', low]).toString().trim();
+  assert(wh === '960,540', wh);
+  const again = (await call('set_proxy_mode', { on: true })).json;
+  assert(again.copies.find((x) => x.media === 'mcp landscape.mp4').status === 'ready', JSON.stringify(again));
+  const off = (await call('set_proxy_mode', { on: false })).json;
+  assert(off.proxy_mode === false && !(await page.evaluate(() => window.__cutroom.store.get().proxyMode)), JSON.stringify(off));
+  const bad = await client.callTool({ name: 'set_proxy_mode', arguments: { on: 'yes' } });
+  assert(bad.isError, 'non-boolean accepted');
 });
 
 await step('turning AI control off disconnects the bridge', async () => {

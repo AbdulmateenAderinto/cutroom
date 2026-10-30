@@ -7,7 +7,7 @@ Repository: https://github.com/AbdulmateenAderinto/cutroom (branch `main`)
 
 **Status at hand-off (30 Oct 2026):** Phases 1–4 of the feature plan are built, tested and pushed.
 In the cloud (Linux) session: typecheck clean, 270/270 unit + real-FFmpeg tests, 16/16 end-to-end
-suites (real app, preview compared with export), MCP 18/18. Nothing has been run on a Mac yet —
+suites (real app, preview compared with export), MCP 21/21. Nothing has been run on a Mac yet —
 that is section 6. Phase 5 (notarized release, bundled FFmpeg) is waiting on you (section 11).
 
 ---
@@ -103,7 +103,7 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Export | H.264, HEVC (Apple `hvc1`) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
 | Project & media | Versions (named snapshots, restore with undo), media manager (uses, remove unused, relink a whole folder, collect files), proxy mode for smooth 4K preview |
 | Export queue | Queue several exports and keep editing; optional parallel parts (same frames as one pass) |
-| AI | 56 MCP tools so Claude can edit, look at frames and export |
+| AI | 63 MCP tools so Claude can edit, look at frames, save and restore versions, queue exports and switch proxy mode |
 
 Projects save as `.cutroom` files (format version 7; older ones open fine).
 
@@ -164,7 +164,7 @@ Screenshots and exported files from the tests go to `tests/.output/`.
 - HDR tone mapping, LUTs, noise reduction, voice-over and the hardware encoder have not been tried with real Mac footage/hardware.
 - Noise reduction is export-only (use “Listen” to hear it). Speed ramps are stepped.
 - The export queue lives in the window: closing the app stops it. Parallel export has not been benchmarked.
-- The AI tools (MCP) don't cover versions, the media manager, proxy mode or the export queue yet.
+- The AI tools (MCP) don't cover the media manager (relink, collect, remove unused) yet.
 - `.dmg` not notarized; FFmpeg must come from Homebrew. Phase 5 (notarized release, bundled FFmpeg) is waiting on your Apple Developer account and an FFmpeg licensing decision.
 - Crossfade playback in the preview: smoothness at the cut has not been measured; a brief stutter is possible.
 
@@ -203,6 +203,6 @@ on this Mac, and fix anything that fails. Then work through the checklist in HAN
   can be bundled more freely but lacks libx264/libx265 (H.264/HEVC would then use Apple's hardware
   encoder only); a GPL build keeps them but makes the whole app GPL. Decide which you want.
 
-**Other ideas:** smooth (curve) speed ramps; AI tools for versions, queue and proxy mode; a queue that
+**Other ideas:** smooth (curve) speed ramps; AI tools for the media manager; a queue that
 survives quitting; transitions on overlay tracks; per-shot colour matching; real-time noise reduction
 in the preview.

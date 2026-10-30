@@ -592,7 +592,7 @@ export function ExportDialog() {
                 disabled={errors.length > 0}
                 onClick={() => {
                   remembered = { ...settings, outputPath: undefined, canvasMapping: mapping ?? undefined, sizeKey, presetId, range: undefined };
-                  if (queueExport(project, settings)) store.set({ dialog: null });
+                  if ('id' in queueExport(project, settings)) store.set({ dialog: null });
                 }}
                 title="Render this export after the ones already queued, with the timeline as it is now. You can keep editing meanwhile."
               >

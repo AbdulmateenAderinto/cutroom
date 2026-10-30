@@ -109,7 +109,7 @@
     <div class="stat ok"><b>Phases 1–4</b><span>built, tested, pushed</span></div>
     <div class="stat ok"><b>270 / 270</b><span>unit + real-FFmpeg tests</span></div>
     <div class="stat ok"><b>16 / 16</b><span>end-to-end suites (real app)</span></div>
-    <div class="stat ok"><b>18 / 18</b><span>MCP (AI control) steps</span></div>
+    <div class="stat ok"><b>21 / 21</b><span>MCP (AI control) steps</span></div>
     <div class="stat warn"><b>Not yet</b><span>run on a Mac — see §6</span></div>
     <div class="stat warn"><b>Phase 5</b><span>waiting on you — see §11</span></div>
   </div>
@@ -202,7 +202,7 @@
           <tr><td>Project &amp; media <span class="new">NEW</span></td><td><b>Versions…</b> (named snapshots next to the project, restore with undo); <b>Manage…</b> media manager (uses per file, remove unused, relink a whole folder of moved files, collect files into one folder); <b>Proxy</b> mode for smooth 4K preview (export uses originals).</td></tr>
           <tr><td>Export</td><td>H.264, HEVC (Apple <code>hvc1</code>) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (<b>I</b> / <b>O</b>); Apple hardware encoder where available; safe <code>.partial</code> → verify → rename.</td></tr>
           <tr><td>Export queue <span class="new">NEW</span></td><td>Queue several exports and keep editing; optional “Render in parallel parts” (same frames as one pass).</td></tr>
-          <tr><td>AI</td><td>56 MCP tools so Claude can edit, look at frames and export.</td></tr>
+          <tr><td>AI</td><td>63 MCP tools so Claude can edit, look at frames, save and restore versions, queue exports and switch proxy mode.</td></tr>
         </tbody>
       </table></div>
       <p class="muted small">Projects save as <code>.cutroom</code> files (format version 7; older ones open fine).</p>
@@ -255,7 +255,7 @@
         <li>HDR tone mapping, LUTs, noise reduction, voice-over and the hardware encoder have not been tried with real Mac footage/hardware.</li>
         <li>Noise reduction is export-only (use “Listen” to hear it). Speed ramps are stepped, not a smooth curve.</li>
         <li>The export queue lives in the window: closing the app stops it. Parallel export has not been benchmarked.</li>
-        <li>The AI tools (MCP) don't cover versions, the media manager, proxy mode or the export queue yet.</li>
+        <li>The AI tools (MCP) don't cover the media manager (relink, collect, remove unused) yet.</li>
         <li><code>.dmg</code> not notarized; FFmpeg must come from Homebrew (Phase 5, §11).</li>
         <li>Crossfade playback in the preview: smoothness at the cut has not been measured; a brief stutter is possible.</li>
       </ul>
@@ -302,7 +302,7 @@
       <h3>Other ideas</h3>
       <ul>
         <li>Smooth (curve) speed ramps.</li>
-        <li>AI tools for versions, the export queue and proxy mode.</li>
+        <li>AI tools for the media manager (relink, collect, remove unused).</li>
         <li>An export queue that survives quitting the app.</li>
         <li>Transitions on overlay tracks; per-shot colour matching.</li>
         <li>Real-time noise reduction in the preview.</li>
