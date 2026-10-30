@@ -133,7 +133,7 @@ describe('overlay tracks', () => {
     const graph = plan.args[plan.args.indexOf('-filter_complex') + 1];
     expect(graph).toContain('color=c=black@0');
     expect(graph.match(/overlay=x=0:y=0:eof_action=pass/g)?.length).toBe(2);
-    expect(graph).toMatch(/setpts=PTS-STARTPTS\+1\.000000\/TB/);
+    expect(graph).toMatch(/setpts=PTS-STARTPTS\+round\(30\*1\/\(30\*TB\)\)/); // frame 30, exact
     expect(graph).toMatch(/adelay=delays=48000S/); // the video overlay's sound starts at 1 s
     expect(plan.totalFrames).toBe(600); // the main track sets the length
   });
