@@ -23,6 +23,8 @@ to black/white). A crossfade needs a little footage past the cut, so trim the cl
   drag-to-position in the preview, and fade/rise/pop/typewriter animations.
 - **AI control (MCP):** let Claude Desktop or Claude Code edit with you. See [docs/AI.md](docs/AI.md).
 
+Picking this up on your own machine? Start with [HANDOFF.md](HANDOFF.md).
+
 See [docs/STATUS.md](docs/STATUS.md) for what works, what's planned and the known limitations.
 
 ## Requirements (macOS)
