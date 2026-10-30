@@ -57,6 +57,8 @@ const PRELOAD_AHEAD = 2 * TICKS_PER_SECOND;
 class PreviewEngine {
   private els: HTMLVideoElement[] = [];
   private elMedia: (string | null)[] = [null, null];
+  /** The URL each element (by its media cache key) loaded; a changed URL (new preview copy) reloads it. */
+  private loaded = new Map<HTMLElement, string>();
   private active = -1;
   private seq: Seq = { project: createProject(), items: [], duration: 0 };
   private current: LaidOutItem | null = null;
@@ -182,6 +184,7 @@ class PreviewEngine {
     const wasPlaying = playhead.get().playing;
     const prevMode = this.sourceMode;
     this.seq = this.buildSeq();
+    this.forgetStaleSources();
     this.sourceMode = store.get().previewMediaId;
     this.transitions = this.sourceMode ? [] : resolveTransitions(this.seq.project, this.seq.items);
     if (modeChanged || prevMode !== this.sourceMode) {
@@ -210,6 +213,25 @@ class PreviewEngine {
     return items.length && t >= this.seq.duration ? items[items.length - 1] : null;
   }
 
+  /**
+   * Elements keep a media file loaded between clips. When the file's preview URL changes (a new
+   * preview copy, e.g. after choosing a LUT), forget it so the next use loads the new URL.
+   */
+  private forgetStaleSources() {
+    const url = (id: string | null) => {
+      const m = id ? findMedia(this.seq.project, id) : undefined;
+      return m ? previewUrl(m) : null;
+    };
+    const stale = (el: HTMLElement | null, id: string | null) => !!el && !!id && this.loaded.get(el) !== url(id);
+    this.els.forEach((el, i) => {
+      if (stale(el, this.elMedia[i])) this.elMedia[i] = null;
+    });
+    if (stale(this.img, this.imgMedia)) this.imgMedia = null;
+    if (stale(this.tv, this.tvMedia)) this.tvMedia = null;
+    if (stale(this.timg, this.timgMedia)) this.timgMedia = null;
+    for (const [id, e] of this.ovEls) if (stale(e.el, e.mediaId)) this.dropOverlay(id);
+  }
+
   /** Pick a video element for this media, loading it into the inactive one if needed. */
   private elementFor(mediaId: string, preferInactive = false): number {
     const other = this.active === 0 ? 1 : 0;
@@ -222,6 +244,7 @@ class PreviewEngine {
     const url = previewUrl(m);
     if (!url) return -1; // preview copy not ready yet
     el.src = url;
+    this.loaded.set(el, url);
     this.elMedia[idx] = mediaId;
     return idx;
   }
@@ -395,6 +418,7 @@ class PreviewEngine {
           el.preservesPitch = true;
         }
         el.src = url;
+        this.loaded.set(el, url);
         layer.appendChild(el);
         e = { el, mediaId: o.mediaId };
         this.ovEls.set(o.id, e);
@@ -515,6 +539,7 @@ class PreviewEngine {
       this.tv.style.display = 'none';
       if (this.timgMedia !== media.id) {
         this.timg.src = previewUrl(media) ?? '';
+        this.loaded.set(this.timg, previewUrl(media) ?? '');
         this.timgMedia = media.id;
       }
       this.applyStyle(this.timg, otherL, t, otherMix, fxOther);
@@ -525,6 +550,7 @@ class PreviewEngine {
     this.timg.style.display = 'none';
     if (this.tvMedia !== media.id) {
       this.tv.src = previewUrl(media) ?? '';
+      this.loaded.set(this.tv, previewUrl(media) ?? '');
       this.tvMedia = media.id;
     }
     const target = this.sourceSeconds(other, otherL, t);
@@ -588,6 +614,7 @@ class PreviewEngine {
       // Photos: an <img> positioned like a video; the wall clock drives playback.
       if (this.imgMedia !== media.id) {
         this.img.src = previewUrl(media) ?? '';
+        this.loaded.set(this.img, previewUrl(media) ?? '');
         this.imgMedia = media.id;
       }
       this.applyStyle(this.img, l, Math.min(t, l.end - this.frame()));

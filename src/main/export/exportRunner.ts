@@ -12,10 +12,11 @@ import os from 'node:os';
 import path from 'node:path';
 import type { MediaRef, PreviewPlatform, Project } from '../../shared/model';
 import { chapterMetadata } from '../../shared/markers';
+import { ensureLut, getLutDir } from '../media/luts';
 import { type CaptionTrack, type ExportSettings, buildExportPlan, canvasInOutput, validateExportSettings } from '../../shared/exportPlan';
 import { type Rational, parseRational, rateToFloat } from '../../shared/time';
 import { ffmpegPath, ffprobePath } from '../media/ffbin';
-import { timeStretchFilter } from './encoders';
+import { hasFilter, timeStretchFilter } from './encoders';
 
 export interface ExportProgress {
   fraction: number; // 0..1
@@ -130,6 +131,21 @@ export async function runExport(project: Project, settings: ExportSettings, opts
     return fail('The export would overwrite one of the source files. Choose a different file name.');
   }
 
+  // Input transforms: LUT copies must be in the LUT folder (FFmpeg runs there), and tone mapping
+  // needs the zscale filter.
+  const used = new Set([...project.sequence.items, ...(project.overlays ?? [])].flatMap((i) => (i.kind === 'gap' ? [] : [i.mediaId])));
+  const usedMedia = project.media.filter((m) => used.has(m.id));
+  for (const m of usedMedia) {
+    if (m.input?.lut) {
+      const problem = ensureLut(m.input.lut);
+      if (problem) return fail(`${m.name}: ${problem}`);
+    }
+  }
+  if (usedMedia.some((m) => m.input?.toneMap && m.info.isHDR) && !(await hasFilter('zscale'))) {
+    return fail('HDR tone mapping needs an FFmpeg with the zscale filter (libzimg). Install a full FFmpeg build (e.g. `brew install ffmpeg`), or turn tone mapping off for the HDR clips.');
+  }
+  const lutCwd = usedMedia.some((m) => m.input?.lut) ? getLutDir() : undefined;
+
   const partial = partialPathFor(settings.outputPath);
   tryUnlink(partial);
   let captionDir: string | null = null;
@@ -167,7 +183,7 @@ export async function runExport(project: Project, settings: ExportSettings, opts
   try { bin = ffmpegPath(); } catch (e) { return fail((e as Error).message); }
 
   const outcome = await new Promise<{ code: number | null; cancelled: boolean; stderr: string }>((resolve) => {
-    const child = spawn(bin, plan.args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(bin, plan.args, { stdio: ['ignore', 'pipe', 'pipe'], cwd: lutCwd });
     let stderr = '';
     let cancelled = false;
     let buf = '';

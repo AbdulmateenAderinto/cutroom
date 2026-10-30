@@ -16,6 +16,7 @@ import {
 import { clipLayout } from '../../shared/overlays';
 import { TICKS_PER_SECOND, type Ticks, formatDuration, formatTimecode, snapToFrame, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
+import { needsProxy, proxySource } from '../preview/mediaUrl';
 import { playhead } from './playhead';
 import { commit, isDirty, loadProject, redo, selectedItemIds, store, toast, undo } from './store';
 
@@ -63,7 +64,8 @@ export async function importFiles(paths: string[]) {
   results.forEach((r, i) => {
     const name = ops.basename(fresh[i]);
     if (!r.ok) return toast(`Could not import ${name}: ${r.error}`, 'error');
-    added.push({ id: newId('media'), name, path: fresh[i], info: r.info, warnings: r.warnings });
+    // HDR video is tone-mapped to SDR by default (it is edited and exported as SDR BT.709).
+    added.push({ id: newId('media'), name, path: fresh[i], info: r.info, warnings: r.warnings, ...(r.info.isHDR ? { input: { toneMap: true } } : {}) });
     if (r.warnings.length) toast(`${name}: ${r.warnings.join(' ')}`, 'warn', 8000);
   });
   if (!added.length) return;
@@ -99,15 +101,15 @@ function setProxy(id: string, v: ReturnType<typeof store.get>['proxies'][string]
 export function ensureProxies() {
   const s = store.get();
   for (const m of s.project.media) {
-    const mode = m.info.preview;
-    if (!mode || mode === 'native' || s.missing[m.id]) continue;
+    if (!needsProxy(m) || s.missing[m.id]) continue;
+    const source = proxySource(m);
     const cur = s.proxies[m.id];
-    if (cur && cur.source === m.path && cur.status !== 'failed') continue;
-    if (cur?.status === 'failed' && cur.source === m.path) continue; // don't retry in a loop
-    setProxy(m.id, { source: m.path, status: 'making', fraction: 0 });
-    void api().makeProxy(m.path, m.info).then((r) => {
-      if (store.get().proxies[m.id]?.source !== m.path) return; // relinked meanwhile
-      setProxy(m.id, r.ok ? { source: m.path, status: 'ready', path: r.path } : { source: m.path, status: 'failed', error: r.error });
+    if (cur && cur.source === source && cur.status !== 'failed') continue;
+    if (cur?.status === 'failed' && cur.source === source) continue; // don't retry in a loop
+    setProxy(m.id, { source, status: 'making', fraction: 0 });
+    void api().makeProxy(m.path, m.info, m.input).then((r) => {
+      if (store.get().proxies[m.id]?.source !== source) return; // relinked or changed meanwhile
+      setProxy(m.id, r.ok ? { source, status: 'ready', path: r.path } : { source, status: 'failed', error: r.error });
       if (!r.ok) toast(`Could not prepare a preview of ${m.name}: ${r.error}. Export still uses the original.`, 'error');
     });
   }
@@ -420,6 +422,20 @@ export async function reverseClip(clipId: string): Promise<{ mediaId: string } |
   } finally {
     setWorking(key, false);
   }
+}
+
+/** Change a media file's input transform (HDR tone mapping, LUT); a new preview copy is made. */
+export function setMediaInput(mediaId: string, patch: Partial<NonNullable<MediaRef['input']>>) {
+  commit((p) => ops.setMediaInput(p, mediaId, patch));
+  ensureProxies();
+}
+
+export async function chooseLut(mediaId: string) {
+  const r = await api().pickLut();
+  if (!r) return;
+  if (!r.ok) return toast(`Could not use that LUT: ${r.error}`, 'error');
+  setMediaInput(mediaId, { lut: r.lut });
+  toast(`LUT “${r.lut.name}” applied. A preview copy with it is being made.`);
 }
 
 /** M: add a marker at the playhead (or select the one already there). */

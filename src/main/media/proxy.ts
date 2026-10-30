@@ -14,17 +14,18 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { sourceColorSteps } from '../../shared/exportPlan';
-import type { MediaInfo } from '../../shared/model';
+import { inputRecipe, inputTransformChain, sourceColorSteps } from '../../shared/exportPlan';
+import type { MediaInfo, MediaInput, MediaRef } from '../../shared/model';
 import { ticksToSeconds } from '../../shared/time';
 import { ffmpegPath } from './ffbin';
 import { getConvertDir, heicToJpeg, isHeic } from './heic';
+import { ensureLut, getLutDir } from './luts';
 
 const VERSION = 1; // bump to invalidate cached copies after changing the recipes below
 
-export function proxyPath(dir: string, file: string, mode: NonNullable<MediaInfo['preview']>): string {
+export function proxyPath(dir: string, file: string, mode: NonNullable<MediaInfo['preview']>, recipe = ''): string {
   const st = statSync(file);
-  const key = createHash('sha1').update(`${path.resolve(file)}|${st.size}|${st.mtimeMs}|${mode}|v${VERSION}`).digest('hex');
+  const key = createHash('sha1').update(`${path.resolve(file)}|${st.size}|${st.mtimeMs}|${mode}|v${VERSION}${recipe ? `|${recipe}` : ''}`).digest('hex');
   const ext = mode === 'image' ? 'png' : mode === 'audio' ? 'm4a' : 'mp4';
   return path.join(dir, `${key}.${ext}`);
 }
@@ -38,7 +39,7 @@ export function proxySize(info: MediaInfo): { w: number; h: number } {
   return { w: even(info.displayWidth * k), h: even(info.displayHeight * k) };
 }
 
-export function proxyArgs(file: string, info: MediaInfo, mode: NonNullable<MediaInfo['preview']>, out: string): string[] {
+export function proxyArgs(file: string, info: MediaInfo, mode: NonNullable<MediaInfo['preview']>, out: string, input?: MediaInput): string[] {
   const head = ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats', '-i', file];
   const sound = ['-c:a', 'aac', '-b:a', '192k', '-ac', '2'];
   if (mode === 'audio') return [...head, '-vn', '-map', '0:a:0', ...sound, '-f', 'mp4', out];
@@ -49,9 +50,14 @@ export function proxyArgs(file: string, info: MediaInfo, mode: NonNullable<Media
   }
   const { w, h } = proxySize(info);
   // Same colour interpretation as the export (and the preview of the original would use).
-  const c = sourceColorSteps(info, process.platform === 'darwin' ? 'mac' : 'other');
+  const platform = process.platform === 'darwin' ? 'mac' : 'other';
+  const xform = inputTransformChain({ info, input } as MediaRef, platform);
+  const c = sourceColorSteps(info, platform);
   const inM = c.matrix === 'bt601' ? ':in_color_matrix=bt601' : ':in_color_matrix=bt709';
-  const vf = `${c.tagSource}${c.toBt709}scale=w=${w}:h=${h}:flags=bicubic${inM}:in_range=${c.range}:out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1`;
+  // With an input transform (tone mapping, LUT) the export's own chain makes RGB first.
+  const vf = xform
+    ? `${xform}scale=w=${w}:h=${h}:flags=bicubic:out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1`
+    : `${c.tagSource}${c.toBt709}scale=w=${w}:h=${h}:flags=bicubic${inM}:in_range=${c.range}:out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1`;
   return [
     ...head, ...maps, '-vf', vf,
     // Every frame at its original time (VFR included), frequent keyframes for quick seeking.
@@ -63,17 +69,25 @@ export function proxyArgs(file: string, info: MediaInfo, mode: NonNullable<Media
 
 const running = new Map<string, Promise<string>>();
 
-/** Make (or reuse) the preview copy. Remuxing falls back to transcoding if the copy can't be made. */
-export function makeProxy(dir: string, file: string, info: MediaInfo, onProgress?: (fraction: number) => void): Promise<string> {
-  const mode = info.preview;
+/**
+ * Make (or reuse) the preview copy. Remuxing falls back to transcoding if the copy can't be made.
+ * A file with an input transform (tone mapping, LUT) always gets a transcoded copy with it applied.
+ */
+export function makeProxy(dir: string, file: string, info: MediaInfo, onProgress?: (fraction: number) => void, input?: MediaInput): Promise<string> {
+  const recipe = inputRecipe({ info, input } as MediaRef);
+  const mode = recipe ? 'transcode' : info.preview;
   if (!mode || mode === 'native') return Promise.resolve(file);
   if (mode === 'image' && isHeic(file)) return heicToJpeg(getConvertDir() ?? path.join(dir, '..', 'converted'), file);
-  const out = proxyPath(dir, file, mode);
+  if (input?.lut) {
+    const problem = ensureLut(input.lut);
+    if (problem) return Promise.reject(new Error(problem));
+  }
+  const out = proxyPath(dir, file, mode, recipe);
   if (existsSync(out)) return Promise.resolve(out);
   const key = out;
   let job = running.get(key);
   if (!job) {
-    job = run(dir, file, info, mode, out, onProgress).catch((e) => {
+    job = run(dir, file, info, mode, out, onProgress, input).catch((e) => {
       if (mode !== 'remux') throw e;
       return run(dir, file, info, 'transcode', proxyPath(dir, file, 'transcode'), onProgress);
     }).finally(() => running.delete(key));
@@ -82,13 +96,13 @@ export function makeProxy(dir: string, file: string, info: MediaInfo, onProgress
   return job;
 }
 
-function run(dir: string, file: string, info: MediaInfo, mode: NonNullable<MediaInfo['preview']>, out: string, onProgress?: (f: number) => void): Promise<string> {
+function run(dir: string, file: string, info: MediaInfo, mode: NonNullable<MediaInfo['preview']>, out: string, onProgress?: (f: number) => void, input?: MediaInput): Promise<string> {
   if (existsSync(out)) return Promise.resolve(out);
   mkdirSync(dir, { recursive: true });
   const partial = `${out}.partial${path.extname(out)}`;
   const total = ticksToSeconds(info.duration);
   return new Promise((resolve, reject) => {
-    const p = spawn(ffmpegPath(), proxyArgs(file, info, mode, partial), { stdio: ['ignore', 'pipe', 'pipe'] });
+    const p = spawn(ffmpegPath(), proxyArgs(file, info, mode, partial, input), { stdio: ['ignore', 'pipe', 'pipe'], cwd: input?.lut ? getLutDir() : undefined });
     let err = '';
     p.stderr.on('data', (d) => {
       err = (err + d.toString()).slice(-10000);

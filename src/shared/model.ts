@@ -83,6 +83,19 @@ export interface MediaRef {
   speech?: { start: Ticks; end: Ticks }[];
   /** Made by Cutroom from part of another file (freeze frame, reversed clip). */
   derived?: { kind: 'freeze' | 'reverse'; mediaId: string; sourceIn: Ticks; sourceOut: Ticks };
+  /** How the file's picture is read before anything else (HDR tone mapping, a camera LUT). */
+  input?: MediaInput;
+}
+
+export interface MediaInput {
+  /** HDR (PQ/HLG) → SDR BT.709, so it looks right in an SDR edit and export. */
+  toneMap?: boolean;
+  /** A 3D LUT (.cube), e.g. to turn log footage into normal colours. */
+  lut?: {
+    file: string; // the app's copy: <sha1>.cube in its LUT folder (a safe name for FFmpeg)
+    name: string; // original file name, for display
+    source: string; // original path, to copy it again if the app's copy is gone
+  };
 }
 
 export function mediaKind(m: MediaRef | undefined): MediaKind {

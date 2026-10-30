@@ -117,7 +117,7 @@ export async function probeMedia(file: string, opts: ProbeOptions = { convertDir
 
   const colorTransfer: string = v.color_transfer ?? '';
   const isHDR = ['smpte2084', 'arib-std-b67'].includes(colorTransfer);
-  if (isHDR) warnings.push('HDR video: no tone mapping yet, so colours will look washed out or wrong in the export.');
+  if (isHDR) warnings.push('HDR video: it is tone-mapped to SDR (BT.709) for editing and export (Media panel → this file → Picture).');
   const pixFmt: string = v.pix_fmt ?? '';
   const cs: string = v.color_space ?? '';
   const colorMatrix: MediaInfo['colorMatrix'] =

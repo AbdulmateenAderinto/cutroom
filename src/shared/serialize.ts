@@ -67,6 +67,10 @@ function validate(p: Project) {
     if (m.transcript) {
       check(Array.isArray(m.transcript.words) && m.transcript.words.every((w) => isInt(w.start) && isInt(w.end) && typeof w.text === 'string'), `bad transcript for ${m.name}`);
     }
+    if (m.input?.lut) {
+      // The LUT's file name goes into an FFmpeg filter graph: only the app's own hash names are accepted.
+      check(/^[0-9a-f]{40}\.cube$/.test(m.input.lut.file) && typeof m.input.lut.source === 'string' && typeof m.input.lut.name === 'string', `bad LUT for ${m.name}`);
+    }
     mediaIds.add(m.id);
   }
   for (const t of p.audioTracks ?? []) {

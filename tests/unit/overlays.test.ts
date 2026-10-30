@@ -138,3 +138,13 @@ describe('overlay tracks', () => {
     expect(plan.totalFrames).toBe(600); // the main track sets the length
   });
 });
+
+describe('media input (LUT name check)', () => {
+  it('a project whose LUT file name is not a hash is refused (it goes into an FFmpeg filter graph)', () => {
+    const p = proj();
+    const ok = { ...p, media: p.media.map((m, i) => (i === 0 ? { ...m, input: { lut: { file: 'a'.repeat(40) + '.cube', name: 'x.cube', source: '/x.cube' } } } : m)) };
+    expect(() => parseProject(serializeProject(ok))).not.toThrow();
+    const bad = { ...p, media: p.media.map((m, i) => (i === 0 ? { ...m, input: { lut: { file: "x.cube,drawtext=text='hi'", name: 'x', source: '/x' } } } : m)) };
+    expect(() => parseProject(serializeProject(bad))).toThrow(/LUT/);
+  });
+});

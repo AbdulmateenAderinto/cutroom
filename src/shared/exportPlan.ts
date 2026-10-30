@@ -253,6 +253,46 @@ export function sourceColorSteps(info: MediaInfo, platform: PreviewPlatform) {
   return { tagSource, toBt709, matrix, range };
 }
 
+/** A media file whose picture goes through an input transform (tone mapping and/or a LUT). */
+export function hasInputTransform(m: MediaRef): boolean {
+  return m.info.kind === 'video' && (!!(m.input?.toneMap && m.info.isHDR) || !!m.input?.lut);
+}
+
+/** Identifies the input transform, for cache keys of preview copies. */
+export function inputRecipe(m: MediaRef): string {
+  if (!hasInputTransform(m)) return '';
+  return [m.input?.toneMap && m.info.isHDR ? 'tm1' : '', m.input?.lut ? `lut:${m.input.lut.file}` : ''].filter(Boolean).join('|');
+}
+
+/**
+ * The input transform as FFmpeg filters, ending in BT.709 gamma RGB (rgb24, full range) — the
+ * same chain makes the preview copy (main/media/proxy.ts), so preview and export agree:
+ *  - tone mapping (HDR10/PQ or HLG): to linear light with HDR reference white (203 nits, ITU-R
+ *    BT.2408) as SDR white, BT.2020 → BT.709 primaries, the Mobius curve (keeps colours up to
+ *    reference white nearly unchanged, rolls off highlights), back to the BT.709 transfer;
+ *  - LUT: FFmpeg lut3d (tetrahedral) on that RGB. FFmpeg reads the LUT by its bare file name,
+ *    so it must run in the LUT folder (cwd): the name is a hex hash, so nothing needs escaping.
+ */
+export function inputTransformChain(m: MediaRef, platform: PreviewPlatform): string {
+  if (!hasInputTransform(m)) return '';
+  const info = m.info;
+  let chain: string;
+  if (m.input?.toneMap && info.isHDR) {
+    const tin = info.colorTransfer === 'arib-std-b67' ? 'arib-std-b67' : 'smpte2084';
+    const rin = info.colorRange === 'pc' ? 'full' : 'limited';
+    chain = `zscale=tin=${tin}:min=bt2020nc:pin=bt2020:rin=${rin}:t=linear:npl=203,format=gbrpf32le,zscale=p=bt709,` +
+      'tonemap=tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=full,format=rgb24,';
+  } else {
+    const c = sourceColorSteps(info, platform);
+    chain = `${c.tagSource}${c.toBt709}scale=in_color_matrix=${c.matrix === 'bt601' ? 'bt601' : 'bt709'}:in_range=${c.range},format=rgb24,`;
+  }
+  if (m.input?.lut) {
+    if (!/^[0-9a-f]{40}\.cube$/.test(m.input.lut.file)) throw new Error(`Unexpected LUT file name for ${m.name}.`);
+    chain += `lut3d=file=${m.input.lut.file}:interp=tetrahedral,format=rgb24,`;
+  }
+  return chain;
+}
+
 /**
  * Pitch-preserving tempo change for a speed. rubberband handles any ratio in one stage; atempo
  * handles 0.5–2× per stage (chained for 0.25× and 4×).
@@ -352,7 +392,9 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     // Convert the source's colour matrix/range to the BT.709 limited-range output, the same
     // interpretation the preview (Chromium) uses, so colours match.
     const isImage = info.kind === 'image';
-    const { tagSource, toBt709, matrix, range } = isImage
+    // Tone mapping / a LUT turn the source into RGB first; from there it is treated like a photo.
+    const xform = inputTransformChain(media, extras.previewPlatform ?? 'other');
+    const { tagSource, toBt709, matrix, range } = isImage || xform
       ? { tagSource: '', toBt709: '', matrix: 'bt709' as const, range: 'tv' as const }
       : sourceColorSteps(info, extras.previewPlatform ?? 'other');
     // Photos are first decoded to RGB (JPEG's full-range BT.601 is undone by that step), so the
@@ -360,7 +402,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     // Colour adjustments work on RGB (as the preview's SVG filter does): the source is converted to
     // RGB with its own matrix/range (Chromium's interpretation), mixed, and converted to BT.709.
     const adjust = clipColor(item);
-    const rgbPath = isImage || !!adjust;
+    const rgbPath = isImage || !!adjust || !!xform;
     const colour = rgbPath
       ? ':out_color_matrix=bt709:out_range=tv'
       : `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${range === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
@@ -393,9 +435,10 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     }
     const i = inputIndex++;
     const decode =
+      xform +
       tagSource +
       toBt709 +
-      (isImage ? 'format=rgba,' : adjust ? `scale=in_color_matrix=${matrix === 'bt601' ? 'bt601' : 'bt709'}:in_range=${range === 'pc' ? 'pc' : 'tv'},format=rgba,` : '') +
+      (isImage || xform ? 'format=rgba,' : adjust ? `scale=in_color_matrix=${matrix === 'bt601' ? 'bt601' : 'bt709'}:in_range=${range === 'pc' ? 'pc' : 'tv'},format=rgba,` : '') +
       (adjust ? `colorchannelmixer=${ffmpegMixer(adjust)},` : '') +
       (adjust && ffmpegCurves(adjust) ? `${ffmpegCurves(adjust)},` : '');
 

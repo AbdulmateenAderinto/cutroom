@@ -46,6 +46,24 @@ async function probe(): Promise<EncoderAvailability> {
   });
 }
 
+let filterList: Promise<string> | null = null;
+/** The filters this FFmpeg build has (`ffmpeg -filters`, read once). */
+function filters(): Promise<string> {
+  filterList ??= new Promise((resolve) => {
+    let bin: string;
+    try {
+      bin = ffmpegPath();
+    } catch {
+      return resolve('');
+    }
+    execFile(bin, ['-hide_banner', '-filters'], { timeout: 15_000, maxBuffer: 4 << 20 }, (err, out) => resolve(err ? '' : String(out)));
+  });
+  return filterList;
+}
+export async function hasFilter(name: string): Promise<boolean> {
+  return new RegExp(`\\s${name}\\s`).test(await filters());
+}
+
 let stretch: Promise<'rubberband' | 'atempo'> | null = null;
 
 /** The best pitch-preserving time-stretch filter in this FFmpeg build (for speed changes). */

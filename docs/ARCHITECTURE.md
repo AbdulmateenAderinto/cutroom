@@ -97,6 +97,12 @@ then:  concat → (pad or crop if the output aspect differs, chosen explicitly) 
 (preview: `feComponentTransfer` tables; export: FFmpeg `curves` given all 256 points, x rounded up so
 FFmpeg's own spacing check passes). Both sides work on gamma-encoded 8-bit RGB.
 
+**Media input transforms** (`MediaRef.input`): HDR tone mapping and a 3D LUT are applied when a
+file is read, by one FFmpeg chain (`inputTransformChain`) that ends in BT.709 RGB. The export puts
+it at the start of the clip's chain; the preview plays a preview copy made with the same chain
+(keyed by the recipe), so they agree. LUTs live in the app's LUT folder as `<sha1>.cube` and FFmpeg
+runs with that folder as its working directory, so the filter graph only ever contains a hex name.
+
 **Transitions**: crossfade, wipes, slides and zoom are one `xfade` segment over the window
 (`transition=fade|wipeleft|…|slidedown`); zoom also scales each clip per frame through the animated
 path. `transitionLook()` in transitions.ts restates xfade's formulas (b = incoming mix, progress =

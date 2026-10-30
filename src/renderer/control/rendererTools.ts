@@ -129,6 +129,8 @@ export function projectSummary(p: Project) {
       has_audio: m.info.hasAudio,
       has_transcript: !!m.transcript,
       offline: !!s.missing[m.id],
+      ...(m.info.isHDR ? { hdr: true, tone_map: !!m.input?.toneMap } : {}),
+      ...(m.input?.lut ? { lut: m.input.lut.name } : {}),
       warnings: m.warnings,
     })),
     titles: (p.titles ?? []).map((t) => ({
@@ -361,6 +363,24 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         edit('detached a clip’s sound', () => r.project, { selection: { kind: 'audio', id: r.audioClipId } });
         const hit = findAudioClip(store.get().project, r.audioClipId)!;
         return ok({ audio_clip_id: r.audioClipId, track_id: hit.track.id, start_s: sec(hit.clip.start), source_in_s: sec(hit.clip.sourceIn), source_out_s: sec(hit.clip.sourceOut) });
+      }
+      case 'set_media_picture': {
+        const m = mediaOrThrow(p, args.media_id);
+        if (m.info.kind !== 'video') throw new ToolError(`${m.name} is not a video.`);
+        const patch: Record<string, unknown> = {};
+        if (args.tone_map !== undefined) {
+          if (!m.info.isHDR && args.tone_map) throw new ToolError(`${m.name} is not HDR; there is nothing to tone-map.`);
+          patch.toneMap = !!args.tone_map;
+        }
+        if (args.remove_lut) patch.lut = undefined;
+        else if (args.lut_path) {
+          const r = await window.cutroom.importLut(String(args.lut_path));
+          if (!r.ok) throw new ToolError(r.error);
+          patch.lut = r.lut;
+        }
+        A.setMediaInput(m.id, patch);
+        const n = findMedia(store.get().project, m.id)!;
+        return ok({ media_id: n.id, hdr: n.info.isHDR, tone_map: !!n.input?.toneMap, lut: n.input?.lut?.name ?? null, note: 'A new preview copy is being made; get_frame (timeline) shows the new look once it is ready. Exports use it right away.' });
       }
       // ---- markers ----
       case 'add_marker': {

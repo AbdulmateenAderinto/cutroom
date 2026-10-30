@@ -444,6 +444,7 @@ function GapInspector({ gap, project }: { gap: GapItem; project: Project }) {
 
 function MediaInspector({ m }: { m: MediaRef }) {
   const missing = useStore((s) => !!s.missing[m.id]);
+  const preparing = useStore((s) => (s.proxies[m.id]?.status === 'making' ? s.proxies[m.id] : undefined));
   return (
     <>
       <Section title="Media file">
@@ -454,6 +455,31 @@ function MediaInspector({ m }: { m: MediaRef }) {
           <button className="btn small danger" onClick={() => A.removeMedia(m.id)}>Remove from project</button>
         </div>
       </Section>
+      {m.info.kind === 'video' && (
+        <Section title="Picture">
+          {m.info.isHDR && (
+            <>
+              <label className="check">
+                <input type="checkbox" checked={!!m.input?.toneMap} onChange={(e) => A.setMediaInput(m.id, { toneMap: e.target.checked })} aria-label="Tone-map HDR to SDR" />
+                Tone-map HDR to SDR (BT.709)
+              </label>
+              <p className="muted small">
+                {m.input?.toneMap
+                  ? 'HDR reference white (203 nits) becomes SDR white; brighter highlights roll off smoothly. Preview and export use the same conversion.'
+                  : 'Off: the HDR values are read as if they were SDR, so the picture looks washed out.'}
+              </p>
+            </>
+          )}
+          <div className="row gap center wrap">
+            <span className="field-label">LUT</span>
+            {m.input?.lut ? <span className="mono small" title={m.input.lut.source}>{m.input.lut.name}</span> : <span className="muted small">none</span>}
+            <button className="btn tiny" onClick={() => void A.chooseLut(m.id)}>{m.input?.lut ? 'Change…' : 'Choose .cube…'}</button>
+            {m.input?.lut && <button className="btn tiny ghost" onClick={() => A.setMediaInput(m.id, { lut: undefined })}>Remove</button>}
+          </div>
+          <p className="muted small">A 3D LUT is applied to this file wherever it is used (e.g. to turn log footage into normal colours), before the clip’s own colour settings.</p>
+          {preparing && <p className="muted small">Making a preview copy with these settings… {Math.round((preparing.fraction ?? 0) * 100)}%</p>}
+        </Section>
+      )}
       <Section title="Details">
         <MediaDetails m={m} />
       </Section>

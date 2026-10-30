@@ -569,3 +569,18 @@ export function unreverse(project: Project, clipId: string): Project | null {
     return next;
   });
 }
+
+/** Change how a media file's picture is read (HDR tone mapping, LUT); empty = removed. */
+export function setMediaInput(project: Project, mediaId: string, patch: Partial<NonNullable<MediaRef['input']>>): Project {
+  return {
+    ...project,
+    media: project.media.map((m) => {
+      if (m.id !== mediaId) return m;
+      const input = { ...m.input, ...patch };
+      if (!input.toneMap) delete input.toneMap;
+      if (!input.lut) delete input.lut;
+      const { input: _old, ...rest } = m;
+      return Object.keys(input).length ? { ...rest, input } : rest;
+    }),
+  };
+}

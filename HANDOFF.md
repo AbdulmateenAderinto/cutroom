@@ -83,10 +83,10 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Titles | Text rows, 5 styles, fonts, looks, drag to place, fade/rise/pop/typewriter (key **T**) |
 | Speed | 0.25×–4× per clip, pitch kept; stepped speed ramps (ease into/out of slow motion); freeze frame (**⇧F**); reverse |
 | Transitions | Crossfade, dip to black/white, wipes, slides, zoom |
-| Colour | Exposure, contrast, saturation, temperature, hue, lightness, curves |
+| Colour | Exposure, contrast, saturation, temperature, hue, lightness, curves; HDR → SDR tone mapping; .cube LUTs per media file |
 | Smart tools | Remove pauses, split at scenes, transcribe (whisper.cpp), remove filler words, captions |
 | Export | H.264, HEVC (Apple `hvc1`) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
-| AI | 53 MCP tools so Claude can edit, look at frames and export |
+| AI | 54 MCP tools so Claude can edit, look at frames and export |
 
 Projects save as `.cutroom` files (format version 7; older ones open fine).
 
@@ -95,7 +95,7 @@ Projects save as `.cutroom` files (format version 7; older ones open fine).
 Tick these off; anything that fails is worth a GitHub issue or a message to Claude.
 
 - [ ] `npm run dev` opens the window; FFmpeg is found (no red banner).
-- [ ] Import a few iPhone clips (HEVC, portrait, maybe HDR) and **HEIC photos** (converted with macOS's sips — untested so far).
+- [ ] Import a few iPhone clips (HEVC, portrait, **HDR/HLG**: check the tone-mapped picture looks right) and **HEIC photos** (converted with macOS's sips — untested so far).
 - [ ] Import a ProRes or camera file (.mov/.mts/.mxf): "Preparing…" then preview; export matches.
 - [ ] Playback is smooth with real 4K footage; music stays in sync.
 - [ ] Picture-in-picture: two 4K clips at once (main + PiP) still play smoothly; the PiP stays in sync.

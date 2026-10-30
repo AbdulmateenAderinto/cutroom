@@ -1,11 +1,13 @@
 /**
  * UI test for colour adjustments in the real app: the sliders, live preview (SVG filter), undo,
  * reset, the preview's colours matching the export's for several settings, and curves (drag a
- * point in the editor, presets; preview vs export).
+ * point in the editor, presets; preview vs export), a LUT on the media file, and an HDR file that
+ * is tone-mapped by default (both: preview copy vs export).
  *
  * Run: npm run test:e2e   (Linux without a display: xvfb-run -a npm run test:e2e)
  */
 import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { assert, ff, fixture, launch, makeSteps, outputDir } from './harness.mjs';
 
@@ -14,6 +16,15 @@ const userData = path.join(out, 'userdata');
 // Four flat patches (orange, teal, mid grey, dark red) so colours can be read back exactly.
 const patches = ['0xe68c28', '0x28a096', '0x808080', '0x6e1e1e'];
 const quad = patches.map((c, i) => `color=c=${c}:s=320x180:r=30:d=3[p${i}]`).join(';') + ';[p0][p1]hstack[t];[p2][p3]hstack[b];[t][b]vstack,format=yuv420p';
+// The same patches as HDR10 (PQ, BT.2020, SDR white at the 203-nit reference white), 10-bit ProRes.
+const quadRgb = patches.map((c, i) => `color=c=${c}:s=320x180:r=30:d=3[p${i}]`).join(';') + ';[p0][p1]hstack[t];[p2][p3]hstack[b];[t][b]vstack';
+const hdr = fixture('color-quad-pq.mov', (f) => ff(['-f', 'lavfi', '-i', `${quadRgb},format=gbrpf32le,zscale=tin=bt709:pin=bt709:min=bt709:rin=full:t=smpte2084:p=bt2020:m=bt2020nc:r=tv:npl=203,format=yuv422p10le`,
+  '-t', '3', '-c:v', 'prores_ks', '-profile:v', '3', '-color_trc', 'smpte2084', '-color_primaries', 'bt2020', '-colorspace', 'bt2020nc', f]));
+// A 2×2×2 LUT swapping red and blue.
+const lut = path.join(out, 'swap red-blue.cube');
+const lutRows = [];
+for (let b = 0; b < 2; b++) for (let g = 0; g < 2; g++) for (let r = 0; r < 2; r++) lutRows.push(`${b} ${g} ${r}`);
+writeFileSync(lut, `LUT_3D_SIZE 2\n${lutRows.join('\n')}\n`);
 const video = fixture('color-quad.mp4', (f) => ff(['-f', 'lavfi', '-i', quad, '-f', 'lavfi', '-i', 'sine=d=3', '-c:v', 'libx264', '-qp', '0', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', f]));
 
 const { step, finish } = makeSteps();
@@ -134,6 +145,59 @@ await step('curves: drag a point in the editor; presets; preview colours match t
   const err = Math.max(...a.flatMap((rgb, i) => rgb.map((v, k) => Math.abs(v - b[i][k]))));
   console.log(`      curves: preview ${JSON.stringify(a)} export ${JSON.stringify(b)} (max diff ${err})`);
   assert(err <= 8, `preview and export colours differ by up to ${err}`);
+});
+
+/** Preview (stage screenshot) vs export colours of the clip at 1 s. */
+async function previewVsExport(name) {
+  await page.keyboard.press('Escape');
+  await h.seekFrame(30);
+  await h.previewReady();
+  await page.waitForTimeout(300);
+  const png = path.join(out, `preview-${name}.png`);
+  await page.locator('.stage').screenshot({ path: png });
+  const file = path.join(out, `${name}.mp4`);
+  await h.exportTo(file, { fps: 30 });
+  const a = quadrants(['-i', png]);
+  const b = quadrants(['-ss', '0.995', '-i', file]);
+  const err = Math.max(...a.flatMap((rgb, i) => rgb.map((v, k) => Math.abs(v - b[i][k]))));
+  console.log(`      ${name}: preview ${JSON.stringify(a)} export ${JSON.stringify(b)} (max diff ${err})`);
+  assert(err <= 8, `${name}: preview and export colours differ by up to ${err}`);
+  return b;
+}
+
+await step('a LUT on the media file: the preview copy and the export both swap red and blue', async () => {
+  await page.click('.tl-track .clip >> nth=0');
+  if (await page.locator('.inspector button:has-text("Reset")').isVisible()) await page.click('.inspector button:has-text("Reset")');
+  await page.click('.media-item >> nth=0');
+  await h.stubOpen([lut]);
+  await page.click('.inspector button:has-text("Choose .cube…")');
+  await page.waitForFunction(() => window.__cutroom.store.get().project.media[0].input?.lut);
+  const m = (await h.state()).media[0];
+  assert(/^[0-9a-f]{40}\.cube$/.test(m.input.lut.file) && m.input.lut.name === 'swap red-blue.cube', JSON.stringify(m.input));
+  await page.waitForFunction(() => Object.values(window.__cutroom.store.get().proxies).some((p) => p.status === 'ready' && p.source.includes('#lut:')), null, { timeout: 30000 });
+  const b = await previewVsExport('lut');
+  // Orange (230,140,40) comes out blue-ish.
+  assert(b[0][2] > 200 && b[0][0] < 70, `LUT not applied: ${JSON.stringify(b[0])}`);
+  await page.click('.media-item >> nth=0');
+  await page.click('.inspector button:text-is("Remove")'); // the LUT's Remove (not "Remove from project")
+  assert((await h.state()).media.length === 1 && !(await h.state()).media[0].input, 'LUT not removed');
+});
+
+await step('an HDR file is tone-mapped by default; preview copy matches the export', async () => {
+  await h.stubOpen([hdr]);
+  await page.click('button:has-text("Import…")');
+  await page.waitForFunction(() => window.__cutroom.store.get().project.media.length === 2);
+  const m = (await h.state()).media[1];
+  assert(m.info.isHDR && m.input?.toneMap === true, JSON.stringify({ hdr: m.info.isHDR, input: m.input }));
+  // Replace the timeline with the HDR clip.
+  await page.evaluate(() => window.__cutroom.store.set((s) => ({ project: { ...s.project, sequence: { items: [] } } })));
+  await page.click('.media-item >> nth=1 >> button:has-text("Add to timeline")');
+  await page.waitForFunction(() => Object.values(window.__cutroom.store.get().proxies).some((p) => p.status === 'ready' && p.source.includes('#tm1')), null, { timeout: 60000 });
+  const b = await previewVsExport('hdr');
+  // Close to the SDR patches (orange, teal, mid grey, dark red), not washed out.
+  assert(b[0][0] > 190 && b[0][2] < 70 && Math.abs(b[2][0] - 128) < 25, `tone mapping: ${JSON.stringify(b)}`);
+  await page.click('.media-item >> nth=1');
+  assert(await page.locator('.inspector input[aria-label="Tone-map HDR to SDR"]').isChecked(), 'checkbox should be on');
 });
 
 await h.close();

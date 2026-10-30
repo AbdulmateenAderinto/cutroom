@@ -3,7 +3,7 @@
  * (implementation) and the renderer (window.cutroom).
  */
 import type { ExportSettings } from '../shared/exportPlan';
-import type { MediaInfo, Project, Transcript } from '../shared/model';
+import type { MediaInfo, MediaInput, Project, Transcript } from '../shared/model';
 
 export type ProbeResult = { ok: true; info: MediaInfo; warnings: string[] } | { ok: false; error: string };
 
@@ -103,7 +103,11 @@ export interface CutroomApi {
   startExport(project: Project, settings: ExportSettings): Promise<ExportResult>;
   cancelExport(): Promise<void>;
   /** Make (or reuse) the preview copy of a file the preview can't play directly. */
-  makeProxy(path: string, info: MediaInfo): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  makeProxy(path: string, info: MediaInfo, input?: MediaInput): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /** Pick a .cube LUT; it is checked and copied into the app's LUT folder. null = cancelled. */
+  pickLut(): Promise<{ ok: true; lut: NonNullable<MediaInput['lut']> } | { ok: false; error: string } | null>;
+  /** Check and copy a .cube LUT given by path (for AI control). */
+  importLut(path: string): Promise<{ ok: true; lut: NonNullable<MediaInput['lut']> } | { ok: false; error: string }>;
   onProxyProgress(cb: (p: { path: string; fraction: number }) => void): () => void;
   /** Save the source frame shown at `at` (source ticks) as a PNG (next to the project if saved). */
   freezeFrame(path: string, info: MediaInfo, at: number, projectPath: string | null): Promise<{ ok: true; path: string } | { ok: false; error: string }>;

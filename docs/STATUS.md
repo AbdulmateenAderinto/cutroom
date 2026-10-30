@@ -58,7 +58,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 53 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 54 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -155,6 +155,8 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Curves: master and red/green/blue; click to add, drag, double-click or drag out to remove; presets (S-curve, lift shadows, faded, teal & orange) | ✅ | Monotone cubic, one 256-entry table per channel; the preview (feComponentTransfer) and the export (all 256 points to FFmpeg `curves`) use the same table |
 | Export colours match the shared maths (`applyColor`) | ✅ | SD BT.601, HD BT.709 and photo sources, 9 settings incl. hue, lightness and curves: within 4/255 |
 | Preview (SVG `feColorMatrix` in sRGB) matches the export | ✅ | 5 slider settings and a curves preset compared: within 3–5/255, same as with no adjustment |
+| HDR (PQ/HDR10 and HLG) video tone-mapped to SDR BT.709, on by default (Media → Picture to turn off) | ✅ | zscale + Mobius curve, HDR reference white (203 nits) = SDR white. Preview copy and export use the same chain (within 7/255). **Not tried with real iPhone HLG/Dolby Vision footage yet**; needs an FFmpeg with zscale (Homebrew's has it; checked before export) |
+| 3D LUTs (.cube) per media file, before the clip's own colour | ✅ | Copied into the app's LUT folder under a hash name; FFmpeg `lut3d` (tetrahedral) in both the preview copy and the export (within 8/255). A project file can't smuggle anything else into the filter graph (the name is checked) |
 | Selective colour (change only the reds…), colour wheels, scopes | ❌ | |
 | AI tool `set_color` | ✅ | |
 
@@ -298,6 +300,7 @@ progress/result screens, missing-media state and the gap rendering.
 - Playback smoothness with real camera footage (4K, long GOP, high bitrate) and long timelines,
   and with picture-in-picture (two videos decoding at once).
 - Real phone footage (VFR, HDR, Dolby Vision, rotation variants), MOV files from cameras, 44.1 kHz or 5.1 audio.
+  HDR tone mapping was only tried with a synthetic PQ clip.
 - Listening tests for audio quality, and volume levels in the export.
 - **Speech recognition quality.** whisper.cpp and its models couldn't be downloaded in this
   environment, so a stand-in replaced it in tests. Verify on a Mac: `brew install whisper-cpp`,

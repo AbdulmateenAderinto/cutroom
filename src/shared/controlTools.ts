@@ -307,6 +307,12 @@ export const CONTROL_TOOLS: ToolDef[] = [
     description: 'Move a video clip\'s sound (main track or overlay) to an audio track at exactly the same time, and mute the clip. Then trim/move the audio clip with set_audio_clip for a J-cut (sound starts before the picture) or L-cut (sound continues after it). Clip must be at 1× speed.',
     inputSchema: obj({ clip_id: str('clip id') }, ['clip_id']),
   },
+  {
+    name: 'set_media_picture',
+    runs: 'renderer',
+    description: 'How a media file\'s picture is read, wherever it is used: tone_map (HDR → SDR BT.709; on by default for HDR files) and/or a 3D LUT (.cube) given by absolute path (e.g. to turn log footage into normal colours; applied before each clip\'s own colour settings). remove_lut removes it. A new preview copy is made in the background.',
+    inputSchema: obj({ media_id: str('media id'), tone_map: bool('tone-map HDR to SDR'), lut_path: str('absolute path of a .cube 3D LUT'), remove_lut: bool('remove the LUT') }, ['media_id']),
+  },
   // ---- Markers ----
   {
     name: 'add_marker',
