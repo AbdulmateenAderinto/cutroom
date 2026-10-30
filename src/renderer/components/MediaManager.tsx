@@ -2,6 +2,7 @@
  * Media manager: every file in the project with where it is used, its size and whether it is
  * missing; relink missing files from a folder, remove unused ones, collect everything into a folder.
  */
+import { useEffect } from 'react';
 import { mediaUses, unusedMedia } from '../../shared/ops';
 import { formatDuration } from '../../shared/time';
 import * as A from '../state/actions';
@@ -17,6 +18,7 @@ export function MediaManager() {
   const nMissing = project.media.filter((m) => missing[m.id]).length;
   const total = project.media.reduce((n, m) => n + (m.info.fileSize || 0), 0);
   const close = () => store.set({ dialog: null });
+  useEffect(() => void A.refreshMissing(), []);
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="modal media-manager" role="dialog" aria-label="Media manager">
@@ -33,7 +35,7 @@ export function MediaManager() {
             <button className="btn small" disabled={!nMissing} onClick={() => void A.relinkFromFolder()} title="Search a folder (and its sub-folders) for the missing files by name">
               Relink missing from a folder…
             </button>
-            <button className="btn small" disabled={!unused.size} onClick={A.removeUnusedMedia}>Remove unused ({unused.size})</button>
+            <button className="btn small" disabled={!unused.size} onClick={() => A.removeUnusedMedia()}>Remove unused ({unused.size})</button>
             <button className="btn small" disabled={collecting} onClick={() => void A.collectMedia()} title="Copy every file into one folder and use the copies (to move or archive the project)">
               {collecting ? 'Copying…' : 'Collect files into a folder…'}
             </button>

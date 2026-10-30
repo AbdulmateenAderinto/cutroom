@@ -51,6 +51,12 @@ const T = (s: number) => secondsToTicks(Number(s));
 
 class ToolError extends Error {}
 
+/** An absolute path argument (macOS/Linux "/…", Windows "C:\\…"). */
+function absPath(v: unknown, name: string): string {
+  if (typeof v !== 'string' || !(v.startsWith('/') || /^[A-Za-z]:[\\/]/.test(v))) throw new ToolError(`${name} must be an absolute path.`);
+  return v;
+}
+
 /** A clip on the main track or an overlay track (clip tools work on both). */
 function clipOrThrow(p: Project, id: string): ClipItem {
   const o = findOverlay(p, id);
@@ -796,6 +802,69 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         cancelQueued(q.id);
         toast(`AI cancelled the queued export “${q.settings.outputPath.split(/[\\/]/).pop()}”.`, 'info', 4000);
         return ok({ cancelled: q.id, was: q.status });
+      }
+
+      // ---- Media manager ----
+      case 'get_media_usage': {
+        await A.refreshMissing();
+        const s = store.get();
+        const pr = s.project;
+        const uses = ops.mediaUses(pr);
+        const unused = new Set(ops.unusedMedia(pr));
+        const media = pr.media.map((m) => ({
+          id: m.id,
+          name: m.name,
+          path: m.path,
+          kind: m.info.kind ?? 'video',
+          file_mb: Math.round((m.info.fileSize || 0) / 1e5) / 10,
+          uses: uses[m.id] ?? 0,
+          ...(unused.has(m.id) ? { unused: true } : {}),
+          ...(s.missing[m.id] ? { missing: true } : {}),
+          ...(m.derived ? { made_by_cutroom: m.derived.kind, from_media_id: m.derived.mediaId } : {}),
+        }));
+        return ok({
+          files: media.length,
+          total_mb: Math.round(media.reduce((a, m) => a + m.file_mb, 0) * 10) / 10,
+          missing: media.filter((m) => m.missing).length,
+          unused: unused.size,
+          media,
+        });
+      }
+      case 'relink_missing_media': {
+        const folder = absPath(args.folder, 'folder');
+        const r = await A.relinkFromFolder(folder, 'AI: ');
+        if (!r) return fail('Relinking was cancelled.');
+        const still = store.get().project.media.filter((m) => store.get().missing[m.id]).map((m) => m.name);
+        return ok({ relinked: r.relinked, not_found: r.notFound, still_missing: still });
+      }
+      case 'relink_media': {
+        const m = findMedia(p, args.media_id);
+        if (!m) throw new ToolError(`No media with id ${args.media_id}.`);
+        const path = absPath(args.path, 'path');
+        const r = await window.cutroom.probeMedia(path);
+        if (!r.ok) return fail(`Cannot use ${path}: ${r.error}`);
+        const differences = A.relinkDifferences(m, r.info);
+        if ((r.info.kind ?? 'video') !== (m.info.kind ?? 'video')) return fail(`Refused: ${differences[0]}. Import it as new media instead.`);
+        A.applyRelink(m.id, path, r.info, r.warnings);
+        toast(`AI relinked ${m.name} → ${path.split(/[\\/]/).pop()}.`, 'info', 5000);
+        return ok({ relinked: m.id, path, ...(differences.length ? { differences, note: 'Clips were kept inside the new file\'s length. Check them with get_frame.' } : {}) });
+      }
+      case 'remove_unused_media': {
+        const removed = A.removeUnusedMedia('AI: ');
+        return ok({ removed, note: removed.length ? 'Removed from the project only; the files on disk are untouched. Undo brings them back.' : 'Every media file is used.' });
+      }
+      case 'collect_media': {
+        const folder = absPath(args.folder, 'folder');
+        await A.refreshMissing();
+        const r = await A.collectMedia(folder, 'AI: ');
+        if (!r) return fail('Collecting was cancelled.');
+        if ('error' in r) return fail(r.error);
+        return ok({
+          folder: r.folder,
+          copied: Object.entries(r.copied).map(([from, to]) => ({ from, to })),
+          ...(r.skippedMissing.length ? { not_copied_missing: r.skippedMissing } : {}),
+          next: 'save_project keeps the new locations.',
+        });
       }
 
       // ---- Preview ----

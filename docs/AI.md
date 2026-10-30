@@ -49,6 +49,7 @@ To use a specific whisper build, set `CUTROOM_WHISPER=/path/to/whisper-cli`.
    - "Show me the frame at 12 s. Is the subject centred? Fix the framing."
    - "Export a 1080×1920 MP4 at 8 Mb/s to ~/Desktop/reel.mp4."
    - "Save a version, then try a faster cut. Queue a 16:9 and a 9:16 export of it."
+   - "I moved my footage to /Volumes/Archive. Relink everything, then remove the clips I'm not using."
 
 The bridge (`build/main/mcp/server.js`) runs on Cutroom's own Electron binary
 (`ELECTRON_RUN_AS_NODE=1`), so you don't need Node.js installed. If you move the Cutroom folder,
@@ -75,6 +76,7 @@ copy the config again.
 | Versions | `save_version` (named snapshot next to the project), `list_versions`, `restore_version` (one undo step) |
 | Export queue | `queue_export` (same options as `export_video`; renders the timeline as it is when queued), `get_export_queue`, `cancel_queued_export` |
 | Preview | `set_proxy_mode` (small preview copies of large video; export still uses the originals) |
+| Media manager | `get_media_usage` (uses, unused, missing — rechecked on disk), `relink_missing_media` (search a folder), `relink_media` (one file), `remove_unused_media`, `collect_media` (copy everything into one folder) |
 
 All tool definitions live in `src/shared/controlTools.ts`. To add a tool, add its definition there
 and implement it in `src/renderer/control/rendererTools.ts` (edits) or in a main-process module

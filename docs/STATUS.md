@@ -58,7 +58,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 63 tools, incl. versions (`save_version`, `list_versions`, `restore_version`), the export queue (`queue_export`, `get_export_queue`, `cancel_queued_export`) and `set_proxy_mode`; the official MCP client test drives a full edit, restores a version, runs a queue and makes proxies |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 68 tools, incl. versions (`save_version`, `list_versions`, `restore_version`), the export queue (`queue_export`, `get_export_queue`, `cancel_queued_export`), `set_proxy_mode` and the media manager (`get_media_usage`, `relink_missing_media`, `relink_media`, `remove_unused_media`, `collect_media`); the official MCP client test drives a full edit, restores a version, runs a queue, makes proxies, and relinks, removes and collects media |
 
 ## Music and photos
 
@@ -191,7 +191,7 @@ plugins, blend modes, proxies, other transition shapes (circles, pushes with blu
 
 | Feature | Status | Notes |
 |---|---|---|
-| Media manager (**Manage…** in the Media panel): every file with where it is used, size, missing/unused | ✅ | Files on disk are never changed or deleted from here |
+| Media manager (**Manage…** in the Media panel): every file with where it is used, size, missing/unused | ✅ | Files on disk are never changed or deleted from here. Opening it re-checks which files are on disk (e.g. a drive unplugged since the project was opened) |
 | Remove unused media from the project | ✅ | Keeps the originals of reversed/stabilized copies in use |
 | Relink all missing files from a folder (searched by name, sub-folders included; same size preferred) | ✅ | Overlays and audio-track clips are relinked too, and kept inside a shorter replacement file |
 | Collect files: copy every media file into one folder and use the copies | ✅ | Never overwrites (adds “ 2”, “ 3”…); originals untouched |

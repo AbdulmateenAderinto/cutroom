@@ -105,12 +105,12 @@
   <h1>Carry on with Cutroom on your Mac</h1>
   <p class="lede">Setup, running it, what was built, what still needs checking on a real Mac, and where to look in the code.</p>
   <p class="repo">Repository: <a href="https://github.com/AbdulmateenAderinto/cutroom">github.com/AbdulmateenAderinto/cutroom</a> · branch <code>main</code> · updated 30 Oct 2026</p>
-  <div class="note" style="margin-top:20px"><b>Passed on your Mac (arm64, Homebrew <code>ffmpeg-full</code>), 30 Oct:</b> 270/270 unit + real-FFmpeg tests, all 16 end-to-end suites, the MCP test and the packaged-app test, after the FFmpeg 9 fixes (commit <code>6212064</code>). The 3 MCP steps added afterwards (versions, export queue, proxy mode) have only run in the cloud so far — re-run <code>npm run test:mcp</code> to cover them.</div>
+  <div class="note" style="margin-top:20px"><b>Passed on your Mac (arm64, Homebrew <code>ffmpeg-full</code>), 30 Oct:</b> 270/270 unit + real-FFmpeg tests, all 16 end-to-end suites, the MCP test and the packaged-app test, after the FFmpeg 9 fixes (commit <code>6212064</code>). The 4 MCP steps added afterwards (versions, export queue, proxy mode, media manager) have only run in the cloud so far — re-run <code>npm run test:mcp</code> to cover them.</div>
   <div class="stats">
     <div class="stat ok"><b>Phases 1–4</b><span>built, tested, pushed</span></div>
     <div class="stat ok"><b>270 / 270</b><span>unit + real-FFmpeg tests · Mac ✓ cloud ✓</span></div>
     <div class="stat ok"><b>16 / 16</b><span>end-to-end suites (real app) · Mac ✓ cloud ✓</span></div>
-    <div class="stat ok"><b>21 / 21</b><span>MCP steps · cloud ✓ · Mac ✓ before the newest 3</span></div>
+    <div class="stat ok"><b>22 / 22</b><span>MCP steps · cloud ✓ · Mac ✓ before the newest 4</span></div>
     <div class="stat warn"><b>By hand</b><span>real footage &amp; devices — see §6</span></div>
     <div class="stat warn"><b>Phase 5</b><span>waiting on you — see §11</span></div>
   </div>
@@ -203,7 +203,7 @@
           <tr><td>Project &amp; media <span class="new">NEW</span></td><td><b>Versions…</b> (named snapshots next to the project, restore with undo); <b>Manage…</b> media manager (uses per file, remove unused, relink a whole folder of moved files, collect files into one folder); <b>Proxy</b> mode for smooth 4K preview (export uses originals).</td></tr>
           <tr><td>Export</td><td>H.264, HEVC (Apple <code>hvc1</code>) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (<b>I</b> / <b>O</b>); Apple hardware encoder where available; safe <code>.partial</code> → verify → rename.</td></tr>
           <tr><td>Export queue <span class="new">NEW</span></td><td>Queue several exports and keep editing; optional “Render in parallel parts” (same frames as one pass).</td></tr>
-          <tr><td>AI</td><td>63 MCP tools so Claude can edit, look at frames, save and restore versions, queue exports and switch proxy mode.</td></tr>
+          <tr><td>AI</td><td>68 MCP tools so Claude can edit, look at frames, save and restore versions, queue exports, switch proxy mode and manage media (relink, collect, remove unused).</td></tr>
         </tbody>
       </table></div>
       <p class="muted small">Projects save as <code>.cutroom</code> files (format version 7; older ones open fine).</p>
@@ -231,7 +231,7 @@
         <li><label><input type="checkbox" data-k="versions"><span>Save a version, change things, restore it, undo.</span></label></li>
         <li><label><input type="checkbox" data-k="claude"><span>AI control from the real Claude Desktop / Claude Code.</span></label></li>
         <li><label><input type="checkbox" data-k="dmg"><span><code>npm run dist:mac</code> builds the <code>.dmg</code>, and the installed app starts and exports.</span></label></li>
-        <li><label><input type="checkbox" data-k="tests" checked><span>Run the automated tests on the Mac (section 7). <b>Passed 30 Oct</b> with <code>ffmpeg-full</code>: 270/270, 16/16 e2e, MCP, packaged. Re-run <code>npm run test:mcp</code> for the 3 newer MCP steps.</span></label></li>
+        <li><label><input type="checkbox" data-k="tests" checked><span>Run the automated tests on the Mac (section 7). <b>Passed 30 Oct</b> with <code>ffmpeg-full</code>: 270/270, 16/16 e2e, MCP, packaged. Re-run <code>npm run test:mcp</code> for the 4 newer MCP steps.</span></label></li>
       </ul>
     </section>
 
@@ -256,7 +256,6 @@
         <li>HDR tone mapping, LUTs, noise reduction, voice-over and the hardware encoder have not been tried with real Mac footage/hardware.</li>
         <li>Noise reduction is export-only (use “Listen” to hear it). Speed ramps are stepped, not a smooth curve.</li>
         <li>The export queue lives in the window: closing the app stops it. Parallel export has not been benchmarked.</li>
-        <li>The AI tools (MCP) don't cover the media manager (relink, collect, remove unused) yet.</li>
         <li><code>.dmg</code> not notarized; FFmpeg must come from Homebrew (Phase 5, §11).</li>
         <li>Crossfade playback in the preview: smoothness at the cut has not been measured; a brief stutter is possible.</li>
       </ul>
@@ -303,7 +302,6 @@
       <h3>Other ideas</h3>
       <ul>
         <li>Smooth (curve) speed ramps.</li>
-        <li>AI tools for the media manager (relink, collect, remove unused).</li>
         <li>An export queue that survives quitting the app.</li>
         <li>Transitions on overlay tracks; per-shot colour matching.</li>
         <li>Real-time noise reduction in the preview.</li>

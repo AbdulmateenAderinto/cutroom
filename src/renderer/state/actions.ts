@@ -626,15 +626,40 @@ export function removeMedia(mediaId: string) {
   commit((p) => ops.removeMedia(p, mediaId), { selection: null, previewMediaId: s.previewMediaId === mediaId ? null : s.previewMediaId });
 }
 
-/** Relink every missing file found (by name, same size preferred) in a chosen folder. */
-export async function relinkFromFolder(): Promise<{ relinked: string[]; notFound: string[] } | null> {
+/**
+ * Check which media files are on disk now (a drive may have been unplugged, or a file moved, since
+ * the project was opened) and update the missing flags.
+ */
+export async function refreshMissing(): Promise<void> {
+  const media = store.get().project.media;
+  if (!media.length) return;
+  const exists = await api().filesExist(media.map((m) => m.path));
+  store.set((s) => {
+    const missing = { ...s.missing };
+    let changed = false;
+    media.forEach((m, i) => {
+      if (!!missing[m.id] !== !exists[i]) {
+        missing[m.id] = !exists[i];
+        changed = true;
+      }
+    });
+    return changed ? { missing } : {};
+  });
+}
+
+/**
+ * Relink every missing file found (by name, same size preferred) in a folder (asked for when not
+ * given). One undo step. `by` prefixes the toast (e.g. "AI: ").
+ */
+export async function relinkFromFolder(folderArg?: string, by = ''): Promise<{ relinked: string[]; notFound: string[] } | null> {
+  await refreshMissing();
   const s = store.get();
   const missing = s.project.media.filter((m) => s.missing[m.id]);
   if (!missing.length) {
-    toast('No files are missing.');
+    toast(`${by}No files are missing.`);
     return { relinked: [], notFound: [] };
   }
-  const folder = await api().pickFolder('Choose a folder to search for the missing files');
+  const folder = folderArg ?? (await api().pickFolder('Choose a folder to search for the missing files'));
   if (!folder) return null;
   const found = await api().findInFolder(folder, missing.map((m) => ({ name: m.name, size: m.info.fileSize || undefined })));
   const relinked: string[] = [];
@@ -660,39 +685,53 @@ export async function relinkFromFolder(): Promise<{ relinked: string[]; notFound
     for (const m of store.get().project.media) if (relinked.includes(m.name)) loadThumbnail(m);
   }
   toast(
-    relinked.length
+    by + (relinked.length
       ? `Relinked ${relinked.length} file${relinked.length > 1 ? 's' : ''}${notFound.length ? `; not found: ${notFound.join(', ')}` : '.'}`
-      : `None of the missing files were found in that folder.`,
+      : `None of the missing files were found in that folder.`),
     notFound.length ? 'warn' : 'info',
     8000,
   );
   return { relinked, notFound };
 }
 
-/** Remove media that no clip uses (one undo step). */
-export function removeUnusedMedia() {
-  const ids = ops.unusedMedia(store.get().project);
-  if (!ids.length) return toast('Every media file is used.');
+/** Remove media that no clip uses (one undo step). Returns the names removed. */
+export function removeUnusedMedia(by = ''): string[] {
+  const p0 = store.get().project;
+  const ids = ops.unusedMedia(p0);
+  if (!ids.length) {
+    toast(`${by}Every media file is used.`);
+    return [];
+  }
+  const names = p0.media.filter((m) => ids.includes(m.id)).map((m) => m.name);
   commit((p) => ({ ...p, media: p.media.filter((m) => !ids.includes(m.id)) }));
-  toast(`Removed ${ids.length} unused file${ids.length > 1 ? 's' : ''} from the project (the files on disk are not touched).`);
+  toast(`${by}Removed ${ids.length} unused file${ids.length > 1 ? 's' : ''} from the project (the files on disk are not touched).`);
+  return names;
 }
 
 /**
  * Copy every media file the project uses into one folder and point the project at the copies
  * (e.g. to move or archive a project). Originals are not touched; nothing is overwritten.
  */
-export async function collectMedia() {
+export async function collectMedia(folderArg?: string, by = ''): Promise<{ folder: string; copied: Record<string, string>; skippedMissing: string[] } | { error: string } | null> {
   const s = store.get();
   const files = s.project.media.filter((m) => !s.missing[m.id]).map((m) => m.path);
-  if (!files.length) return toast('There is nothing to collect.');
-  const folder = await api().pickFolder('Choose a folder to copy the media into');
-  if (!folder) return;
+  const skippedMissing = s.project.media.filter((m) => s.missing[m.id]).map((m) => m.name);
+  if (!files.length) {
+    toast(`${by}There is nothing to collect.`);
+    return { error: 'There is nothing to collect (no media, or every file is missing).' };
+  }
+  const folder = folderArg ?? (await api().pickFolder('Choose a folder to copy the media into'));
+  if (!folder) return null;
   setWorking('collect', true);
   try {
     const r = await api().collectFiles(files, folder);
-    if (!r.ok) return toast(`Could not copy the files: ${r.error}`, 'error');
+    if (!r.ok) {
+      toast(`Could not copy the files: ${r.error}`, 'error');
+      return { error: `Could not copy the files: ${r.error}` };
+    }
     commit((p) => ({ ...p, media: p.media.map((m) => (r.map[m.path] ? { ...m, path: r.map[m.path], relativePath: undefined } : m)) }));
-    toast(`Copied ${files.length} file${files.length > 1 ? 's' : ''} into ${folder}. Save the project to keep the new locations.`);
+    toast(`${by}Copied ${files.length} file${files.length > 1 ? 's' : ''} into ${folder}. Save the project to keep the new locations.`);
+    return { folder, copied: r.map, skippedMissing };
   } finally {
     setWorking('collect', false);
   }
@@ -741,16 +780,29 @@ export async function relink(mediaId: string) {
   if (!path) return;
   const r = await api().probeMedia(path);
   if (!r.ok) return toast(`Could not use ${ops.basename(path)}: ${r.error}`, 'error');
-  const notes: string[] = [];
-  if (r.info.displayWidth !== m.info.displayWidth || r.info.displayHeight !== m.info.displayHeight) {
-    notes.push(`size differs (${r.info.displayWidth}×${r.info.displayHeight} vs ${m.info.displayWidth}×${m.info.displayHeight})`);
-  }
-  if (Math.abs(r.info.duration - m.info.duration) > TICKS_PER_SECOND / 2) notes.push('duration differs');
+  const notes = relinkDifferences(m, r.info);
   if (notes.length && !confirm(`The chosen file does not look like the original: ${notes.join(', ')}. Use it anyway? Clips will be kept within the new file's length.`)) return;
-  commit((p) => ops.relinkMedia(p, mediaId, path, r.info, r.warnings));
-  store.set((s) => ({ missing: { ...s.missing, [mediaId]: false } }));
-  loadThumbnail({ ...m, path });
+  applyRelink(mediaId, path, r.info, r.warnings);
   toast(`Relinked ${m.name}.`);
+}
+
+/** How a replacement file differs from the one a media item had (size, length). */
+export function relinkDifferences(m: MediaRef, info: MediaRef['info']): string[] {
+  const notes: string[] = [];
+  if ((info.kind ?? 'video') !== (m.info.kind ?? 'video')) notes.push(`it is ${info.kind ?? 'video'}, not ${m.info.kind ?? 'video'}`);
+  if (info.displayWidth !== m.info.displayWidth || info.displayHeight !== m.info.displayHeight) {
+    notes.push(`size differs (${info.displayWidth}×${info.displayHeight} vs ${m.info.displayWidth}×${m.info.displayHeight})`);
+  }
+  if (Math.abs(info.duration - m.info.duration) > TICKS_PER_SECOND / 2) notes.push('duration differs');
+  return notes;
+}
+
+/** Point a media item at another file (one undo step); clips stay inside the new file's length. */
+export function applyRelink(mediaId: string, path: string, info: MediaRef['info'], warnings: string[]) {
+  const m = findMedia(store.get().project, mediaId);
+  commit((p) => ops.relinkMedia(p, mediaId, path, info, warnings));
+  store.set((s) => ({ missing: { ...s.missing, [mediaId]: false } }));
+  if (m) loadThumbnail({ ...m, path });
 }
 
 // ---------------------------------------------------------------------------------------------

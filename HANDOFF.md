@@ -10,8 +10,8 @@ Repository: https://github.com/AbdulmateenAderinto/cutroom (branch `main`)
 - **On your Mac (arm64, Homebrew `ffmpeg-full`), 30 Oct:** 270/270 unit + real-FFmpeg tests, all 16
   end-to-end suites (the real app, preview compared with export), the MCP test and the packaged-app
   test (`npm run dist:dir`) pass — after the FFmpeg 9 fixes in commit `6212064`.
-- **In the cloud (Linux):** the same, plus the 3 MCP steps added afterwards (versions, export queue,
-  proxy mode; MCP 21/21). Re-run `npm run test:mcp` on the Mac to cover those.
+- **In the cloud (Linux):** the same, plus the 4 MCP steps added afterwards (versions, export queue,
+  proxy mode, media manager; MCP 22/22). Re-run `npm run test:mcp` on the Mac to cover those.
 - **Still to check by hand on the Mac** (section 6): real footage and devices, the hardware encoder,
   the `.dmg`, the microphone. Phase 5 (notarized release, bundled FFmpeg) is waiting on you (section 11).
 
@@ -108,7 +108,7 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Export | H.264, HEVC (Apple `hvc1`) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
 | Project & media | Versions (named snapshots, restore with undo), media manager (uses, remove unused, relink a whole folder, collect files), proxy mode for smooth 4K preview |
 | Export queue | Queue several exports and keep editing; optional parallel parts (same frames as one pass) |
-| AI | 63 MCP tools so Claude can edit, look at frames, save and restore versions, queue exports and switch proxy mode |
+| AI | 68 MCP tools so Claude can edit, look at frames, save and restore versions, queue exports, switch proxy mode and manage media (relink, collect, remove unused) |
 
 Projects save as `.cutroom` files (format version 7; older ones open fine).
 
@@ -134,7 +134,7 @@ hardware. Tick these off; anything that fails is worth a GitHub issue or a messa
 - [ ] Noise reduction on a real noisy voice recording (use **Listen**); stabilize a real handheld clip.
 - [ ] Move a project's media to another drive, reopen, and use **Manage… → Relink missing from a folder**.
 - [ ] Save a version, change things, restore it, undo.
-- [x] Run the automated tests on the Mac (section 7). **Passed 30 Oct** with `ffmpeg-full`: 270/270, 16/16 e2e, MCP, packaged. Re-run `npm run test:mcp` for the 3 newer MCP steps.
+- [x] Run the automated tests on the Mac (section 7). **Passed 30 Oct** with `ffmpeg-full`: 270/270, 16/16 e2e, MCP, packaged. Re-run `npm run test:mcp` for the 4 newer MCP steps.
 
 ## 7. Tests
 
@@ -170,7 +170,6 @@ Screenshots and exported files from the tests go to `tests/.output/`.
 - HDR tone mapping, LUTs, noise reduction, voice-over and the hardware encoder have not been tried with real Mac footage/hardware.
 - Noise reduction is export-only (use “Listen” to hear it). Speed ramps are stepped.
 - The export queue lives in the window: closing the app stops it. Parallel export has not been benchmarked.
-- The AI tools (MCP) don't cover the media manager (relink, collect, remove unused) yet.
 - `.dmg` not notarized; FFmpeg must come from Homebrew. Phase 5 (notarized release, bundled FFmpeg) is waiting on your Apple Developer account and an FFmpeg licensing decision.
 - Crossfade playback in the preview: smoothness at the cut has not been measured; a brief stutter is possible.
 
@@ -210,6 +209,6 @@ the checklist in HANDOFF.md section 6."*
   can be bundled more freely but lacks libx264/libx265 (H.264/HEVC would then use Apple's hardware
   encoder only); a GPL build keeps them but makes the whole app GPL. Decide which you want.
 
-**Other ideas:** smooth (curve) speed ramps; AI tools for the media manager; a queue that
+**Other ideas:** smooth (curve) speed ramps; a queue that
 survives quitting; transitions on overlay tracks; per-shot colour matching; real-time noise reduction
 in the preview.

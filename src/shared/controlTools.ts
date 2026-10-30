@@ -563,6 +563,42 @@ export const CONTROL_TOOLS: ToolDef[] = [
     inputSchema: obj({ name: str('version name exactly as list_versions gives it') }, ['name']),
   },
 
+  // ---- Media manager ----
+  {
+    name: 'get_media_usage',
+    runs: 'renderer',
+    description:
+      'Every media file in the project: id, name, path, kind, file size, how many clips use it (main track, overlays, audio tracks), whether it is unused or missing (offline), and whether it is a copy Cutroom made (freeze frame, reversed, stabilized). Use before relinking, removing or collecting.',
+    inputSchema: obj({}),
+  },
+  {
+    name: 'relink_missing_media',
+    runs: 'renderer',
+    description:
+      'Find every missing (offline) media file in a folder and its sub-folders, by file name (a file of the same size is preferred), and relink all that are found in one undo step. Returns what was relinked and what was not found.',
+    inputSchema: obj({ folder: str('absolute path of the folder to search, e.g. the drive or folder the person moved the footage to') }, ['folder']),
+  },
+  {
+    name: 'relink_media',
+    runs: 'renderer',
+    description:
+      'Point one media item at a specific file (a missing file found elsewhere, or a replacement such as a re-exported version). Clips keep their in/out points, kept inside the new file\'s length. One undo step. Reports how the new file differs (size, length, kind); a file of a different kind (e.g. audio for a video) is refused.',
+    inputSchema: obj({ media_id: str('media id from get_media_usage or get_project'), path: str('absolute path of the file to use') }, ['media_id', 'path']),
+  },
+  {
+    name: 'remove_unused_media',
+    runs: 'renderer',
+    description: 'Remove every media file no clip uses from the project (one undo step). Files on disk are never touched. Originals of reversed/stabilized copies that are in use are kept.',
+    inputSchema: obj({}),
+  },
+  {
+    name: 'collect_media',
+    runs: 'renderer',
+    description:
+      'Copy every media file the project uses into one folder (created if needed) and point the project at the copies, e.g. to move the project to another drive or archive it. Originals are not touched and nothing is overwritten (a name clash gets " 2", " 3"…). Copying large footage can take a while. Ask the person before copying unless they asked. Save the project afterwards to keep the new locations.',
+    inputSchema: obj({ folder: str('absolute path of the destination folder') }, ['folder']),
+  },
+
   // ---- Preview ----
   {
     name: 'set_proxy_mode',

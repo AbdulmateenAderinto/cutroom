@@ -6,7 +6,7 @@
  * Run: npm run test:mcp   (Linux without a display: xvfb-run -a npm run test:mcp)
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -116,7 +116,7 @@ await step('MCP client connects and lists tools', async () => {
   await client.connect(transport);
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name);
-  for (const n of ['get_project', 'build_timeline', 'set_animation', 'set_keyframe', 'get_frame', 'export_video', 'queue_export', 'get_export_queue', 'cancel_queued_export', 'save_version', 'list_versions', 'restore_version', 'set_proxy_mode']) assert(names.includes(n), `missing ${n}`);
+  for (const n of ['get_project', 'build_timeline', 'set_animation', 'set_keyframe', 'get_frame', 'export_video', 'queue_export', 'get_export_queue', 'cancel_queued_export', 'save_version', 'list_versions', 'restore_version', 'set_proxy_mode', 'get_media_usage', 'relink_missing_media', 'relink_media', 'remove_unused_media', 'collect_media']) assert(names.includes(n), `missing ${n}`);
   assert(client.getInstructions()?.includes('get_project'), 'server instructions missing');
 });
 
@@ -436,6 +436,50 @@ await step('set_proxy_mode: on makes 960×540 copies of large media, off goes ba
   assert(off.proxy_mode === false && !(await page.evaluate(() => window.__cutroom.store.get().proxyMode)), JSON.stringify(off));
   const bad = await client.callTool({ name: 'set_proxy_mode', arguments: { on: 'yes' } });
   assert(bad.isError, 'non-boolean accepted');
+});
+
+await step('media manager: get_media_usage, remove_unused_media, relink_missing_media, relink_media, collect_media', async () => {
+  const spare = path.join(out, 'spare clip.mp4');
+  const mover = path.join(out, 'move me.mp4');
+  cpSync(B, spare);
+  cpSync(A, mover);
+  const imp = (await call('import_media', { paths: [spare, mover] })).json.imported;
+  const moverId = imp.find((m) => m.name === 'move me.mp4').id;
+  await call('add_clip', { media_id: moverId });
+  let u = (await call('get_media_usage')).json;
+  const row = (name) => u.media.find((m) => m.name === name);
+  assert(row('spare clip.mp4')?.unused && row('move me.mp4').uses === 1, JSON.stringify(u).slice(0, 600));
+  // Remove unused: one undo step, files on disk untouched.
+  const rm = (await call('remove_unused_media')).json;
+  assert(rm.removed.includes('spare clip.mp4') && existsSync(spare), JSON.stringify(rm));
+  assert(!(await appState()).media.some((m) => m.name === 'spare clip.mp4'), 'still in the project');
+  await call('undo');
+  assert((await appState()).media.some((m) => m.name === 'spare clip.mp4'), 'undo did not bring it back');
+  await call('redo');
+  // A file moved while the app is open is noticed, then found again in a folder.
+  const deep = path.join(out, 'moved', 'deep');
+  mkdirSync(deep, { recursive: true });
+  renameSync(mover, path.join(deep, 'move me.mp4'));
+  u = (await call('get_media_usage')).json;
+  assert(row('move me.mp4').missing === true && u.missing >= 1, JSON.stringify(row('move me.mp4')));
+  const rel = (await call('relink_missing_media', { folder: path.join(out, 'moved') })).json;
+  assert(rel.relinked.includes('move me.mp4') && !rel.still_missing.includes('move me.mp4'), JSON.stringify(rel));
+  assert((await appState()).media.find((m) => m.id === moverId).path === path.join(deep, 'move me.mp4'), 'path not updated');
+  const relBad = await client.callTool({ name: 'relink_missing_media', arguments: { folder: 'moved' } });
+  assert(relBad.isError && relBad.content[0].text.includes('absolute'), relBad.content[0].text);
+  // Point one media item at a specific file; differences are reported; a different kind is refused.
+  const one = (await call('relink_media', { media_id: moverId, path: B })).json;
+  assert(one.relinked === moverId && one.differences?.some((d) => d.includes('size differs')), JSON.stringify(one));
+  const clip = (await call('get_project')).json.timeline.find((x) => x.kind === 'clip' && x.media_id === moverId);
+  assert(clip && clip.source_out_s <= 5.01, `clip not kept inside the 5 s file: ${JSON.stringify(clip)}`);
+  const kind = await client.callTool({ name: 'relink_media', arguments: { media_id: moverId, path: path.join(fixtures, 'song 1k.mp3') } });
+  assert(kind.isError && kind.content[0].text.includes('Refused'), kind.content[0].text);
+  // Collect: copies into one folder, project uses them, originals stay.
+  const dest = path.join(out, 'collected media');
+  const col = (await call('collect_media', { folder: dest })).json;
+  const media = (await appState()).media;
+  assert(col.copied.length === media.length && media.every((m) => m.path.startsWith(dest)), JSON.stringify(col).slice(0, 600));
+  assert(col.copied.every((c) => existsSync(c.to) && existsSync(c.from)), 'a copy or an original is missing');
 });
 
 await step('turning AI control off disconnects the bridge', async () => {
