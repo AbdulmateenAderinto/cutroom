@@ -26,6 +26,7 @@ import { AnimationSection } from './AnimationSection';
 import { AudioClipInspector, TrackSettings } from './AudioInspector';
 import { TitleInspector } from './TitleInspector';
 import { CaptionsSection } from './CaptionsSection';
+import { ColorSection } from './ColorSection';
 import { SmartTools } from './SmartTools';
 import { CanvasControl } from './TopBar';
 import { Disclosure, NumberField, Section, Segmented, TimecodeField, formatBytes } from './controls';
@@ -195,6 +196,8 @@ function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) 
         />
         <div className="muted small">Source file length: {formatTimecode(media.info.duration, media.info.frameRate)}</div>
       </Section>
+
+      <ColorSection clip={clip} />
 
       <TransitionSection clip={clip} project={project} />
 

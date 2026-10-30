@@ -348,6 +348,17 @@ await step('set_transition: dip works anywhere; a crossfade without footage says
   assert(!(await call('get_project', {})).json.timeline.find((x) => x.id === tl[0].id).transition_to_next, 'not removed');
 });
 
+await step('set_color: adjusts, reports, resets', async () => {
+  const c = (await call('get_project', {})).json.timeline.find((x) => x.kind === 'clip');
+  const r = (await call('set_color', { clip_id: c.id, saturation: 0, exposure: 0.5 })).json;
+  assert(r.color.saturation === 0 && r.color.exposure === 0.5, JSON.stringify(r));
+  assert((await call('get_project', {})).json.timeline.find((x) => x.id === c.id).color?.saturation === 0, 'not in get_project');
+  const bad = await client.callTool({ name: 'set_color', arguments: { clip_id: c.id, contrast: 'high' } });
+  assert(bad.isError, 'non-numeric contrast accepted');
+  const reset = (await call('set_color', { clip_id: c.id, reset: true })).json;
+  assert(reset.color === 'neutral', JSON.stringify(reset));
+});
+
 await step('turning AI control off disconnects the bridge', async () => {
   await page.evaluate(() => window.cutroom.setAiEnabled(false));
   const r = await client.callTool({ name: 'get_project', arguments: {} });

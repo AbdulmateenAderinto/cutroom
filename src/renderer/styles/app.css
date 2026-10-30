@@ -315,3 +315,5 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .indent { margin-left: 22px; }
 .chip-x { background: none; border: 0; color: inherit; cursor: pointer; padding: 0 0 0 6px; font-size: 10px; }
 .btn.on { background: var(--accent); color: #111; border-color: var(--accent); }
+.color-row { display: grid; grid-template-columns: 82px 1fr 92px; align-items: center; gap: 6px; }
+.color-value { text-align: right; }

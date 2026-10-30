@@ -101,6 +101,8 @@ export interface ClipItem {
   framing: Framing;
   /** Playback speed, 0.25..4 (absent = 1). Sound keeps its pitch. */
   speed?: number;
+  /** Colour adjustments (see color.ts); absent = unchanged. */
+  color?: import('./color').ColorAdjust;
   /** Transition into the next clip, centred on the cut (see transitions.ts). */
   transition?: { kind: TransitionKind; duration: Ticks };
   volume: number; // 0..2 (1 = original level)

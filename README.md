@@ -15,6 +15,8 @@ Status: the core workflow (import → edit → save → export) works and is tes
 - **Transitions:** select the clip before a cut and choose **Transition to next clip** (crossfade or a dip
 to black/white). A crossfade needs a little footage past the cut, so trim the clips slightly first.
 
+**Colour:** select a clip and use the **Colour** sliders (exposure, contrast, saturation, temperature).
+
 **Speed:** select a clip and pick 0.25×–4× in its **Speed** section (sound keeps its pitch).
 
 **Titles:** text rows with styles (title, lower third, quote…), fonts, box/outline/shadow looks,

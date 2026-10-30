@@ -27,6 +27,7 @@ import {
 import { buildCues, fillerRanges } from '../../shared/captions';
 import { addTitle, deleteTitle, findTitle, moveTitle, updateTitle } from '../../shared/titles';
 import { transitionInfo } from '../../shared/transitions';
+import { NEUTRAL } from '../../shared/color';
 import * as ops from '../../shared/ops';
 import { COMMON_FRAME_RATES, type Rational, frameDuration, rateLabel, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { renderOverlayTrack } from '../captions/draw';
@@ -144,6 +145,7 @@ export function projectSummary(p: Project) {
         source_in_s: sec(c.sourceIn),
         source_out_s: sec(c.sourceOut),
         ...(c.speed ? { speed: c.speed } : {}),
+        ...(c.color ? { color: c.color } : {}),
         ...(c.transition ? { transition_to_next: { kind: c.transition.kind, duration_s: sec(c.transition.duration) } } : {}),
         framing: c.framing,
         volume: c.volume,
@@ -451,6 +453,17 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         return ok({ volume: n.volume, muted: n.muted });
       }
 
+      case 'set_color': {
+        const c = clipOrThrow(p, args.clip_id);
+        const patch: Record<string, number> = {};
+        for (const k of ['exposure', 'contrast', 'saturation', 'temperature']) {
+          if (args[k] === undefined) continue;
+          if (!Number.isFinite(args[k])) throw new ToolError(`${k} must be a number.`);
+          patch[k] = Number(args[k]);
+        }
+        edit('adjusted colour', (pr) => ops.setColor(args.reset ? ops.setColor(pr, c.id, NEUTRAL) : pr, c.id, patch));
+        return ok({ color: clipOrThrow(store.get().project, c.id).color ?? 'neutral' });
+      }
       case 'set_transition': {
         const c = clipOrThrow(p, args.clip_id);
         const kind = args.kind === 'none' ? null : args.kind;

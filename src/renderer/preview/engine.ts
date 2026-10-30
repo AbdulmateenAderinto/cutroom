@@ -30,6 +30,7 @@ import {
 } from '../../shared/model';
 import { type Ticks, TICKS_PER_SECOND, frameDuration, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { evalAnimation } from '../../shared/animation';
+import { clipColor, svgMatrix } from '../../shared/color';
 import { type ResolvedTransition, dipColour, resolveTransitions, transitionMix } from '../../shared/transitions';
 import { playhead } from '../state/playhead';
 import { attachVideoElement, setVideoGain, stopMusic, syncMusic } from './audio';
@@ -210,6 +211,46 @@ class PreviewEngine {
     el.style.width = `${(r.w / cw) * 100}%`;
     el.style.height = `${(r.h / ch) * 100}%`;
     if (el instanceof HTMLVideoElement) setVideoGain(el, clip.muted ? 0 : clip.volume * mix);
+    this.colorFilter(el, clip);
+  }
+
+  // One SVG colour filter per element (each element shows one clip at a time).
+  private filters = new Map<HTMLElement, SVGFEColorMatrixElement>();
+
+  /** Colour adjustments as an SVG feColorMatrix on gamma-encoded RGB, the export's transform. */
+  private colorFilter(el: HTMLElement, clip: ClipItem) {
+    const adj = clipColor(clip);
+    if (!adj) {
+      if (el.style.filter) el.style.filter = '';
+      return;
+    }
+    let fe = this.filters.get(el);
+    if (!fe) {
+      const ns = 'http://www.w3.org/2000/svg';
+      let svg = document.getElementById('cutroom-color-filters') as SVGSVGElement | null;
+      if (!svg) {
+        svg = document.createElementNS(ns, 'svg') as SVGSVGElement;
+        svg.id = 'cutroom-color-filters';
+        svg.setAttribute('width', '0');
+        svg.setAttribute('height', '0');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.style.position = 'absolute';
+        document.body.appendChild(svg);
+      }
+      const f = document.createElementNS(ns, 'filter');
+      f.id = `cutroom-cf${this.filters.size}`;
+      f.setAttribute('color-interpolation-filters', 'sRGB');
+      fe = document.createElementNS(ns, 'feColorMatrix');
+      fe.setAttribute('type', 'matrix');
+      f.appendChild(fe);
+      svg.appendChild(f);
+      this.filters.set(el, fe);
+      el.dataset.colorFilter = f.id;
+    }
+    const values = svgMatrix(adj);
+    if (fe.getAttribute('values') !== values) fe.setAttribute('values', values);
+    const want = `url("#${el.dataset.colorFilter}")`;
+    if (el.style.filter !== want) el.style.filter = want;
   }
 
   private show(idx: number, image = false) {

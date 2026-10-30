@@ -1,0 +1,93 @@
+/**
+ * UI test for colour adjustments in the real app: the sliders, live preview (SVG filter), undo,
+ * reset, and the preview's colours matching the export's for several settings.
+ *
+ * Run: npm run test:e2e   (Linux without a display: xvfb-run -a npm run test:e2e)
+ */
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { assert, ff, fixture, launch, makeSteps, outputDir } from './harness.mjs';
+
+const out = outputDir('color');
+const userData = path.join(out, 'userdata');
+// Four flat patches (orange, teal, mid grey, dark red) so colours can be read back exactly.
+const patches = ['0xe68c28', '0x28a096', '0x808080', '0x6e1e1e'];
+const quad = patches.map((c, i) => `color=c=${c}:s=320x180:r=30:d=3[p${i}]`).join(';') + ';[p0][p1]hstack[t];[p2][p3]hstack[b];[t][b]vstack,format=yuv420p';
+const video = fixture('color-quad.mp4', (f) => ff(['-f', 'lavfi', '-i', quad, '-f', 'lavfi', '-i', 'sine=d=3', '-c:v', 'libx264', '-qp', '0', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', f]));
+
+const { step, finish } = makeSteps();
+console.log('Cutroom colour adjustments UI test');
+const h = await launch({ userData });
+const { page } = h;
+const clip = async () => (await h.state()).sequence.items[0];
+const setSlider = (label, value) => page.locator(`.inspector input[aria-label="${label}"]`).evaluate((el, v) => {
+  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+  set.call(el, String(v));
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}, value);
+/** Average RGB of the middle of each quadrant of an image or video frame (8×8 area each). */
+const quadrants = (args) => {
+  const raw = execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args, '-frames:v', '1', '-vf', 'scale=32:18:flags=area,format=rgb24', '-f', 'rawvideo', '-']);
+  return [[8, 4], [24, 4], [8, 13], [24, 13]].map(([x, y]) => [0, 1, 2].map((k) => raw[(y * 32 + x) * 3 + k]));
+};
+const settingsList = [
+  ['neutral', {}],
+  ['vivid-warm', { Saturation: 1.6, Temperature: 0.8 }],
+  ['dark-contrasty', { Exposure: -0.5, Contrast: 1.4 }],
+  ['black-and-white', { Saturation: 0 }],
+];
+
+await step('import, add and select the clip; Colour section shows neutral', async () => {
+  await h.stubOpen([video]);
+  await page.click('button:has-text("Import…")');
+  await page.waitForFunction(() => window.__cutroom.store.get().project.media.length === 1);
+  await page.click('.media-item >> nth=0 >> button:has-text("Add to timeline")');
+  await page.click('.tl-track .clip >> nth=0');
+  assert(await page.locator('.inspector h3:has-text("Colour")').isVisible(), 'Colour section missing');
+  assert(!(await clip()).color, 'clip should start neutral');
+});
+
+await step('sliders change the clip and the preview filter; undo and Reset', async () => {
+  await setSlider('Saturation', 0.4);
+  assert((await clip()).color?.saturation === 0.4, JSON.stringify((await clip()).color));
+  const filter = await page.evaluate(() => [...document.querySelectorAll('video.stage-video')].find((v) => v.style.display === 'block')?.style.filter);
+  assert(/url\("#cutroom-cf\d+"\)/.test(filter), `preview filter: ${filter}`);
+  await page.click('button:has-text("Undo")');
+  assert(!(await clip()).color, 'undo did not restore neutral');
+  await setSlider('Exposure', 1);
+  await page.click('.inspector button:has-text("Reset")');
+  assert(!(await clip()).color, 'Reset did not restore neutral');
+});
+
+await step('preview colours match the export for four settings', async () => {
+  const shots = [];
+  for (const [name, values] of settingsList) {
+    await page.click('.tl-track .clip >> nth=0');
+    if (await page.locator('.inspector button:has-text("Reset")').isVisible()) await page.click('.inspector button:has-text("Reset")');
+    for (const [label, v] of Object.entries(values)) await setSlider(label, v);
+    await page.keyboard.press('Escape');
+    await h.seekFrame(30);
+    await h.previewReady();
+    await page.waitForTimeout(300);
+    const png = path.join(out, `preview-${name}.png`);
+    await page.locator('.stage').screenshot({ path: png });
+    const file = path.join(out, `${name}.mp4`);
+    await h.exportTo(file, { fps: 30 });
+    shots.push({ name, png, file });
+  }
+  let worst = 0;
+  for (const { name, png, file } of shots) {
+    const a = quadrants(['-i', png]);
+    const b = quadrants(['-ss', '0.995', '-i', file]);
+    const err = Math.max(...a.flatMap((rgb, i) => rgb.map((v, k) => Math.abs(v - b[i][k]))));
+    worst = Math.max(worst, err);
+    console.log(`      ${name}: preview ${JSON.stringify(a)} export ${JSON.stringify(b)} (max diff ${err})`);
+  }
+  assert(worst <= 8, `preview and export colours differ by up to ${worst}`);
+  // And the settings really do something (black-and-white is grey in the export).
+  const bw = quadrants(['-ss', '0.995', '-i', shots[3].file]);
+  assert(bw.every(([r, g, b]) => Math.abs(r - g) < 4 && Math.abs(g - b) < 4), `black-and-white not grey: ${JSON.stringify(bw)}`);
+});
+
+await h.close();
+process.exit(finish());

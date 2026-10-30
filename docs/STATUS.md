@@ -48,7 +48,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 41 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 42 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -101,10 +101,18 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Range export through a transition; transitions on both ends of a clip | ✅ | |
 | AI tool `set_transition` | ✅ | |
 
-## Planned, in this order
+## Colour
 
-1. 🔜 Exposure, contrast, saturation, temperature
-2. 🔜 `.app`/`.dmg` packaging
+| Feature | Status | Notes |
+|---|---|---|
+| Per clip: exposure, contrast, saturation, temperature; reset; live sliders (one undo step per drag) | ✅ | |
+| Export colours match the shared maths (`applyColor`) | ✅ | SD BT.601, HD BT.709 and photo sources, 6 settings: within 4/255 |
+| Preview (SVG `feColorMatrix` in sRGB) matches the export | ✅ | 4 settings compared: within 3–5/255, same as with no adjustment |
+| AI tool `set_color` | ✅ | |
+
+## Planned
+
+1. 🔜 `.app`/`.dmg` packaging (needs to be built and signed on a Mac)
 
 Not planned yet: generative tools, background removal, motion tracking, optical flow,
 plugins, complex compositing, proxies, wipes/slides and other transition shapes.
@@ -187,6 +195,9 @@ it plays during playback and hides afterwards, preview vs export at five frames 
 (2–3/255 vs 39–43 for frames 8 away), a dip to black is black at the cut in both, and the "needs
 footage" note when there is none.
 
+**Colour UI run (ninth script, 3 steps):** sliders change the clip and attach the preview filter,
+undo and Reset, and preview vs export colours for four settings (max difference 3–5/255).
+
 **MCP run (`npm run test:mcp`, 12 steps):** security checks (no token, wrong token, browser origin
 all refused), tool listing, import, contact sheet and frames, `build_timeline`, editing plus undo/redo,
 readable errors for bad input, timeline frame capture, export with polling, analysis tools, speech
@@ -251,6 +262,10 @@ progress/result screens, missing-media state and the gap rendering.
   −118 ms at 0.25×, −44 ms at 0.5×, −15 ms at 2×. Normal-speed clips are unaffected (sample-exact).
   The preview uses Chromium's own time stretch, whose offset has not been measured. Speed ramps
   (changing speed within a clip) are not supported.
+- **Colour:** adjustments work on gamma-encoded RGB (like most simple editors), not in linear light, so
+  exposure is a gain on the encoded values rather than a physical exposure change. A clip with colour
+  adjustments goes through 8-bit RGB in the export (slightly more banding in smooth gradients). No curves,
+  LUTs, or per-shot colour matching.
 - **Titles:** fonts are the ones installed on the computer (a fallback is used if one is missing), so a
   project can look different on another Mac. Text is drawn at the output resolution, so export is sharp;
   the preview draws at the on-screen size. No per-word styling, rotation or keyframed motion for titles yet.

@@ -29,6 +29,7 @@ import {
 } from './model';
 import { type AnimProperty, type ClipAnimation, type Easing, clampAnimValue, removeKeyframeAt, upsertKeyframe } from './animation';
 import { type CaptionSettings, DEFAULT_CAPTIONS } from './captions';
+import { type ColorAdjust, NEUTRAL, isNeutral, legalColor } from './color';
 import { type Rational, type Ticks, frameDuration, snapToFrame } from './time';
 
 function withItems(project: Project, items: TrackItem[]): Project {
@@ -92,6 +93,15 @@ export function legalRange(
   let tdur = snapProject((sourceOut - inT) / speed, pr, 'round');
   tdur = Math.max(pf, Math.min(tdur, available));
   return { sourceIn: inT, sourceOut: inT + Math.min(mediaDur - inT, Math.round(tdur * speed)) };
+}
+
+/** Change a clip's colour adjustments (only the given ones); neutral settings are removed. */
+export function setColor(project: Project, clipId: string, patch: Partial<ColorAdjust>): Project {
+  return updateClip(project, clipId, (c) => {
+    const color = legalColor({ ...(c.color ?? NEUTRAL), ...patch });
+    const { color: _old, ...rest } = c;
+    return isNeutral(color) ? rest : { ...rest, color };
+  });
 }
 
 /** Set (or remove, kind = null) the transition from a clip into the next one. */

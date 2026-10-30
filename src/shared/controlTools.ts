@@ -160,6 +160,14 @@ export const CONTROL_TOOLS: ToolDef[] = [
     inputSchema: obj({ clip_id: str('clip id'), volume: num('0..2'), muted: bool('mute') }, ['clip_id']),
   },
   {
+    name: 'set_color',
+    runs: 'renderer',
+    description: 'Adjust a clip\'s colour: exposure (stops, -2..2), contrast (0..2, 1 = unchanged), saturation (0..2, 0 = black and white), temperature (-1 cooler .. 1 warmer). Only the given values change; all neutral = no adjustment. Check with get_frame.',
+    inputSchema: obj({
+      clip_id: str('clip id'), exposure: num('-2..2'), contrast: num('0..2'), saturation: num('0..2'), temperature: num('-1..1'), reset: bool('back to neutral first'),
+    }, ['clip_id']),
+  },
+  {
     name: 'set_transition',
     runs: 'renderer',
     description: 'Set the transition from a clip into the NEXT clip: crossfade (both pictures and sounds mix; needs footage past the cut, so trim the clips a little first), dipBlack / dipWhite (fade through a colour), or none (a hard cut). Centred on the cut; the timeline length does not change. Returns the length actually used and why it is shorter, if it is.',

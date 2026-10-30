@@ -109,6 +109,12 @@ and after the outgoing clip's end come from `sourceAt()`), mixed with `xfade`, a
 other clip in a third element (over the outgoing clip before the cut, under the incoming one after) and
 dips with a colour layer.
 
+**Colour adjustments** (`src/shared/color.ts`) combine into one affine transform of gamma-encoded
+RGB (`colorTransform`). The preview applies it as an SVG `feColorMatrix` with
+`color-interpolation-filters="sRGB"` on the clip's element; the export converts the clip to RGB with its
+own matrix/range (Chromium's interpretation), applies `colorchannelmixer` on RGBA (the alpha column
+carries the offset) and converts to BT.709 like photos.
+
 **Range export** builds the timeline only up to the range end (the clip straddling it renders fewer
 frames, with its animation still timed on its full length), renders clips wholly before the range as
 plain background without decoding them, and trims the start off video and audio. So every frame in the
@@ -182,8 +188,3 @@ Claude ──stdio MCP──▶ cutroom-mcp (src/mcp/server.ts) ──HTTP 127.0
 Tool definitions (names, descriptions, JSON schemas) live in `src/shared/controlTools.ts`. The bridge
 lists them; the server validates arguments. Editing tools execute in the window through the same
 `commit()` as UI edits, which gives live updates and one undo step per call.
-
-## Where to add the planned features
-
-- **Colour adjustments:** a second visual layer in the preview, and an extra
-  overlay or `eq` stage per segment in the export plan.

@@ -30,6 +30,7 @@ import {
   sourceMatrix,
 } from './model';
 import { dipColour, resolveTransitions } from './transitions';
+import { clipColor, ffmpegMixer } from './color';
 import {
   type Rational,
   type Ticks,
@@ -277,7 +278,11 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const matrix = sourceMatrix(info);
     // Photos are first decoded to RGB (JPEG's full-range BT.601 is undone by that step), so the
     // resizing scale converts RGB → BT.709 limited range, as for backgrounds and captions.
-    const colour = isImage
+    // Colour adjustments work on RGB (as the preview's SVG filter does): the source is converted to
+    // RGB with its own matrix/range (Chromium's interpretation), mixed, and converted to BT.709.
+    const adjust = clipColor(item);
+    const rgbPath = isImage || !!adjust;
+    const colour = rgbPath
       ? ':out_color_matrix=bt709:out_range=tv'
       : `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${info.colorRange === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
     // Transparent PNG/WebP keep their alpha so the background colour shows through.
@@ -302,7 +307,9 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       inputs.push('-ss', f6(ticksToSeconds(ss)), '-t', f6(readFor0 + lead), '-i', mediaPath(media));
     }
     const i = inputIndex++;
-    const decode = isImage ? 'format=rgba,' : '';
+    const decode =
+      (isImage ? 'format=rgba,' : adjust ? `scale=in_color_matrix=${matrix === 'bt601' ? 'bt601' : 'bt709'}:in_range=${info.colorRange === 'pc' ? 'pc' : 'tv'},format=rgba,` : '') +
+      (adjust ? `colorchannelmixer=${ffmpegMixer(adjust)},` : '');
 
     // Video framing — identical maths to the preview, scaled into output pixels.
     const r0 = computeClipRect(info.displayWidth, info.displayHeight, cw, ch, item.framing);
@@ -342,7 +349,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       filters.push(
         // Pixel format is converted BEFORE the resizing scale: a format filter after it would
         // stop size changes from reaching the overlay (verified with FFmpeg 6.1).
-        `[${i}:v:0]${pts},${decode}${isImage ? `scale=${colour.slice(1)},` : ''}format=${fgFormat},${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic${isImage ? '' : colour},setsar=1[fg${n}]`,
+        `[${i}:v:0]${pts},${decode}${rgbPath ? `scale=${colour.slice(1)},` : ''}format=${fgFormat},${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic${rgbPath ? '' : colour},setsar=1[fg${n}]`,
       );
       if (fade) filters.push(`[bg${n}]split[bga${n}][bgb${n}]`);
       const base = fade ? `bga${n}` : `bg${n}`;
@@ -365,7 +372,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       const rotated = info.rotation % 180 !== 0;
       const fw = rotated ? info.height : info.width;
       const fh = rotated ? info.width : info.height;
-      const chain = [pts, ...(isImage ? ['format=rgba'] : [])];
+      const chain = [pts, ...(decode ? [decode.slice(0, -1)] : [])];
       const fullyVisible = R.x >= 0 && R.y >= 0 && R.x + R.w <= bw + 0.5 && R.y + R.h <= bh + 0.5;
       if (!fullyVisible) {
         // Source region that maps onto the visible part, clamped to the frame (rounding of the
