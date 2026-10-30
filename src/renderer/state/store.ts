@@ -54,6 +54,8 @@ export interface AppState {
   waves: Record<string, Uint8Array>;
   missing: Record<string, boolean>;
   importing: string[]; // names of files being inspected
+  /** Background jobs in progress, e.g. "reverse:<clipId>", "freeze". */
+  working: string[];
   toasts: Toast[];
   dialog: DialogName;
   ffmpeg: FfmpegStatus | null;
@@ -102,6 +104,7 @@ export const store = createStore<AppState>({
   waves: {},
   missing: {},
   importing: [],
+  working: [],
   toasts: [],
   dialog: null,
   ffmpeg: null,

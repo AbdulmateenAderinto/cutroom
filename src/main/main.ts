@@ -17,6 +17,7 @@ import { checkFfmpeg, resolveBinaries } from './media/ffbin';
 import { SUPPORTED_EXTENSIONS, probeMedia } from './media/probe';
 import { makeProxy } from './media/proxy';
 import { setConvertDir } from './media/heic';
+import { makeFreezeFrame, makeReversed } from './media/derived';
 import { thumbnailDataUrl } from './media/thumbnails';
 import { waveformPeaks } from './media/waveform';
 import { allowMediaPath, handleMediaProtocol, registerSchemePrivileges } from './mediaProtocol';
@@ -189,6 +190,19 @@ function registerIpc() {
         return { ok: true as const, path: out };
       })
       .catch((err) => ({ ok: false as const, error: (err as Error).message })),
+  );
+
+  // Freeze frames and reversed clips: next to the project file when it has been saved (so they
+  // travel with it), otherwise in the app's data folder.
+  const derivedDir = (projectPath: string | null) =>
+    projectPath ? path.join(path.dirname(projectPath), 'Cutroom Media') : path.join(app.getPath('userData'), 'derived');
+  const wrap = (job: Promise<string>) =>
+    job.then((out) => ({ ok: true as const, path: out })).catch((err) => ({ ok: false as const, error: (err as Error).message }));
+  ipcMain.handle('media:freeze', (_e, p: string, info: MediaInfo, at: number, projectPath: string | null) =>
+    wrap(makeFreezeFrame(derivedDir(projectPath), p, info, at)),
+  );
+  ipcMain.handle('media:reverse', (e, p: string, info: MediaInfo, sourceIn: number, sourceOut: number, projectPath: string | null) =>
+    wrap(makeReversed(derivedDir(projectPath), p, info, sourceIn, sourceOut, (fraction) => e.sender.send('media:reverseProgress', { path: p, fraction }))),
   );
 
   ipcMain.handle('media:waveform', (_e, p: string) => waveformPeaks(path.join(app.getPath('userData'), 'waveforms'), p).catch(() => null));

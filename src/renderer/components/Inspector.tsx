@@ -143,6 +143,7 @@ function TransitionSection({ clip, project }: { clip: ClipItem; project: Project
 function ClipInspector({ clip, project, overlay }: { clip: ClipItem; project: Project; overlay?: OverlayClip }) {
   const media = findMedia(project, clip.mediaId)!;
   const missing = useStore((s) => !!s.missing[clip.mediaId]);
+  const reversing = useStore((s) => s.working.includes(`reverse:${clip.id}`));
   const rate = project.frameRate;
   const pf = frameDuration(rate);
   const lay = clipLayout(project, clip.id)!;
@@ -387,6 +388,18 @@ function ClipInspector({ clip, project, overlay }: { clip: ClipItem; project: Pr
           <button className="btn small danger" onClick={() => A.deleteSelected('close-gap')} title="Delete">Delete (close gap)</button>
           <button className="btn small" onClick={() => A.deleteSelected('leave-gap')} title="Shift+Delete">Delete, leave gap</button>
         </div>
+        {media.info.kind === 'video' && (
+          <div className="row gap wrap">
+            {!overlay && (
+              <button className="btn small" onClick={() => void A.freezeFrameAtPlayhead()} title="Shift+F — a 2 s still of the frame at the playhead, inserted there">
+                Freeze frame
+              </button>
+            )}
+            <button className="btn small" disabled={reversing} onClick={() => void A.reverseClip(id)} title="Play this clip backwards (a reversed copy of its footage is made)">
+              {reversing ? 'Reversing…' : media.derived?.kind === 'reverse' ? 'Play forwards again' : 'Reverse'}
+            </button>
+          </div>
+        )}
       </Section>
 
       <Disclosure title="Source details">

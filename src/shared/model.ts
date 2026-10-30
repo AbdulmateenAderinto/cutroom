@@ -81,6 +81,8 @@ export interface MediaRef {
   transcript?: Transcript;
   /** Where the file's audio is not silent (SOURCE time); used to lower music under speech. */
   speech?: { start: Ticks; end: Ticks }[];
+  /** Made by Cutroom from part of another file (freeze frame, reversed clip). */
+  derived?: { kind: 'freeze' | 'reverse'; mediaId: string; sourceIn: Ticks; sourceOut: Ticks };
 }
 
 export function mediaKind(m: MediaRef | undefined): MediaKind {

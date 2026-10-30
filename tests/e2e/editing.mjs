@@ -1,7 +1,8 @@
 /**
  * UI test for the editing tools added in Phase 1: markers (M, the ruler, the inspector, ↑/↓,
  * chapters in the export), multi-select (⌘-click, Shift-click, ⌘A; delete, copy/paste), and
- * detaching a clip's sound for an L-cut, and a speed ramp (preview vs export, playback rates).
+ * detaching a clip's sound for an L-cut, a speed ramp (preview vs export, playback rates), a
+ * freeze frame and a reversed clip (both: preview vs export).
  *
  * Run: npm run test:e2e   (Linux without a display: xvfb-run -a npm run test:e2e)
  */
@@ -205,6 +206,68 @@ await step('speed ramp: “Ease into slow motion” makes 8 parts; playback chan
     console.log(`      frame ${f}: preview vs export ${same.toFixed(2)} (45 frames earlier ${other.toFixed(2)})`);
     assert(same < 8 && same < other * 0.7, `frame ${f}: preview and export differ (${same.toFixed(2)})`);
   }
+});
+
+/** Screenshot the preview at frame f (after it has settled). */
+async function shot(name, f, image = false) {
+  await h.seekFrame(f);
+  if (image) await page.waitForFunction(() => document.querySelector('img.stage-video')?.style.display === 'block' && document.querySelector('img.stage-video').complete);
+  else await h.previewReady();
+  await page.waitForTimeout(400);
+  const png = path.join(out, `${name}-${f}.png`);
+  await page.locator('.stage').screenshot({ path: png });
+  return { f, png };
+}
+function matches(file, shots, control) {
+  const at = (x) => ['-ss', (x / 30 - 0.005).toFixed(4), '-i', file];
+  for (const { f, png } of shots) {
+    const same = compareFrames(['-i', png], at(f), undefined, [32, 18]);
+    const other = compareFrames(['-i', png], at(control(f)), undefined, [32, 18]);
+    console.log(`      frame ${f}: preview vs export ${same.toFixed(2)} (frame ${control(f)}: ${other.toFixed(2)})`);
+    assert(same < 8 && same < other * 0.7, `frame ${f}: preview and export differ (${same.toFixed(2)})`);
+  }
+}
+
+await step('freeze frame (⇧F): a 2 s still of the frame at the playhead; preview matches export', async () => {
+  await page.keyboard.press('Escape');
+  await h.seekFrame(45);
+  const before = (await h.state()).sequence.items.length;
+  await key('Shift+F');
+  await page.waitForFunction((n) => window.__cutroom.store.get().project.sequence.items.length === n + 2, before, { timeout: 20000 });
+  const s = await h.state();
+  const still = s.sequence.items[1];
+  const m = s.media.find((x) => x.id === still.mediaId);
+  assert(m.info.kind === 'image' && m.derived?.kind === 'freeze' && still.sourceOut === 2 * TPS, JSON.stringify({ still, derived: m.derived }));
+  await page.keyboard.press('Escape');
+  const shots = [await shot('freeze', 50, true), await shot('freeze', 100, true)];
+  const file = path.join(out, 'freeze.mp4');
+  await h.exportTo(file, { fps: 30 });
+  matches(file, shots, () => 20);
+  // The still is the frame at the cut: export frames 44 (before), 45 (still) and 106 (after) agree.
+  const same = compareFrames(['-ss', (45 / 30 - 0.005).toFixed(4), '-i', file], ['-ss', (106 / 30 - 0.005).toFixed(4), '-i', file], undefined, [32, 18]);
+  assert(same < 2, `the still differs from the frame after it: ${same.toFixed(2)}`);
+});
+
+await step('reverse a clip: a reversed copy is made and used; preview matches export; “Play forwards again”', async () => {
+  await page.click('.tl-track .clip >> nth=0');
+  const before = (await h.state()).sequence.items[0];
+  await page.click('.inspector button:has-text("Reverse")');
+  await page.waitForFunction((id) => {
+    const s = window.__cutroom.store.get();
+    return s.working.length === 0 && s.project.sequence.items[0].mediaId !== id;
+  }, before.mediaId, { timeout: 60000 });
+  const s = await h.state();
+  const rev = s.media.find((x) => x.id === s.sequence.items[0].mediaId);
+  assert(rev.derived?.kind === 'reverse' && rev.derived.sourceIn === before.sourceIn && rev.derived.sourceOut === before.sourceOut, JSON.stringify(rev.derived));
+  await page.keyboard.press('Escape');
+  const shots = [await shot('reversed', 5), await shot('reversed', 40)];
+  const file = path.join(out, 'reversed.mp4');
+  await h.exportTo(file, { fps: 30 });
+  matches(file, shots, (f) => 44 - f); // the same moment played forwards would be here
+  await page.click('.tl-track .clip >> nth=0');
+  await page.click('.inspector button:has-text("Play forwards again")');
+  const back = (await h.state()).sequence.items[0];
+  assert(back.mediaId === before.mediaId && back.sourceIn === before.sourceIn && back.sourceOut === before.sourceOut, JSON.stringify(back));
 });
 
 await h.close();

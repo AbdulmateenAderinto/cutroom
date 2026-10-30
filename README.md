@@ -97,6 +97,10 @@ markers, and the export can write them as chapters.
 all; then Delete, ⌘C/⌘V and more apply to all of them. **Detach audio** (in a clip's Audio section) puts
 its sound on an audio track so you can let it start before or run past the picture (J- and L-cuts).
 
+**Speed tricks:** a clip's Speed section has ramps (ease into slow motion and back). **⇧F** freezes the
+frame at the playhead for 2 s. **Reverse** (in the clip's Actions) plays a clip backwards; the stills and
+reversed copies are saved in a “Cutroom Media” folder next to the project.
+
 **Titles:** click **+ Text** above the timeline (or press T). Type in the **Text** box, pick a style,
 and drag the text in the preview to place it. Drag its block on the timeline to change when it shows.
 

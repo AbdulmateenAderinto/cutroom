@@ -274,6 +274,18 @@ export const CONTROL_TOOLS: ToolDef[] = [
     inputSchema: obj({ clip_id: str('clip id'), from: num('speed of the first part'), to: num('speed of the last part'), steps: num('number of parts, 2–24 (default 8)') }, ['clip_id', 'from', 'to']),
   },
   {
+    name: 'freeze_frame',
+    runs: 'renderer',
+    description: 'Freeze the main-track frame at a TIMELINE time: a still of that exact frame (with the clip\'s framing and colour) is inserted there for `duration` seconds (default 2), splitting the clip; it is silent. Later clips move later.',
+    inputSchema: obj({ time: num('timeline seconds'), duration: num('seconds (default 2)') }, ['time']),
+  },
+  {
+    name: 'reverse_clip',
+    runs: 'renderer',
+    description: 'Play a clip (main track or overlay) backwards. A reversed copy of the footage it uses is made (takes a few seconds per second of 1080p) and the clip switches to it; keyframes are dropped. Calling it on a reversed clip switches back to the original footage. HDR clips and clips over 10 minutes are refused.',
+    inputSchema: obj({ clip_id: str('clip id') }, ['clip_id']),
+  },
+  {
     name: 'detach_audio',
     runs: 'renderer',
     description: 'Move a video clip\'s sound (main track or overlay) to an audio track at exactly the same time, and mute the clip. Then trim/move the audio clip with set_audio_clip for a J-cut (sound starts before the picture) or L-cut (sound continues after it). Clip must be at 1× speed.',

@@ -508,3 +508,64 @@ export function speedRamp(project: Project, clipId: string, from: number, to: nu
   });
   return { project: p, ids };
 }
+
+/**
+ * Freeze frame: insert a still (`still`, a photo made from the frame at timeline time t) for
+ * `duration` at t, splitting the clip there. The still gets the clip's framing and colour, so it
+ * looks exactly like the frame it was made from; it is silent.
+ */
+export function insertFreezeFrame(project: Project, still: MediaRef, t: Ticks, duration: Ticks): { project: Project; id: string } | null {
+  const lay = layoutSequence(project);
+  const t0 = snapProject(t, project.frameRate);
+  const hit = lay.items.find((l) => t0 >= l.start && t0 < l.end);
+  if (!hit || hit.item.kind !== 'clip') return null;
+  const src = hit.item;
+  const base = createClip(project, still);
+  if (!base) return null;
+  const d = Math.max(frameDuration(project.frameRate), snapProject(duration, project.frameRate));
+  const clip: ClipItem = { ...base, sourceOut: d, framing: src.framing, ...(src.color ? { color: src.color } : {}) };
+  const r = insertAt(project, [clip], t0);
+  return r.ids.length ? { project: r.project, id: r.ids[0] } : null;
+}
+
+/**
+ * Swap a clip to a reversed copy of its footage (`reversed`, made from [sourceIn, sourceOut) of
+ * the clip's file). Speed, framing, colour, volume and in/out animations are kept; keyframes are
+ * dropped (they point at moments of the original footage). Reversing a reversed clip returns to
+ * the original footage when that file is still in the project.
+ */
+export function useReversed(project: Project, clipId: string, reversed: MediaRef): Project {
+  return updateClip(project, clipId, (c) => {
+    const len = snapToFrame(reversed.info.duration, reversed.info.frameRate, 'floor');
+    const next: ClipItem = { ...c, mediaId: reversed.id, sourceIn: 0, sourceOut: len };
+    const range = legalRange(project, reversed, 0, len, 'in', clipSpeed(c));
+    Object.assign(next, range);
+    if (next.animation?.keyframes) {
+      const { keyframes: _k, ...rest } = next.animation;
+      if (Object.keys(rest).length) next.animation = rest;
+      else delete next.animation;
+    }
+    return next;
+  });
+}
+
+/** The original footage of a reversed clip, if its file is still in the project. */
+export function unreverse(project: Project, clipId: string): Project | null {
+  const c = getItem(project, clipId);
+  if (!c || c.kind !== 'clip') return null;
+  const d = findMedia(project, c.mediaId)?.derived;
+  const orig = d?.kind === 'reverse' ? findMedia(project, d.mediaId) : undefined;
+  if (!d || !orig) return null;
+  return updateClip(project, clipId, (x) => {
+    // Reversed time s maps back to original time (end − s): the clip's range flips.
+    const sIn = d.sourceOut - x.sourceOut;
+    const sOut = d.sourceOut - x.sourceIn;
+    const next: ClipItem = { ...x, mediaId: orig.id, ...legalRange(project, orig, Math.max(d.sourceIn, sIn), Math.min(d.sourceOut, sOut), 'in', clipSpeed(x)) };
+    if (next.animation?.keyframes) {
+      const { keyframes: _k, ...rest } = next.animation;
+      if (Object.keys(rest).length) next.animation = rest;
+      else delete next.animation;
+    }
+    return next;
+  });
+}

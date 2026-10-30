@@ -48,6 +48,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'Edit', label: 'Copy / cut / paste clip (pastes at the playhead)', keys: [{ code: L('C'), mod: true }, { code: L('X'), mod: true }, { code: L('V'), mod: true }], run: () => {} },
   { group: 'Edit', label: 'Move clip earlier', keys: [{ key: 'ArrowLeft', alt: true }], run: () => A.moveSelected(-1) },
   { group: 'Edit', label: 'Move clip later', keys: [{ key: 'ArrowRight', alt: true }], run: () => A.moveSelected(1) },
+  { group: 'Edit', label: 'Freeze frame (2 s still at the playhead)', keys: [{ code: L('F'), shift: true }], run: () => void A.freezeFrameAtPlayhead() },
   { group: 'Edit', label: 'Add a title at the playhead', keys: [{ code: L('T') }], run: () => A.addTitleAction() },
   { group: 'Edit', label: 'Undo / redo', keys: [{ code: L('Z'), mod: true }, { code: L('Z'), mod: true, shift: true }], run: () => {} },
   { group: 'Timeline', label: 'Add a marker at the playhead', keys: [{ code: L('M') }], run: () => A.addMarkerAction() },

@@ -77,7 +77,23 @@ export async function launch({ userData, env = {} }) {
     stubSave: (p) => app.evaluate(({ dialog }, fp) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: fp }); }, p),
     state: () => page.evaluate(() => window.__cutroom.store.get().project),
     seekFrame: (f, fps = 30) => page.evaluate(([fr, r]) => window.__cutroom.engine.seek(Math.round((fr * 705_600_000) / r)), [f, fps]),
-    previewReady: () => page.waitForFunction(() => [...document.querySelectorAll('video')].some((e) => e.style.display === 'block' && e.readyState >= 2 && !e.seeking)),
+    /**
+     * The visible main-track video shows the frame the engine asked for and has presented it
+     * (under load, painting can lag behind a seek).
+     */
+    async previewReady() {
+      await page.waitForFunction(() => {
+        const want = window.__cutroom.engine.mainTarget;
+        return [...document.querySelectorAll('video.stage-video')].some((e) =>
+          e.style.display === 'block' && e.readyState >= 2 && !e.seeking && (want === null || Math.abs(e.currentTime - want) < 0.02));
+      });
+      await page.evaluate(() => new Promise((done) => {
+        const v = [...document.querySelectorAll('video.stage-video')].find((e) => e.style.display === 'block');
+        if (!v) return done();
+        v.requestVideoFrameCallback(() => done());
+        setTimeout(done, 500); // the frame may already have been presented before we asked
+      }));
+    },
     async exportTo(file, { fps } = {}) {
       await page.click('.topbar button:has-text("Export…")');
       await page.waitForSelector('.modal.export');

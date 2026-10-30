@@ -80,6 +80,8 @@ class PreviewEngine {
   private timgMedia: string | null = null;
   private transitions: ResolvedTransition[] = [];
   private inTransition = false;
+  /** For tests: the source time (seconds) the main-track video element was last asked to show. */
+  mainTarget: number | null = null;
   // Overlay tracks: one element per overlay clip that is on screen (or about to be).
   private ovLayer: HTMLDivElement | null = null;
   private ovEls = new Map<string, { el: HTMLVideoElement | HTMLImageElement; mediaId: string }>();
@@ -548,6 +550,7 @@ class PreviewEngine {
     const displayT = Math.min(t, l.end - this.frame());
     const target = this.sourceSeconds(clip, l, displayT);
     if (Math.abs(el.currentTime - target) > (forPlay ? 0.02 : 0.002)) el.currentTime = target;
+    this.mainTarget = target;
     // Speed: the element plays its media faster/slower; pitch is kept (as in the export).
     const rate = clipSpeed(clip) * this.shuttle;
     if (el.playbackRate !== rate) el.playbackRate = rate;

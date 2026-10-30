@@ -2,7 +2,7 @@
  * User-level actions shared by buttons, menus and keyboard shortcuts.
  */
 import type { AudioClip, MediaRef, OverlayClip, Project, TitleClip, TrackItem } from '../../shared/model';
-import { createProject, evenDim, findMedia, layoutSequence, newId } from '../../shared/model';
+import { createProject, evenDim, findMedia, layoutSequence, newId, sourceAt } from '../../shared/model';
 import * as ops from '../../shared/ops';
 import {
   addAudioClip, addAudioTrack, audioClipEnd, deleteAudioClip, detachAudio as detachAudioOp, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip,
@@ -13,7 +13,8 @@ import { addMarker, deleteMarker } from '../../shared/markers';
 import {
   type PipCorner, addOverlay, deleteOverlay, duplicateOverlay, findOverlay, moveOverlay, overlayEnd, pasteOverlay, splitOverlay, trimOverlay,
 } from '../../shared/overlays';
-import { TICKS_PER_SECOND, type Ticks, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
+import { clipLayout } from '../../shared/overlays';
+import { TICKS_PER_SECOND, type Ticks, formatDuration, formatTimecode, snapToFrame, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
 import { playhead } from './playhead';
 import { commit, isDirty, loadProject, redo, selectedItemIds, store, toast, undo } from './store';
@@ -328,6 +329,97 @@ export function rampSelected(clipId: string, from: number, to: number, steps = 8
   const r = ops.speedRamp(store.get().project, clipId, from, to, steps);
   if ('error' in r) return toast(r.error, 'warn');
   commit(() => r.project, { selection: { kind: 'items', ids: r.ids } });
+}
+
+const setWorking = (key: string, on: boolean) =>
+  store.set((s) => ({ working: on ? [...s.working, key] : s.working.filter((k) => k !== key) }));
+
+async function importDerived(path: string, name: string, derived: MediaRef['derived']): Promise<MediaRef | null> {
+  const r = await api().probeMedia(path);
+  if (!r.ok) {
+    toast(`Could not read the new file: ${r.error}`, 'error');
+    return null;
+  }
+  return { id: newId('media'), name, path, info: r.info, warnings: r.warnings, derived };
+}
+
+/**
+ * ⇧F: freeze the frame at the playhead for 2 s (a still inserted there; the clip is split). The
+ * still is saved next to the project file (or in the app's data folder until the project is saved).
+ */
+export async function freezeFrameAtPlayhead(duration: Ticks = 2 * TICKS_PER_SECOND): Promise<{ clipId: string; mediaId: string } | { error: string }> {
+  const p0 = store.get().project;
+  const t = snapToFrame(playhead.get().time, p0.frameRate, 'floor');
+  const l = layoutSequence(p0).items.find((x) => t >= x.start && t < x.end);
+  const fail = (error: string) => {
+    toast(error, 'warn');
+    return { error };
+  };
+  if (!l || l.item.kind !== 'clip') return fail('Put the playhead on a video clip first.');
+  const m = findMedia(p0, l.item.mediaId);
+  if (!m || m.info.kind !== 'video') return fail('Freeze frame works on video clips (a photo is already still).');
+  if (store.get().missing[m.id]) return fail(`${m.name} is offline; relink it first.`);
+  const at = sourceAt(l.item, l.start, t);
+  setWorking('freeze', true);
+  try {
+    const r = await api().freezeFrame(m.path, m.info, at, store.get().projectPath);
+    if (!r.ok) return fail(`Could not make the freeze frame: ${r.error}`);
+    const ref = await importDerived(r.path, `${m.name} — frame ${formatTimecode(at, m.info.frameRate)}`, { kind: 'freeze', mediaId: m.id, sourceIn: at, sourceOut: at });
+    if (!ref) return { error: 'unreadable' };
+    const ins = ops.insertFreezeFrame(ops.addMedia(store.get().project, [ref]), ref, t, duration);
+    if (!ins) return fail('The clip changed while the frame was being made; try again.');
+    commit(() => ins.project, { selection: { kind: 'item', id: ins.id } });
+    loadThumbnail(ref);
+    if (!store.get().projectPath) toast('Freeze frame added. It is kept in the app’s data folder until you save the project (then new ones go next to it, in “Cutroom Media”).');
+    return { clipId: ins.id, mediaId: ref.id };
+  } finally {
+    setWorking('freeze', false);
+  }
+}
+
+/**
+ * Play a clip backwards: a reversed copy of the footage it uses is made (re-encoded at high
+ * quality) and the clip switches to it. On a reversed clip, switches back to the original.
+ */
+export async function reverseClip(clipId: string): Promise<{ mediaId: string } | { error: string }> {
+  const p0 = store.get().project;
+  const fail = (error: string) => {
+    toast(error, 'warn');
+    return { error };
+  };
+  const l = clipLayout(p0, clipId);
+  if (!l || l.item.kind !== 'clip') return fail('Select a video clip first.');
+  const clip = l.item;
+  const back = ops.unreverse(p0, clipId);
+  if (back) {
+    commit(() => back);
+    return { mediaId: (clipLayout(back, clipId)!.item as { mediaId: string }).mediaId };
+  }
+  const m = findMedia(p0, clip.mediaId);
+  if (!m || m.info.kind !== 'video') return fail('Only video clips can be reversed.');
+  if (store.get().missing[m.id]) return fail(`${m.name} is offline; relink it first.`);
+  const key = `reverse:${clipId}`;
+  if (store.get().working.includes(key)) return { error: 'already reversing' };
+  setWorking(key, true);
+  toast(`Reversing ${formatDuration(clip.sourceOut - clip.sourceIn)} of ${m.name}…`);
+  try {
+    const r = await api().reverseClip(m.path, m.info, clip.sourceIn, clip.sourceOut, store.get().projectPath);
+    if (!r.ok) return fail(`Could not reverse the clip: ${r.error}`);
+    const ref = await importDerived(r.path, `${m.name} (reversed)`, { kind: 'reverse', mediaId: m.id, sourceIn: clip.sourceIn, sourceOut: clip.sourceOut });
+    if (!ref) return { error: 'unreadable' };
+    const now = clipLayout(store.get().project, clipId);
+    const same = now?.item.kind === 'clip' && now.item.mediaId === clip.mediaId && now.item.sourceIn === clip.sourceIn && now.item.sourceOut === clip.sourceOut;
+    if (!same) {
+      commit((p) => ops.addMedia(p, [ref]));
+      return fail('The clip changed while it was being reversed; the reversed copy was added to the Media panel.');
+    }
+    commit((p) => ops.useReversed(ops.addMedia(p, [ref]), clipId, ref));
+    loadThumbnail(ref);
+    toast('Reversed. (Undo, or “Play forwards again”, returns to the original.)');
+    return { mediaId: ref.id };
+  } finally {
+    setWorking(key, false);
+  }
 }
 
 /** M: add a marker at the playhead (or select the one already there). */

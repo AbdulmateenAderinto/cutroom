@@ -57,7 +57,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 50 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 52 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -121,6 +121,8 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Detach audio: the clip's sound goes on an audio track at exactly the same time (clip muted), for J- and L-cuts | ✅ | Beeps within 2 ms of where they were before detaching; only at 1× speed |
 | AI tool `detach_audio` | ✅ | |
 | Speed ramps: ease into / out of slow motion, speed up, slow down (any from → to with `speed_ramp`) | ✅ | **Stepped**: the clip becomes 8 parts at evenly stepped speeds, not a continuous curve. Every exported frame checked; preview vs export compared |
+| Freeze frame (**⇧F**): a 2 s still of the exact frame at the playhead, inserted there with the clip's framing and colour; silent | ✅ | Saved as a PNG in “Cutroom Media” next to the project (or the app's data folder until it is saved). Export checked frame by frame (luma within 1.5/255); preview vs export 5.5/255 |
+| Reverse a clip (main track or overlay): a reversed copy of its footage is made (H.264 CRF 12) and used; “Play forwards again” or undo returns to the original | ✅ | Every frame in reverse order; sound reversed in step (beeps on the flash frames within 6 ms). Keyframes are dropped; HDR and clips over 10 min are refused; **one generation of re-encoding** |
 | Splitting keeps a clip's in-animation on the first part and its out-animation and transition on the last | ✅ | Before, both halves kept them (a crossfade appeared between the halves) |
 
 ## Overlay tracks (picture-in-picture)
@@ -257,7 +259,8 @@ inspector, dragging on the ruler, ↑/↓ stopping at them, chapters in an expor
 ⌘-click / Shift-click / ⌘A selection with copy/paste and delete of both clips plus undo; detach audio
 and an L-cut (picture trimmed with W while its sound keeps running); a speed ramp (8 parts, the
 video element's rate changes during playback, preview vs export at three moments: 2.0–4.4/255 vs
-11.7–53 for a frame 45 earlier).
+11.7–53 for a frame 45 earlier); a freeze frame with ⇧F and a reversed clip, each compared with the
+export (2.3–5.5/255 vs 16–21 for another moment), and “Play forwards again”.
 
 **Overlays UI run (twelfth script, 7 steps):** **⧉ PiP** adds the clip at the playhead on a V2 row
 and selects it; dragging and resizing it in the preview and the “Top left” preset (the main clip's

@@ -105,6 +105,11 @@ export interface CutroomApi {
   /** Make (or reuse) the preview copy of a file the preview can't play directly. */
   makeProxy(path: string, info: MediaInfo): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   onProxyProgress(cb: (p: { path: string; fraction: number }) => void): () => void;
+  /** Save the source frame shown at `at` (source ticks) as a PNG (next to the project if saved). */
+  freezeFrame(path: string, info: MediaInfo, at: number, projectPath: string | null): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /** A reversed copy of [sourceIn, sourceOut) of a video file. */
+  reverseClip(path: string, info: MediaInfo, sourceIn: number, sourceOut: number, projectPath: string | null): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  onReverseProgress(cb: (p: { path: string; fraction: number }) => void): () => void;
   /** Whether the hardware encoder works here (checked once with a test encode). */
   encoders(): Promise<{ videotoolbox: boolean; reason?: string }>;
   onExportProgress(cb: (p: ExportProgress) => void): () => void;

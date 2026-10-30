@@ -21,6 +21,8 @@ export interface AiControlStatus {
 }
 
 const RENDERER_TIMEOUT_MS = 30_000;
+/** Tools that make new files (re-encoding) may take longer. */
+const SLOW_TOOLS: Record<string, number> = { reverse_clip: 15 * 60_000, freeze_frame: 120_000 };
 let pending = new Map<number, { resolve: (r: ToolResult) => void; timer: NodeJS.Timeout }>();
 let seq = 0;
 let server: ControlServer | null = null;
@@ -69,7 +71,7 @@ export function setupAiControl(getWin: () => BrowserWindow | null) {
       const timer = setTimeout(() => {
         pending.delete(id);
         resolve(textResult('The editor did not respond in time.', true));
-      }, RENDERER_TIMEOUT_MS);
+      }, SLOW_TOOLS[name] ?? RENDERER_TIMEOUT_MS);
       pending.set(id, { resolve, timer });
       win.webContents.send('control:request', { id, name, args });
     });

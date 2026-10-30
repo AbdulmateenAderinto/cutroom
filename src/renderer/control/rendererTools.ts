@@ -338,6 +338,19 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         const tl = projectSummary(store.get().project).timeline;
         return ok({ parts: r.ids.map((id) => tl.find((x) => x.id === id)).map((x) => ({ id: x!.id, speed: (x as { speed?: number }).speed ?? 1, start_s: x!.start_s, end_s: x!.end_s })) });
       }
+      case 'freeze_frame': {
+        if (!Number.isFinite(args.time)) throw new ToolError('time must be a number of seconds.');
+        engine.seek(T(args.time));
+        const r = await A.freezeFrameAtPlayhead(args.duration !== undefined ? T(Math.min(60, Math.max(1 / 30, args.duration))) : undefined);
+        if ('error' in r) throw new ToolError(r.error);
+        return ok({ still_clip_id: r.clipId, media_id: r.mediaId, timeline: projectSummary(store.get().project).timeline });
+      }
+      case 'reverse_clip': {
+        clipOrThrow(p, args.clip_id);
+        const r = await A.reverseClip(args.clip_id);
+        if ('error' in r) throw new ToolError(r.error);
+        return ok({ clip_id: args.clip_id, media_id: r.mediaId, clip: clipInfo(args.clip_id) });
+      }
       case 'detach_audio': {
         clipOrThrow(p, args.clip_id);
         const r = detachAudio(p, args.clip_id);
