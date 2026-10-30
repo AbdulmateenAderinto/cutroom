@@ -58,7 +58,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 54 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 55 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -134,6 +134,14 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Freeze frame (**⇧F**): a 2 s still of the exact frame at the playhead, inserted there with the clip's framing and colour; silent | ✅ | Saved as a PNG in “Cutroom Media” next to the project (or the app's data folder until it is saved). Export checked frame by frame (luma within 1.5/255); preview vs export 5.5/255 |
 | Reverse a clip (main track or overlay): a reversed copy of its footage is made (H.264 CRF 12) and used; “Play forwards again” or undo returns to the original | ✅ | Every frame in reverse order; sound reversed in step (beeps on the flash frames within 6 ms). Keyframes are dropped; HDR and clips over 10 min are refused; **one generation of re-encoding** |
 | Splitting keeps a clip's in-animation on the first part and its out-animation and transition on the last | ✅ | Before, both halves kept them (a crossfade appeared between the halves) |
+
+## Effects
+
+| Feature | Status | Notes |
+|---|---|---|
+| Blur per clip (Gaussian, σ as a fraction of the picture width; moves and scales with it) | ✅ | Export: `gblur` (6 steps) — an edge's profile within 8/255 of the true Gaussian; preview: SVG feGaussianBlur. Preview vs export 1.7/255 |
+| Masks: ellipse or rectangle with a soft edge, inverted ellipse, presets (circle, soft oval, vignette, letterbox) | ✅ | Export: alpha from the shared formula (`geq`, pixel centres), checked point by point for 4 masks and on a scaled, rotated PiP; preview: CSS mask-image gradients with the same ramps |
+| AI tool `set_effects` | ✅ | |
 
 ## Overlay tracks (picture-in-picture)
 

@@ -11,6 +11,7 @@
  */
 import { type AnimState, type ClipAnimation, type Keyframe } from './animation';
 import type { AudioFx } from './audioFx';
+import type { ClipEffects } from './effects';
 import type { CaptionSettings } from './captions';
 import type { Rational, Ticks } from './time';
 
@@ -145,6 +146,8 @@ export interface ClipItem {
   animation?: ClipAnimation;
   /** EQ and noise reduction of the clip's sound (absent = none). */
   audioFx?: AudioFx;
+  /** Blur and mask (absent = none). */
+  effects?: ClipEffects;
 }
 
 /**

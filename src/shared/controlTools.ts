@@ -171,6 +171,15 @@ export const CONTROL_TOOLS: ToolDef[] = [
     }, ['clip_id']),
   },
   {
+    name: 'set_effects',
+    runs: 'renderer',
+    description: 'Blur and mask a clip (main track or overlay). blur: 0..0.05 (Gaussian σ as a fraction of the picture width; 0 = off). mask: an ellipse or rectangle in picture fractions (x, y = centre; w, h = size; 0..1 covers the picture), feather 0..0.5 (soft edge), invert (ellipses only); outside it the clip is see-through. mask: null removes it. For a round PiP use an ellipse with w/h in the inverse ratio of the picture\'s aspect.',
+    inputSchema: obj({
+      clip_id: str('clip id'), blur: num('0..0.05'),
+      mask: { anyOf: [{ type: 'null' }, obj({ shape: str('shape', { enum: ['ellipse', 'rect'] }), x: num('0..1'), y: num('0..1'), w: num('0..2'), h: num('0..2'), feather: num('0..0.5'), invert: bool('ellipse only') }, ['shape'])] },
+    }, ['clip_id']),
+  },
+  {
     name: 'set_transition',
     runs: 'renderer',
     description: 'Set the transition from a clip into the NEXT clip: crossfade (both pictures and sounds mix; needs footage past the cut, so trim the clips a little first), wipeLeft/Right/Up/Down (a moving edge reveals the next clip), slideLeft/Right/Up/Down (the next clip pushes this one out), zoom (crossfade while zooming through), dipBlack / dipWhite (fade through a colour), or none (a hard cut). All but the dips need footage past the cut and crossfade the sound. Centred on the cut; the timeline length does not change. Returns the length actually used and why it is shorter, if it is.',

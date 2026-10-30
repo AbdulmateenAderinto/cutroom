@@ -34,6 +34,7 @@ import {
 import { type Ticks, TICKS_PER_SECOND, frameDuration, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { evalAnimation } from '../../shared/animation';
 import { clipColor, svgCurveTables, svgMatrix } from '../../shared/color';
+import { cssMask } from '../../shared/effects';
 import { previewUrl } from './mediaUrl';
 import { overlayEnd, overlayLayout, overlays } from '../../shared/overlays';
 
@@ -295,19 +296,24 @@ class PreviewEngine {
       setVideoGain(el, clip.muted ? 0 : clip.volume * mix);
       setEq(el, clip.audioFx);
     }
-    this.colorFilter(el, clip);
+    this.colorFilter(el, clip, (r.w / cw) * (el.parentElement?.clientWidth ?? 0));
+    this.maskStyle(el, clip);
   }
 
-  // One SVG colour filter per element (each element shows one clip at a time).
-  private filters = new Map<HTMLElement, { matrix: SVGFEColorMatrixElement; transfer: SVGFEComponentTransferElement }>();
+  // One SVG filter per element (each element shows one clip at a time).
+  private filters = new Map<HTMLElement, { matrix: SVGFEColorMatrixElement; transfer: SVGFEComponentTransferElement; blur: SVGFEGaussianBlurElement }>();
 
   /**
-   * Colour adjustments as an SVG feColorMatrix on gamma-encoded RGB (the export's transform),
-   * followed by the curves as feComponentTransfer tables (the export's curves tables).
+   * The clip's picture filter: colour adjustments as an SVG feColorMatrix on gamma-encoded RGB (the
+   * export's transform), the curves as feComponentTransfer tables (the export's tables), then the
+   * blur (feGaussianBlur, edges duplicated like FFmpeg's gblur; the filter region is the element's
+   * own box, so nothing spills outside the picture, as in the export). `widthPx`: the element's
+   * width on screen, for the blur radius (a fraction of the picture width).
    */
-  private colorFilter(el: HTMLElement, clip: ClipItem) {
+  private colorFilter(el: HTMLElement, clip: ClipItem, widthPx = 0) {
     const adj = clipColor(clip);
-    if (!adj) {
+    const blurPx = (clip.effects?.blur ?? 0) * widthPx;
+    if (!adj && blurPx <= 0) {
       if (el.style.filter) el.style.filter = '';
       return;
     }
@@ -327,20 +333,24 @@ class PreviewEngine {
       const filter = document.createElementNS(ns, 'filter');
       filter.id = `cutroom-cf${++filterSeq}`;
       filter.setAttribute('color-interpolation-filters', 'sRGB');
+      for (const [k, v] of [['x', '0'], ['y', '0'], ['width', '1'], ['height', '1']]) filter.setAttribute(k, v);
       const matrix = document.createElementNS(ns, 'feColorMatrix') as SVGFEColorMatrixElement;
       matrix.setAttribute('type', 'matrix');
       filter.appendChild(matrix);
       const transfer = document.createElementNS(ns, 'feComponentTransfer') as SVGFEComponentTransferElement;
       for (const k of ['R', 'G', 'B']) transfer.appendChild(document.createElementNS(ns, `feFunc${k}`));
       filter.appendChild(transfer);
+      const blur = document.createElementNS(ns, 'feGaussianBlur') as SVGFEGaussianBlurElement;
+      blur.setAttribute('edgeMode', 'duplicate');
+      filter.appendChild(blur);
       svg.appendChild(filter);
-      f = { matrix, transfer };
+      f = { matrix, transfer, blur };
       this.filters.set(el, f);
       el.dataset.colorFilter = filter.id;
     }
-    const values = svgMatrix(adj);
+    const values = adj ? svgMatrix(adj) : '1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0';
     if (f.matrix.getAttribute('values') !== values) f.matrix.setAttribute('values', values);
-    const tables = svgCurveTables(adj);
+    const tables = adj ? svgCurveTables(adj) : null;
     [...f.transfer.children].forEach((fn, i) => {
       const v = tables ? [tables.r, tables.g, tables.b][i] : null;
       if (v) {
@@ -351,8 +361,21 @@ class PreviewEngine {
         fn.removeAttribute('tableValues');
       }
     });
+    const sd = String(Math.round(blurPx * 100) / 100);
+    if (f.blur.getAttribute('stdDeviation') !== sd) f.blur.setAttribute('stdDeviation', sd);
     const want = `url("#${el.dataset.colorFilter}")`;
     if (el.style.filter !== want) el.style.filter = want;
+  }
+
+  /** The clip's mask as CSS mask-image gradients (the same ramps as the export's alpha). */
+  private maskStyle(el: HTMLElement, clip: ClipItem) {
+    const m = clip.effects?.mask;
+    const css = m ? cssMask(m) : { image: '', composite: '' };
+    if (el.style.getPropertyValue('mask-image') === css.image) return;
+    el.style.setProperty('mask-image', css.image);
+    el.style.setProperty('mask-composite', css.composite);
+    el.style.setProperty('mask-repeat', css.image ? 'no-repeat' : '');
+    el.style.setProperty('mask-size', css.image ? '100% 100%' : '');
   }
 
   private show(idx: number, image = false) {

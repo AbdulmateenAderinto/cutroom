@@ -644,6 +644,14 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         edit('adjusted colour', (pr) => ops.setColor(args.reset ? ops.setColor(pr, c.id, NEUTRAL) : pr, c.id, patch));
         return ok({ color: clipOrThrow(store.get().project, c.id).color ?? 'neutral' });
       }
+      case 'set_effects': {
+        const c = clipOrThrow(p, args.clip_id);
+        const patch: Record<string, unknown> = {};
+        if (args.blur !== undefined) patch.blur = Number(args.blur) || undefined;
+        if (args.mask !== undefined) patch.mask = args.mask === null ? undefined : { x: 0.5, y: 0.5, w: 0.8, h: 0.8, feather: 0.05, ...args.mask };
+        edit('changed clip effects', (q) => ops.setEffects(q, c.id, patch));
+        return ok({ effects: clipOrThrow(store.get().project, c.id).effects ?? 'none' });
+      }
       case 'set_transition': {
         const c = clipOrThrow(p, args.clip_id);
         if (findOverlay(p, c.id)) throw new ToolError('Transitions are between clips on the main track; fade an overlay with set_animation instead.');

@@ -35,6 +35,7 @@ import {
 import { type ResolvedTransition, dipColour, isDip, resolveTransitions, transitionMix, xfadeName, zoomScale } from './transitions';
 import { clipColor, ffmpegCurves, ffmpegMixer } from './color';
 import { ffmpegAudioFx } from './audioFx';
+import { ffmpegMaskAlpha } from './effects';
 import { overlayLayout, overlays } from './overlays';
 import {
   type Rational,
@@ -428,12 +429,19 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     // Colour adjustments work on RGB (as the preview's SVG filter does): the source is converted to
     // RGB with its own matrix/range (Chromium's interpretation), mixed, and converted to BT.709.
     const adjust = clipColor(item);
-    const rgbPath = isImage || !!adjust || !!xform;
+    // Effects work on the decoded picture (before any resizing), on RGBA: blur (6 IIR steps: within
+    // 1–2% of a true Gaussian; 1 step is visibly too narrow), then the mask's alpha.
+    const blurSigma = item.effects?.blur ? item.effects.blur * (info.rotation % 180 !== 0 ? info.height : info.width) : 0;
+    const mask = item.effects?.mask;
+    const effects =
+      (blurSigma > 0 ? `format=gbrap,gblur=sigma=${(Math.round(blurSigma * 1000) / 1000).toString()}:steps=6,format=rgba,` : '') +
+      (mask ? `format=gbrap,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='${ffmpegMaskAlpha(mask)}',format=rgba,` : '');
+    const rgbPath = isImage || !!adjust || !!xform || !!effects;
     const colour = rgbPath
       ? ':out_color_matrix=bt709:out_range=tv'
       : `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${range === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
     // Transparent PNG/WebP keep their alpha so the background colour shows through.
-    const fgFormat = layer || (isImage && info.hasAlpha) ? 'yuva420p' : 'yuv420p';
+    const fgFormat = layer || (isImage && info.hasAlpha) || mask ? 'yuva420p' : 'yuv420p';
     const speed = clipSpeed(item);
     // Speed: timestamps are divided by the speed (frames shown sooner/later); sound is time-stretched
     // with its pitch kept (tempoFilter), like the preview (HTMLMediaElement.preservesPitch).
@@ -464,9 +472,10 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       xform +
       tagSource +
       toBt709 +
-      (isImage || xform ? 'format=rgba,' : adjust ? `scale=in_color_matrix=${matrix === 'bt601' ? 'bt601' : 'bt709'}:in_range=${range === 'pc' ? 'pc' : 'tv'},format=rgba,` : '') +
+      (isImage || xform ? 'format=rgba,' : adjust || effects ? `scale=in_color_matrix=${matrix === 'bt601' ? 'bt601' : 'bt709'}:in_range=${range === 'pc' ? 'pc' : 'tv'},format=rgba,` : '') +
       (adjust ? `colorchannelmixer=${ffmpegMixer(adjust)},` : '') +
-      (adjust && ffmpegCurves(adjust) ? `${ffmpegCurves(adjust)},` : '');
+      (adjust && ffmpegCurves(adjust) ? `${ffmpegCurves(adjust)},` : '') +
+      effects;
 
     // Video framing — identical maths to the preview, scaled into output pixels.
     const r0 = computeClipRect(info.displayWidth, info.displayHeight, cw, ch, item.framing);

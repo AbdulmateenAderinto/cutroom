@@ -3,7 +3,7 @@
  * rotate a clip with the Rotation field and the ↻ button, keyframe its rotation, keyframe a
  * title's position and rotation, compare the preview with the export at still and moving frames;
  * then a second clip with a wipe (into the rotated clip), a slide and a zoom, each compared
- * mid-transition.
+ * mid-transition; then blur and a circle mask on the second clip (preview vs export).
  *
  * Run: npm run test:e2e   (Linux without a display: xvfb-run -a npm run test:e2e)
  */
@@ -147,6 +147,42 @@ await step('wipe, slide and zoom into a second clip: preview matches the export 
       console.log(`      ${kind} frame ${f}: preview vs export ${same.toFixed(2)} (frame ${f === 88 ? 84 : 88}: ${other.toFixed(2)})`);
       assert(same < 8 && same < other * 0.7, `${kind} frame ${f}: preview and export differ (${same.toFixed(2)})`);
     }
+  }
+});
+
+await step('blur and a circle mask: preview matches the export', async () => {
+  await page.click('.tl-track .clip >> nth=1');
+  await page.locator('.inspector input[aria-label="Blur"]').scrollIntoViewIfNeeded();
+  await page.locator('.inspector input[aria-label="Blur"]').evaluate((el) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '40');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.click('.inspector button:has-text("Circle")');
+  const fx = (await h.state()).sequence.items[1].effects;
+  assert(Math.abs(fx?.blur - 0.02) < 1e-6 && fx?.mask?.shape === 'ellipse', JSON.stringify(fx));
+  const style = await page.evaluate(() => {
+    const v = [...document.querySelectorAll('video.stage-video')].find((e) => e.style.display === 'block');
+    return v ? { mask: v.style.getPropertyValue('mask-image'), filter: v.style.filter } : null;
+  });
+  assert(style?.mask.startsWith('radial-gradient') && /url/.test(style.filter), JSON.stringify(style));
+  await page.keyboard.press('Escape');
+  const shots = [];
+  for (const f of [105, 115]) {
+    await h.seekFrame(f);
+    await h.previewReady();
+    await page.waitForTimeout(400);
+    const png = path.join(out, `effects-${f}.png`);
+    await page.locator('.stage').screenshot({ path: png });
+    shots.push({ f, png });
+  }
+  const file = path.join(out, 'effects.mp4');
+  await h.exportTo(file, { fps: 30 });
+  const at = (x) => ['-ss', (x / 30 - 0.005).toFixed(4), '-i', file];
+  for (const { f, png } of shots) {
+    const same = compareFrames(['-i', png], at(f), undefined, [48, 27]);
+    const other = compareFrames(['-i', png], at(20), undefined, [48, 27]);
+    console.log(`      effects frame ${f}: preview vs export ${same.toFixed(2)} (frame 20: ${other.toFixed(2)})`);
+    assert(same < 8 && same < other * 0.7, `frame ${f}: preview and export differ (${same.toFixed(2)})`);
   }
 });
 

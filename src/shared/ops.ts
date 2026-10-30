@@ -32,6 +32,7 @@ import { type CaptionSettings, DEFAULT_CAPTIONS } from './captions';
 import { type ColorAdjust, NEUTRAL, isNeutral, legalColor } from './color';
 import { asClip, fromClip, updateOverlay } from './overlays';
 import { type AudioFx, NO_FX, legalFx } from './audioFx';
+import { type ClipEffects, legalEffects } from './effects';
 import { type Rational, type Ticks, frameDuration, snapToFrame } from './time';
 
 function withItems(project: Project, items: TrackItem[]): Project {
@@ -592,5 +593,14 @@ export function setClipAudioFx(project: Project, clipId: string, patch: Partial<
     const fx = legalFx({ ...NO_FX, ...c.audioFx, ...patch });
     const { audioFx: _old, ...rest } = c;
     return fx ? { ...rest, audioFx: fx } : rest;
+  });
+}
+
+/** Blur / mask of a clip; patch replaces those fields (undefined removes them). */
+export function setEffects(project: Project, clipId: string, patch: Partial<ClipEffects>): Project {
+  return updateClip(project, clipId, (c) => {
+    const fx = legalEffects({ ...c.effects, ...patch });
+    const { effects: _old, ...rest } = c;
+    return fx ? { ...rest, effects: fx } : rest;
   });
 }

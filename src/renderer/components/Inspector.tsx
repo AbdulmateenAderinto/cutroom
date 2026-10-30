@@ -28,6 +28,7 @@ import { findAudioClip } from '../../shared/audio';
 import { NEUTRAL } from '../../shared/color';
 import { AnimationSection } from './AnimationSection';
 import { AudioFxSection } from './AudioFxSection';
+import { EffectsSection } from './EffectsSection';
 import { AudioClipInspector, TrackSettings } from './AudioInspector';
 import { TitleInspector } from './TitleInspector';
 import { MarkerInspector } from './MarkerInspector';
@@ -357,6 +358,8 @@ function ClipInspector({ clip, project, overlay }: { clip: ClipItem; project: Pr
           </>
         )}
       </Section>
+
+      {media.info.kind !== 'audio' && <EffectsSection clip={clip} media={media} />}
 
       <AnimationSection clip={clip} project={project} />
 
