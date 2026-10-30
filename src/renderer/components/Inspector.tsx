@@ -4,6 +4,7 @@ import {
   type GapItem,
   type MediaRef,
   type Project,
+  type TransitionKind,
   fillScale,
   findMedia,
   fitScale,
@@ -16,7 +17,8 @@ import {
   itemDuration,
 } from '../../shared/model';
 import * as ops from '../../shared/ops';
-import { COMMON_FRAME_RATES, formatDuration, formatTimecode, frameDuration, rateLabel, sameRate } from '../../shared/time';
+import { COMMON_FRAME_RATES, TICKS_PER_SECOND, formatDuration, formatTimecode, frameDuration, rateLabel, sameRate } from '../../shared/time';
+import { TRANSITION_KINDS, transitionInfo } from '../../shared/transitions';
 import * as A from '../state/actions';
 import { beginGesture, commit, endGesture, gestureActive, store, updateGesture, useStore } from '../state/store';
 import { findAudioClip } from '../../shared/audio';
@@ -88,6 +90,51 @@ function MediaDetails({ m }: { m: MediaRef }) {
   );
 }
 
+/** The transition from this clip into the next one (centred on the cut). */
+function TransitionSection({ clip, project }: { clip: ClipItem; project: Project }) {
+  const info = transitionInfo(project, clip.id);
+  const tr = clip.transition;
+  const sec = (t: number) => Math.round((t / TICKS_PER_SECOND) * 100) / 100;
+  return (
+    <Section title="Transition to next clip">
+      <div className="row gap center">
+        <select
+          className="input"
+          aria-label="Transition to next clip"
+          value={tr?.kind ?? 'none'}
+          onChange={(e) => commit((p) => ops.setTransition(p, clip.id, e.target.value === 'none' ? null : (e.target.value as TransitionKind)))}
+        >
+          <option value="none">None (cut)</option>
+          {TRANSITION_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+        </select>
+        {tr && (
+          <NumberField
+            label="Length"
+            value={sec(tr.duration)}
+            suffix="s"
+            min={0.1}
+            max={4}
+            step={0.1}
+            decimals={2}
+            onCommit={(v) => commit((p) => ops.setTransition(p, clip.id, tr.kind, Math.round(v * TICKS_PER_SECOND)))}
+          />
+        )}
+      </div>
+      {tr && info.resolved && info.resolved.limitedBy && (
+        <p className="muted small">
+          Shortened to {sec(2 * info.resolved.half)} s: {info.resolved.limitedBy === 'footage'
+            ? 'a crossfade uses footage past the cut, and the files have no more.'
+            : 'each side can use at most half of its clip.'}
+        </p>
+      )}
+      {tr && !info.resolved && info.reason && <p className="warn-text small">{info.reason}</p>}
+      {tr && info.resolved && !info.resolved.limitedBy && (
+        <p className="muted small">Centred on the cut: {sec(info.resolved.half)} s before and after. The timeline length does not change.</p>
+      )}
+    </Section>
+  );
+}
+
 function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) {
   const media = findMedia(project, clip.mediaId)!;
   const missing = useStore((s) => !!s.missing[clip.mediaId]);
@@ -148,6 +195,8 @@ function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) 
         />
         <div className="muted small">Source file length: {formatTimecode(media.info.duration, media.info.frameRate)}</div>
       </Section>
+
+      <TransitionSection clip={clip} project={project} />
 
       {media.info.kind !== 'image' && (
         <Section title="Speed">

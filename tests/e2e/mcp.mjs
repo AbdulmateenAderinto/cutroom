@@ -335,6 +335,19 @@ await step('set_speed: 2× halves the clip; a bad value is refused; undo', async
   assert(!(await call('get_project', {})).json.timeline.find((x) => x.id === c.id).speed, 'undo did not remove the speed');
 });
 
+await step('set_transition: dip works anywhere; a crossfade without footage says why', async () => {
+  const tl = (await call('get_project', {})).json.timeline.filter((x) => x.kind === 'clip');
+  assert(tl.length >= 2, 'need two clips');
+  const dip = (await call('set_transition', { clip_id: tl[0].id, kind: 'dipBlack', duration: 0.4 })).json;
+  assert(dip.active && Math.abs(dip.length_s - 0.4) < 0.04, JSON.stringify(dip));
+  const after = (await call('get_project', {})).json.timeline.find((x) => x.id === tl[0].id);
+  assert(after.transition_to_next?.kind === 'dipBlack', JSON.stringify(after));
+  const xf = (await call('set_transition', { clip_id: tl[0].id, kind: 'crossfade', duration: 1 })).json;
+  assert(xf.active || /footage/.test(xf.reason), JSON.stringify(xf));
+  await call('set_transition', { clip_id: tl[0].id, kind: 'none' });
+  assert(!(await call('get_project', {})).json.timeline.find((x) => x.id === tl[0].id).transition_to_next, 'not removed');
+});
+
 await step('turning AI control off disconnects the bridge', async () => {
   await page.evaluate(() => window.cutroom.setAiEnabled(false));
   const r = await client.callTool({ name: 'get_project', arguments: {} });

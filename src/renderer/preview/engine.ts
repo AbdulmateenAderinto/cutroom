@@ -30,6 +30,7 @@ import {
 } from '../../shared/model';
 import { type Ticks, TICKS_PER_SECOND, frameDuration, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { evalAnimation } from '../../shared/animation';
+import { type ResolvedTransition, dipColour, resolveTransitions, transitionMix } from '../../shared/transitions';
 import { playhead } from '../state/playhead';
 import { attachVideoElement, setVideoGain, stopMusic, syncMusic } from './audio';
 import { store } from '../state/store';
@@ -57,11 +58,30 @@ class PreviewEngine {
 
   private img: HTMLImageElement | null = null;
   private imgMedia: string | null = null;
+  // Transition layers: the other clip of a crossfade (video or photo) and a colour layer for dips.
+  private tv: HTMLVideoElement | null = null;
+  private timg: HTMLImageElement | null = null;
+  private dip: HTMLDivElement | null = null;
+  private tvMedia: string | null = null;
+  private timgMedia: string | null = null;
+  private transitions: ResolvedTransition[] = [];
+  private inTransition = false;
 
-  attach(a: HTMLVideoElement, b: HTMLVideoElement, img?: HTMLImageElement) {
+  attach(a: HTMLVideoElement, b: HTMLVideoElement, img?: HTMLImageElement, layers?: { tv: HTMLVideoElement; timg: HTMLImageElement; dip: HTMLDivElement }) {
     this.els = [a, b];
     this.img = img ?? null;
     if (this.img) this.img.style.display = 'none';
+    if (layers) {
+      this.tv = layers.tv;
+      this.timg = layers.timg;
+      this.dip = layers.dip;
+      this.tv.preload = 'auto';
+      attachVideoElement(this.tv);
+      this.tv.playsInline = true;
+      this.tv.style.display = 'none';
+      this.timg.style.display = 'none';
+      this.dip.style.opacity = '0';
+    }
     for (const el of this.els) {
       el.preload = 'auto';
       attachVideoElement(el); // Web Audio routing (volume above 100%), set before any src
@@ -131,6 +151,7 @@ class PreviewEngine {
     const prevMode = this.sourceMode;
     this.seq = this.buildSeq();
     this.sourceMode = store.get().previewMediaId;
+    this.transitions = this.sourceMode ? [] : resolveTransitions(this.seq.project, this.seq.items);
     if (modeChanged || prevMode !== this.sourceMode) {
       this.pause();
       this.timelineTimeBeforeSource = prevMode === null ? playhead.get().time : this.timelineTimeBeforeSource;
@@ -172,7 +193,7 @@ class PreviewEngine {
   }
 
   /** Position the element for clip `l` at timeline time t (framing + animation, as in export). */
-  private applyStyle(idx: number | HTMLImageElement, l: LaidOutItem, t: Ticks) {
+  private applyStyle(idx: number | HTMLVideoElement | HTMLImageElement, l: LaidOutItem, t: Ticks, mix = 1) {
     const el = typeof idx === 'number' ? this.els[idx] : idx;
     if (l.item.kind !== 'clip') return;
     const clip = l.item;
@@ -183,12 +204,12 @@ class PreviewEngine {
     const dur = l.end - l.start;
     const st = evalAnimation(clip.animation, Math.min(Math.max(0, t - l.start), dur), dur, clip.sourceIn, clipSpeed(clip));
     const r = animateRect(base, st, cw, ch);
-    el.style.opacity = String(st.opacity);
+    el.style.opacity = String(st.opacity * mix);
     el.style.left = `${(r.x / cw) * 100}%`;
     el.style.top = `${(r.y / ch) * 100}%`;
     el.style.width = `${(r.w / cw) * 100}%`;
     el.style.height = `${(r.h / ch) * 100}%`;
-    if (el instanceof HTMLVideoElement) setVideoGain(el, clip.muted ? 0 : clip.volume);
+    if (el instanceof HTMLVideoElement) setVideoGain(el, clip.muted ? 0 : clip.volume * mix);
   }
 
   private show(idx: number, image = false) {
@@ -215,6 +236,111 @@ class PreviewEngine {
   }
 
   private render(t: Ticks, forPlay: boolean): HTMLVideoElement | null {
+    const el = this.renderItem(t, forPlay);
+    this.applyTransition(t, forPlay);
+    return el;
+  }
+
+  /**
+   * Transitions (see shared/transitions.ts): during a crossfade the other clip is shown in a
+   * third element — over the outgoing clip before the cut, under the incoming one after it — with
+   * the weights from transitionMix(), the same values the export uses. Dips fade a colour layer.
+   */
+  private applyTransition(t: Ticks, playing: boolean) {
+    if (!this.tv || !this.timg || !this.dip) return;
+    const tr = this.transitions.find((x) => t >= x.start && t < x.end);
+    const activeEl: HTMLElement | null = this.active >= 0 ? this.els[this.active] : this.img?.style.display === 'block' ? this.img : null;
+    if (!tr) {
+      if (this.inTransition) {
+        this.inTransition = false;
+        this.tv.pause();
+        this.tv.style.display = 'none';
+        this.timg.style.display = 'none';
+        this.dip.style.opacity = '0';
+        if (activeEl) activeEl.style.zIndex = '';
+        const l = this.current;
+        if (l && activeEl && l.item.kind === 'clip') this.applyStyle(activeEl as HTMLVideoElement, l, Math.min(t, l.end - this.frame()));
+      }
+      this.prepareTransition(t);
+      return;
+    }
+    this.inTransition = true;
+    const m = transitionMix(tr, t);
+    const before = t < tr.cut;
+    const cur = before ? tr.a : tr.b;
+    if (tr.kind !== 'crossfade') {
+      this.tv.style.display = 'none';
+      this.timg.style.display = 'none';
+      this.dip.style.background = dipColour(tr.kind);
+      this.dip.style.opacity = String(m.colour);
+      if (activeEl) this.applyStyle(activeEl as HTMLVideoElement, cur, t, 1 - m.colour); // sound dips too
+      return;
+    }
+    this.dip.style.opacity = '0';
+    const otherL = before ? tr.b : tr.a;
+    const other = otherL.item as ClipItem;
+    const media = findMedia(this.seq.project, other.mediaId);
+    if (!media || store.get().missing[media.id]) return;
+    // Before the cut the incoming clip fades in on top; after it the incoming clip is the main one.
+    const otherMix = before ? m.b : 1;
+    if (activeEl) {
+      activeEl.style.zIndex = '1';
+      this.applyStyle(activeEl as HTMLVideoElement, cur, t, before ? 1 : m.b);
+      if (activeEl instanceof HTMLVideoElement) setVideoGain(activeEl, (cur.item as ClipItem).muted ? 0 : (cur.item as ClipItem).volume * (before ? 1 - m.b : m.b));
+    }
+    const z = before ? '2' : '0';
+    if (media.info.kind === 'image') {
+      this.tv.pause();
+      this.tv.style.display = 'none';
+      if (this.timgMedia !== media.id) {
+        this.timg.src = window.cutroom.mediaUrl(media.path);
+        this.timgMedia = media.id;
+      }
+      this.applyStyle(this.timg, otherL, t, otherMix);
+      this.timg.style.zIndex = z;
+      this.timg.style.display = 'block';
+      return;
+    }
+    this.timg.style.display = 'none';
+    if (this.tvMedia !== media.id) {
+      this.tv.src = window.cutroom.mediaUrl(media.path);
+      this.tvMedia = media.id;
+    }
+    const target = this.sourceSeconds(other, otherL, t);
+    const rate = clipSpeed(other);
+    if (this.tv.playbackRate !== rate) this.tv.playbackRate = rate;
+    this.tv.preservesPitch = true;
+    if (playing) {
+      if (this.tv.paused) {
+        this.tv.currentTime = target;
+        void this.tv.play().catch(() => {});
+      } else if (!this.tv.seeking && Math.abs(this.tv.currentTime - target) > 0.1) this.tv.currentTime = target;
+    } else {
+      if (!this.tv.paused) this.tv.pause();
+      if (Math.abs(this.tv.currentTime - target) > 0.002) this.tv.currentTime = target;
+    }
+    this.applyStyle(this.tv, otherL, t, otherMix);
+    setVideoGain(this.tv, other.muted ? 0 : other.volume * (before ? m.b : 1 - m.b));
+    this.tv.style.zIndex = z;
+    this.tv.style.display = 'block';
+  }
+
+  /** Load the incoming clip of an upcoming crossfade into the transition element ahead of time. */
+  private prepareTransition(t: Ticks) {
+    const next = this.transitions.find((x) => x.kind === 'crossfade' && x.start > t && x.start - t < 1.5 * TICKS_PER_SECOND);
+    if (!next || !this.tv || this.tv.seeking) return;
+    const clip = next.b.item as ClipItem;
+    const media = findMedia(this.seq.project, clip.mediaId);
+    if (!media || media.info.kind === 'image' || store.get().missing[media.id]) return;
+    if (this.tvMedia !== media.id) {
+      this.tv.src = window.cutroom.mediaUrl(media.path);
+      this.tvMedia = media.id;
+    }
+    const target = this.sourceSeconds(clip, next.b, next.start);
+    if (Math.abs(this.tv.currentTime - target) > 0.002) this.tv.currentTime = target;
+  }
+
+  private renderItem(t: Ticks, forPlay: boolean): HTMLVideoElement | null {
     const l = this.current;
     if (!l || l.item.kind === 'gap') {
       this.show(-1);
@@ -295,6 +421,7 @@ class PreviewEngine {
 
   private stopLoop() {
     stopMusic();
+    this.tv?.pause();
     cancelAnimationFrame(this.raf);
     this.raf = 0;
   }
@@ -328,7 +455,8 @@ class PreviewEngine {
     }
     playhead.set({ time: t });
     syncMusic(this.seq.project, t, true, store.get().missing);
-    if (l.item.kind === 'clip' && l.item.animation) {
+    this.applyTransition(t, true);
+    if (l.item.kind === 'clip' && l.item.animation && !this.inTransition) {
       if (this.img && this.img.style.display === 'block') this.applyStyle(this.img, l, t);
       else if (this.active >= 0) this.applyStyle(this.active, l, t);
     }

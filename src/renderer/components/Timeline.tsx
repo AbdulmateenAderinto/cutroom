@@ -19,6 +19,7 @@ import { playhead, usePlayhead } from '../state/playhead';
 import { beginGesture, commit, endGesture, store, updateGesture, useStore } from '../state/store';
 import { AudioTracks } from './AudioTracks';
 import { TextRows } from './TextRows';
+import { TRANSITION_KINDS, resolveTransitions } from '../../shared/transitions';
 import { MEDIA_DRAG_TYPE } from './MediaBin';
 import { audioClipEnd } from '../../shared/audio';
 
@@ -288,6 +289,18 @@ export function Timeline() {
                 />
               );
             })}
+            {!trimPreview && !drag && resolveTransitions(project, lay.items).map((tr) => (
+              <div
+                key={`tr-${tr.a.item.id}`}
+                className={`tr-mark ${tr.kind}`}
+                style={{ left: tToX(tr.start), width: Math.max(6, tToX(tr.end) - tToX(tr.start)) }}
+                title={`${TRANSITION_KINDS.find((k) => k.id === tr.kind)?.label} · ${formatDuration(tr.end - tr.start)}. Click to edit.`}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  store.set({ selection: { kind: 'item', id: tr.a.item.id } });
+                }}
+              />
+            ))}
             {drag && (
               <div className="clip-ghost" style={{ left: drag.x + drag.dx, width: Math.max(2, ticksToSeconds(itemDuration(lay.items.find((l) => l.item.id === drag.id)!.item)) * pps) }} />
             )}

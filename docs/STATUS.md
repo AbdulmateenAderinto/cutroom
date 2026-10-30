@@ -48,7 +48,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 40 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 41 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -90,14 +90,24 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Preview plays at the speed (`playbackRate`, pitch kept) and matches the export | ✅ | |
 | AI tool `set_speed` | ✅ | |
 
+## Transitions
+
+| Feature | Status | Notes |
+|---|---|---|
+| Crossfade, dip to black, dip to white between two clips; 0.1–4 s | ✅ | Centred on the cut; timeline length unchanged |
+| Crossfade uses footage past the cut; shortened (with a note) when the files have less | ✅ | The inspector explains when there is none |
+| Picture and sound mix per frame exactly as `transitionMix()` says | ✅ | Brightness measured on every exported frame (≤ 4 levels) |
+| Preview: the other clip plays in a transition layer; dips fade a colour layer | ✅ | Preview vs export compared through the window |
+| Range export through a transition; transitions on both ends of a clip | ✅ | |
+| AI tool `set_transition` | ✅ | |
+
 ## Planned, in this order
 
-1. 🔜 Transitions (crossfade, dip to colour)
-2. 🔜 Exposure, contrast, saturation, temperature
-3. 🔜 `.app`/`.dmg` packaging
+1. 🔜 Exposure, contrast, saturation, temperature
+2. 🔜 `.app`/`.dmg` packaging
 
 Not planned yet: generative tools, background removal, motion tracking, optical flow,
-plugins, complex compositing, proxies.
+plugins, complex compositing, proxies, wipes/slides and other transition shapes.
 
 ## Verification
 
@@ -171,6 +181,12 @@ doesn't work, and Alt+X clears the range.
 shows source 2 s at timeline 1 s and plays at playbackRate 2, typing 0.5 gives 8 s and undo restores,
 and preview vs export at two frames (each closer to its own export frame than to frames 3 away).
 
+**Transitions UI run (eighth script, 7 steps):** trim two clips, add a 1 s crossfade (marker, note,
+length unchanged), the preview's transition layer is on top before the cut and underneath after it,
+it plays during playback and hides afterwards, preview vs export at five frames through the window
+(2–3/255 vs 39–43 for frames 8 away), a dip to black is black at the cut in both, and the "needs
+footage" note when there is none.
+
 **MCP run (`npm run test:mcp`, 12 steps):** security checks (no token, wrong token, browser origin
 all refused), tool listing, import, contact sheet and frames, `build_timeline`, editing plus undo/redo,
 readable errors for bad input, timeline frame capture, export with polling, analysis tools, speech
@@ -209,7 +225,11 @@ progress/result screens, missing-media state and the gap rendering.
 - **Mismatched frame rates** (e.g. 25 fps clip in a 30 fps project): splitting can shift the
   right-hand part by under one source frame (audio moves with it, so sync is kept).
 - **Timecode display** is "real seconds + frame number", not SMPTE drop-frame.
-- **Timeline:** one video track (plus audio tracks); a video clip's own sound always travels with it; no transitions.
+- **Timeline:** one video track (plus audio tracks); a video clip's own sound always travels with it.
+- **Transitions:** crossfade and dips only. In the preview, a letterboxed (Fit) clip crossfading with a
+  clip of another shape mixes slightly differently in the bars than the export (which mixes whole frames).
+  How smooth preview playback is at a crossfade's cut (where the clips swap layers) has not been
+  measured; a brief stutter there is possible.
 - **Audio tracks:** fades are linear; ducking reacts to any sound in the video (not just speech) and
   needs the video's audio analysed once (cached). The export limiter catches peaks above −0.2 dBFS
   when boosted tracks add up.

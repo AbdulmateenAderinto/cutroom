@@ -12,7 +12,10 @@ Status: the core workflow (import → edit → save → export) works and is tes
   remove filler words, and burned-in captions that follow every edit.
 - **Music and photos:** audio tracks with waveforms, fades, volume up to 200% and automatic
   ducking under speech; photos (JPEG/PNG/WebP, transparency, EXIF rotation) as clips with Ken Burns moves.
-- **Speed:** select a clip and pick 0.25×–4× in its **Speed** section (sound keeps its pitch).
+- **Transitions:** select the clip before a cut and choose **Transition to next clip** (crossfade or a dip
+to black/white). A crossfade needs a little footage past the cut, so trim the clips slightly first.
+
+**Speed:** select a clip and pick 0.25×–4× in its **Speed** section (sound keeps its pitch).
 
 **Titles:** text rows with styles (title, lower third, quote…), fonts, box/outline/shadow looks,
   drag-to-position in the preview, and fade/rise/pop/typewriter animations.

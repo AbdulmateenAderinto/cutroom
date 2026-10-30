@@ -26,6 +26,7 @@ import {
 } from '../../shared/audio';
 import { buildCues, fillerRanges } from '../../shared/captions';
 import { addTitle, deleteTitle, findTitle, moveTitle, updateTitle } from '../../shared/titles';
+import { transitionInfo } from '../../shared/transitions';
 import * as ops from '../../shared/ops';
 import { COMMON_FRAME_RATES, type Rational, frameDuration, rateLabel, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { renderOverlayTrack } from '../captions/draw';
@@ -143,6 +144,7 @@ export function projectSummary(p: Project) {
         source_in_s: sec(c.sourceIn),
         source_out_s: sec(c.sourceOut),
         ...(c.speed ? { speed: c.speed } : {}),
+        ...(c.transition ? { transition_to_next: { kind: c.transition.kind, duration_s: sec(c.transition.duration) } } : {}),
         framing: c.framing,
         volume: c.volume,
         muted: c.muted,
@@ -449,6 +451,18 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         return ok({ volume: n.volume, muted: n.muted });
       }
 
+      case 'set_transition': {
+        const c = clipOrThrow(p, args.clip_id);
+        const kind = args.kind === 'none' ? null : args.kind;
+        edit(kind ? `added a ${kind} transition` : 'removed a transition', (pr) => ops.setTransition(pr, c.id, kind, args.duration !== undefined ? T(args.duration) : undefined));
+        const info = transitionInfo(store.get().project, c.id);
+        if (!kind) return ok({ transition: 'none' });
+        if (!info.resolved) return ok({ transition: kind, active: false, reason: info.reason });
+        return ok({
+          transition: kind, active: true, start_s: sec(info.resolved.start), end_s: sec(info.resolved.end), length_s: sec(info.resolved.end - info.resolved.start),
+          ...(info.resolved.limitedBy ? { shortened_because: info.resolved.limitedBy === 'footage' ? 'not enough footage past the cut' : 'clip too short' } : {}),
+        });
+      }
       case 'set_speed': {
         const c = clipOrThrow(p, args.clip_id);
         if (findMedia(p, c.mediaId)?.info.kind === 'image') throw new ToolError('Photos have no speed. Change the clip duration with set_clip_range instead.');

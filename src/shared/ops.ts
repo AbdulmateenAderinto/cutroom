@@ -15,6 +15,7 @@ import {
   type Project,
   type TrackItem,
   type Transcript,
+  type TransitionKind,
   DEFAULT_FRAMING,
   MAX_SPEED,
   MIN_SPEED,
@@ -91,6 +92,20 @@ export function legalRange(
   let tdur = snapProject((sourceOut - inT) / speed, pr, 'round');
   tdur = Math.max(pf, Math.min(tdur, available));
   return { sourceIn: inT, sourceOut: inT + Math.min(mediaDur - inT, Math.round(tdur * speed)) };
+}
+
+/** Set (or remove, kind = null) the transition from a clip into the next one. */
+export function setTransition(project: Project, clipId: string, kind: TransitionKind | null, duration?: Ticks): Project {
+  return updateClip(project, clipId, (c) => {
+    const next = { ...c };
+    if (!kind) delete next.transition;
+    else {
+      const d = duration ?? c.transition?.duration ?? Math.round(0.5 * 705_600_000);
+      const pf = frameDuration(project.frameRate);
+      next.transition = { kind, duration: Math.min(4 * 705_600_000, Math.max(2 * pf, snapToFrame(d, project.frameRate))) };
+    }
+    return next;
+  });
 }
 
 /** Speeds are kept to two decimals so timeline lengths stay exact on the frame grid. */

@@ -160,6 +160,16 @@ export const CONTROL_TOOLS: ToolDef[] = [
     inputSchema: obj({ clip_id: str('clip id'), volume: num('0..2'), muted: bool('mute') }, ['clip_id']),
   },
   {
+    name: 'set_transition',
+    runs: 'renderer',
+    description: 'Set the transition from a clip into the NEXT clip: crossfade (both pictures and sounds mix; needs footage past the cut, so trim the clips a little first), dipBlack / dipWhite (fade through a colour), or none (a hard cut). Centred on the cut; the timeline length does not change. Returns the length actually used and why it is shorter, if it is.',
+    inputSchema: obj({
+      clip_id: str('the clip BEFORE the cut'),
+      kind: str('transition', { enum: ['none', 'crossfade', 'dipBlack', 'dipWhite'] }),
+      duration: num('seconds, 0.1..4 (default 0.5)'),
+    }, ['clip_id', 'kind']),
+  },
+  {
     name: 'set_speed',
     runs: 'renderer',
     description: 'Play a video clip faster or slower (0.25 = quarter speed slow motion … 4 = four times faster). The clip keeps the same footage, so it gets shorter or longer on the timeline and later clips move. Sound keeps its pitch. Not for photos (change their duration instead).',

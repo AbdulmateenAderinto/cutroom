@@ -45,6 +45,9 @@ export function PreviewPanel() {
   const va = useRef<HTMLVideoElement>(null);
   const vb = useRef<HTMLVideoElement>(null);
   const im = useRef<HTMLImageElement>(null);
+  const tv = useRef<HTMLVideoElement>(null);
+  const timg = useRef<HTMLImageElement>(null);
+  const dip = useRef<HTMLDivElement>(null);
   const project = useStore((s) => s.project);
   const previewMediaId = useStore((s) => s.previewMediaId);
   const snapping = useStore((s) => s.snapping);
@@ -61,7 +64,7 @@ export function PreviewPanel() {
 
   useEffect(() => {
     engine.onOffline = setOffline;
-    engine.attach(va.current!, vb.current!, im.current!);
+    engine.attach(va.current!, vb.current!, im.current!, { tv: tv.current!, timg: timg.current!, dip: dip.current! });
     return () => engine.detach();
   }, []);
 
@@ -153,6 +156,10 @@ export function PreviewPanel() {
             <video ref={va} className="stage-video" />
             <video ref={vb} className="stage-video" />
             <img ref={im} className="stage-video" alt="" />
+            {/* Transition layers: the other clip of a crossfade, and the colour of a dip. */}
+            <video ref={tv} className="stage-video transition-video" />
+            <img ref={timg} className="stage-video" alt="" />
+            <div ref={dip} className="stage-dip" />
             {!sourceMedia && <OverlayLayer project={project} width={size.w} height={size.h} />}
             {offline && (
               <div className="stage-message">

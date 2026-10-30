@@ -100,6 +100,15 @@ deleted. Arguments are always an array (`spawn`, never a shell), so any file nam
 by the speed and time-stretches sound with `rubberband` (or `atempo`), padded so the stretcher
 doesn't drop its last window; the segment is then trimmed to an exact sample count as usual.
 
+**Transitions** (`src/shared/transitions.ts`) are stored on the left clip and centred on the cut.
+`resolveTransitions()` clamps each to the footage past the cut (crossfade) and half of each clip;
+`transitionMix()` gives the per-time mix used by the preview. In export a crossfade is its own segment:
+both clips are rendered over the window by the normal clip code (frames before the incoming clip's start
+and after the outgoing clip's end come from `sourceAt()`), mixed with `xfade`, and the sound with linear
+`afade`s and `amix`. Dips apply `fade` to/from the colour on the clips' own frames. The preview shows the
+other clip in a third element (over the outgoing clip before the cut, under the incoming one after) and
+dips with a colour layer.
+
 **Range export** builds the timeline only up to the range end (the clip straddling it renders fewer
 frames, with its animation still timed on its full length), renders clips wholly before the range as
 plain background without decoding them, and trims the start off video and audio. So every frame in the

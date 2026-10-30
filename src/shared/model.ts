@@ -90,6 +90,8 @@ export interface Framing {
   y: number;
 }
 
+export type TransitionKind = 'crossfade' | 'dipBlack' | 'dipWhite';
+
 export interface ClipItem {
   kind: 'clip';
   id: string;
@@ -99,6 +101,8 @@ export interface ClipItem {
   framing: Framing;
   /** Playback speed, 0.25..4 (absent = 1). Sound keeps its pitch. */
   speed?: number;
+  /** Transition into the next clip, centred on the cut (see transitions.ts). */
+  transition?: { kind: TransitionKind; duration: Ticks };
   volume: number; // 0..2 (1 = original level)
   muted: boolean;
   animation?: ClipAnimation;

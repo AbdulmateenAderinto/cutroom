@@ -15,17 +15,21 @@
 import { animatesOpacity, evalAnimation, hasAnimation } from './animation';
 import { audioClipDuration, audioClipEnd, duckGainAt, speechIntervals, tracks } from './audio';
 import {
+  type ClipItem,
+  type LaidOutItem,
   type MediaRef,
   type Project,
   type Rect,
   animateRect,
+  clipSpeed,
   computeClipRect,
-  sourceMatrix,
   evenDim,
   findMedia,
   layoutSequence,
-  clipSpeed,
+  sourceAt,
+  sourceMatrix,
 } from './model';
+import { dipColour, resolveTransitions } from './transitions';
 import {
   type Rational,
   type Ticks,
@@ -239,25 +243,32 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   const rangeA = s.range ? Math.max(0, ticksToFrame(s.range.start, rate, 'round')) : 0;
   const rangeB = s.range ? ticksToFrame(s.range.end, rate, 'round') : Number.MAX_SAFE_INTEGER;
 
-  items.forEach((l, n) => {
-    const f0 = ticksToFrame(l.start, rate, 'round');
-    const f1 = Math.min(ticksToFrame(l.end, rate, 'round'), rangeB);
+  let segN = 0;
+  const samplesOf = (f0: number, f1: number) => ticksToSamples(frameToTicks(f1, rate), sr) - ticksToSamples(frameToTicks(f0, rate), sr);
+
+  /** Background colour and silence for output frames [f0, f1). Returns [video, audio] pads. */
+  const renderGap = (f0: number, f1: number): [string, string] => {
+    const n = segN++;
+    filters.push(`${background(bw, bh, f1 - f0)},format=yuv420p[v${n}]`);
+    filters.push(`anullsrc=r=${sr}:cl=stereo,atrim=end_sample=${samplesOf(f0, f1)}[a${n}]`);
+    return [`[v${n}]`, `[a${n}]`];
+  };
+
+  /**
+   * Clip `l` composed on the canvas for output frames [f0, f1). The frames may reach past the
+   * clip's own edges (a crossfade shows footage before its start / after its end); source times
+   * always come from sourceAt(), so they match the preview.
+   */
+  const renderClip = (l: LaidOutItem, f0: number, f1: number): [string, string] => {
+    const n = segN++;
     const frames = f1 - f0;
-    if (frames <= 0) return; // shorter than one output frame
-    const samples = ticksToSamples(frameToTicks(f1, rate), sr) - ticksToSamples(frameToTicks(f0, rate), sr);
-    totalFrames += frames;
+    const samples = samplesOf(f0, f1);
     const v = `v${n}`;
     const a = `a${n}`;
     filters.push(`${background(bw, bh, frames)}[bg${n}]`);
     const silence = `anullsrc=r=${sr}:cl=stereo,atrim=end_sample=${samples}[${a}]`;
-
-    const item = l.item;
-    if (item.kind === 'gap' || f1 <= rangeA) {
-      filters.push(`[bg${n}]format=yuv420p[${v}]`);
-      filters.push(silence);
-      concatPads.push(`[${v}][${a}]`);
-      return;
-    }
+    const item = l.item as ClipItem;
+    const srcStart = sourceAt(item, l.start, frameToTicks(f0, rate));
     const media = findMedia(project, item.mediaId)!;
     const info = media.info;
     // Convert the source's colour matrix/range to the BT.709 limited-range output, the same
@@ -277,7 +288,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const pts = speed === 1 ? 'setpts=PTS-STARTPTS' : `setpts=(PTS-STARTPTS)/${speed}`;
     // The time stretch needs input past the clip's end to produce its last output window, so read
     // a little more where the file has it (the exact sample trim below removes the excess).
-    const readFor0 = ticksToSeconds(item.sourceOut - item.sourceIn) + 2 * speed * ticksToSeconds(frameDuration(rate)) + (speed === 1 ? 0 : 0.25);
+    const readFor0 = speed * ticksToSeconds(frameToTicks(frames, rate)) + 2 * speed * ticksToSeconds(frameDuration(rate)) + (speed === 1 ? 0 : 0.25);
     let lead = 0;
     if (isImage) {
       // A still image, repeated at the output frame rate for as long as the clip lasts.
@@ -286,8 +297,8 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       // Start decoding half a source frame early so the frame at sourceIn is kept even if its
       // timestamp is a hair below sourceIn; the audio is then trimmed back by exactly that amount.
       const half = Math.floor(frameDuration(info.frameRate) / 2);
-      const ss = Math.max(0, item.sourceIn - half);
-      lead = ticksToSeconds(item.sourceIn - ss);
+      const ss = Math.max(0, srcStart - half);
+      lead = ticksToSeconds(srcStart - ss);
       inputs.push('-ss', f6(ticksToSeconds(ss)), '-t', f6(readFor0 + lead), '-i', mediaPath(media));
     }
     const i = inputIndex++;
@@ -382,8 +393,79 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
           `volume=${item.volume.toFixed(4)},apad,atrim=end_sample=${samples}[${a}]`,
       );
     } else filters.push(silence);
-    concatPads.push(`[${v}][${a}]`);
+    return [`[${v}]`, `[${a}]`];
+  };
+
+  // Timeline → segments. A crossfade is its own segment covering the window around the cut (both
+  // clips rendered and mixed); the clips' own segments stop/start at the window. Dips fade the
+  // clips' own ends to/from the colour.
+  const fr = (t: Ticks) => ticksToFrame(t, rate, 'round');
+  const transitions = resolveTransitions(project, items);
+  type Seg =
+    | { kind: 'gap' | 'clip'; l: LaidOutItem; f0: number; f1: number; dipIn?: { frames: number; colour: string }; dipOut?: { frames: number; colour: string } }
+    | { kind: 'xfade'; a: LaidOutItem; b: LaidOutItem; f0: number; f1: number };
+  const segs: Seg[] = [];
+  items.forEach((l) => {
+    let f0 = fr(l.start);
+    let f1 = fr(l.end);
+    const before = transitions.find((t) => t.b === l);
+    const after = transitions.find((t) => t.a === l);
+    const seg: Seg = { kind: l.item.kind, l, f0, f1 };
+    if (before?.kind === 'crossfade') seg.f0 = f0 = fr(before.end);
+    else if (before) seg.dipIn = { frames: fr(before.end) - f0, colour: dipColour(before.kind) };
+    if (after?.kind === 'crossfade') seg.f1 = f1 = fr(after.start);
+    else if (after) seg.dipOut = { frames: f1 - fr(after.start), colour: dipColour(after.kind) };
+    segs.push(seg);
+    if (after?.kind === 'crossfade') segs.push({ kind: 'xfade', a: after.a, b: after.b, f0: fr(after.start), f1: fr(after.end) });
   });
+
+  for (const seg of segs) {
+    const f0 = seg.f0;
+    const f1 = Math.min(seg.f1, rangeB);
+    const frames = f1 - f0;
+    if (frames <= 0) continue; // shorter than one output frame, or after the range
+    totalFrames += frames;
+    const samples = samplesOf(f0, f1);
+    if (seg.kind === 'gap' || f1 <= rangeA) {
+      const [v, a] = renderGap(f0, f1);
+      concatPads.push(`${v}${a}`);
+      continue;
+    }
+    if (seg.kind === 'xfade') {
+      // Both clips over the whole window, mixed linearly: frame j shows a j/n of the incoming clip.
+      const n = seg.f1 - seg.f0;
+      const dur = f6(ticksToSeconds(frameToTicks(n, rate)));
+      const [va, aa] = renderClip(seg.a, f0, f1);
+      const [vb, ab] = renderClip(seg.b, f0, f1);
+      const k = segN++;
+      filters.push(`${va}${vb}xfade=transition=fade:duration=${dur}:offset=0,trim=end_frame=${frames},format=yuv420p[xv${k}]`);
+      filters.push(`${aa}afade=t=out:st=0:d=${dur}:curve=tri[xao${k}]`);
+      filters.push(`${ab}afade=t=in:st=0:d=${dur}:curve=tri[xai${k}]`);
+      filters.push(`[xao${k}][xai${k}]amix=inputs=2:normalize=0:duration=first,atrim=end_sample=${samples}[xa${k}]`);
+      concatPads.push(`[xv${k}][xa${k}]`);
+      continue;
+    }
+    let [v, a] = renderClip(seg.l, f0, f1);
+    if (seg.dipIn || seg.dipOut) {
+      const k = segN++;
+      const vf: string[] = [];
+      const af: string[] = [];
+      const secs = (fr2: number) => f6(ticksToSeconds(frameToTicks(fr2, rate)));
+      if (seg.dipIn) {
+        vf.push(`fade=t=in:start_frame=0:nb_frames=${seg.dipIn.frames}:color=${hexColor(seg.dipIn.colour)}`);
+        af.push(`afade=t=in:st=0:d=${secs(seg.dipIn.frames)}:curve=tri`);
+      }
+      if (seg.dipOut) {
+        const start = seg.f1 - seg.dipOut.frames - f0;
+        vf.push(`fade=t=out:start_frame=${start}:nb_frames=${seg.dipOut.frames}:color=${hexColor(seg.dipOut.colour)}`);
+        af.push(`afade=t=out:st=${secs(start)}:d=${secs(seg.dipOut.frames)}:curve=tri`);
+      }
+      filters.push(`${v}${vf.join(',')},format=yuv420p[dv${k}]`);
+      filters.push(`${a}${af.join(',')}[da${k}]`);
+      [v, a] = [`[dv${k}]`, `[da${k}]`];
+    }
+    concatPads.push(`${v}${a}`);
+  }
 
   filters.push(`${concatPads.join('')}concat=n=${concatPads.length}:v=1:a=1[vcat0][acat]`);
   if (extras.captionTrack) {
