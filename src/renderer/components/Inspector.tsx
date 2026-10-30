@@ -10,6 +10,10 @@ import {
   isHexColor,
   layoutSequence,
   toManualFraming,
+  MAX_SPEED,
+  MIN_SPEED,
+  clipSpeed,
+  itemDuration,
 } from '../../shared/model';
 import * as ops from '../../shared/ops';
 import { COMMON_FRAME_RATES, formatDuration, formatTimecode, frameDuration, rateLabel, sameRate } from '../../shared/time';
@@ -136,14 +140,43 @@ function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) 
         />
         <TimecodeField
           label="Duration"
-          value={clip.sourceOut - clip.sourceIn}
+          value={itemDuration(clip)}
           rate={rate}
           frameStep={pf}
-          onCommit={(t) => commit((p) => ops.setClipRange(p, id, clip.sourceIn, clip.sourceIn + t, 'in'))}
-          hint="Length on the timeline. Later clips move to follow (ripple)."
+          onCommit={(t) => commit((p) => ops.setClipRange(p, id, clip.sourceIn, clip.sourceIn + Math.round(t * clipSpeed(clip)), 'in'))}
+          hint="Length on the timeline (after speed). Later clips move to follow (ripple)."
         />
         <div className="muted small">Source file length: {formatTimecode(media.info.duration, media.info.frameRate)}</div>
       </Section>
+
+      {media.info.kind !== 'image' && (
+        <Section title="Speed">
+          <div className="row gap wrap" role="group" aria-label="Speed presets">
+            {[0.25, 0.5, 0.75, 1, 1.5, 2, 4].map((v) => (
+              <button
+                key={v}
+                className={`btn tiny${clipSpeed(clip) === v ? ' on' : ''}`}
+                aria-pressed={clipSpeed(clip) === v}
+                onClick={() => commit((p) => ops.setSpeed(p, id, v))}
+              >
+                {v}×
+              </button>
+            ))}
+          </div>
+          <NumberField
+            label="Speed"
+            value={clipSpeed(clip)}
+            suffix="×"
+            min={MIN_SPEED}
+            max={MAX_SPEED}
+            step={0.05}
+            decimals={2}
+            onCommit={(v) => commit((p) => ops.setSpeed(p, id, v))}
+            hint="0.25× (slow motion) to 4×. The clip keeps the same footage and gets shorter or longer on the timeline."
+          />
+          <p className="muted small">Sound keeps its pitch. Keyframes stay on the same moments of the footage.</p>
+        </Section>
+      )}
 
       <Section title="Framing">
         <Segmented<FramingMode>

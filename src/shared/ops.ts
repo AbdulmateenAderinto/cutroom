@@ -16,10 +16,15 @@ import {
   type TrackItem,
   type Transcript,
   DEFAULT_FRAMING,
+  MAX_SPEED,
+  MIN_SPEED,
+  clipSpeed,
   findMedia,
   itemDuration,
   layoutSequence,
   newId,
+  sourceAt,
+  timelineAt,
 } from './model';
 import { type AnimProperty, type ClipAnimation, type Easing, clampAnimValue, removeKeyframeAt, upsertKeyframe } from './animation';
 import { type CaptionSettings, DEFAULT_CAPTIONS } from './captions';
@@ -50,6 +55,8 @@ export const PHOTO_DEFAULT = 4 * 705_600_000;
  * Compute a legal (sourceIn, sourceOut) pair.
  * anchor 'in'  — keep sourceIn where requested and fit the duration (used when trimming the end).
  * anchor 'out' — keep sourceOut where requested and move sourceIn (used when trimming the start).
+ * With a speed other than 1, the TIMELINE duration (source length / speed) is what lands on the
+ * project frame grid.
  */
 export function legalRange(
   project: Project,
@@ -57,6 +64,7 @@ export function legalRange(
   sourceIn: Ticks,
   sourceOut: Ticks,
   anchor: 'in' | 'out',
+  speed = 1,
 ): { sourceIn: Ticks; sourceOut: Ticks } {
   const pr = project.frameRate;
   const pf = frameDuration(pr);
@@ -73,10 +81,38 @@ export function legalRange(
     inT = snapToFrame(Math.min(Math.max(0, sourceIn), maxIn), sr, 'round');
     if (inT > maxIn) inT = snapToFrame(maxIn, sr, 'floor');
   }
-  const available = snapProject(mediaDur - inT, pr, 'floor');
-  let dur = snapProject(sourceOut - inT, pr, 'round');
-  dur = Math.max(pf, Math.min(dur, available));
-  return { sourceIn: inT, sourceOut: inT + dur };
+  if (speed === 1) {
+    const available = snapProject(mediaDur - inT, pr, 'floor');
+    let dur = snapProject(sourceOut - inT, pr, 'round');
+    dur = Math.max(pf, Math.min(dur, available));
+    return { sourceIn: inT, sourceOut: inT + dur };
+  }
+  const available = snapProject((mediaDur - inT) / speed, pr, 'floor');
+  let tdur = snapProject((sourceOut - inT) / speed, pr, 'round');
+  tdur = Math.max(pf, Math.min(tdur, available));
+  return { sourceIn: inT, sourceOut: inT + Math.min(mediaDur - inT, Math.round(tdur * speed)) };
+}
+
+/** Speeds are kept to two decimals so timeline lengths stay exact on the frame grid. */
+export function legalSpeed(speed: number): number {
+  if (!Number.isFinite(speed)) return 1;
+  return Math.round(Math.min(MAX_SPEED, Math.max(MIN_SPEED, speed)) * 100) / 100;
+}
+
+/**
+ * Change a clip's speed. The footage it shows (source in/out) stays the same, so the clip gets
+ * shorter or longer on the timeline (later clips move). Keyframes stay on the same footage.
+ */
+export function setSpeed(project: Project, clipId: string, speed: number): Project {
+  return updateClip(project, clipId, (c) => {
+    const media = findMedia(project, c.mediaId);
+    if (!media || media.info.kind === 'image') return c;
+    const sp = legalSpeed(speed);
+    const next: ClipItem = { ...c, ...legalRange(project, media, c.sourceIn, c.sourceOut, 'in', sp) };
+    if (sp === 1) delete next.speed;
+    else next.speed = sp;
+    return next;
+  });
 }
 
 export function addMedia(project: Project, media: MediaRef[]): Project {
@@ -144,13 +180,15 @@ export function splitAt(project: Project, t: Ticks): { project: Project; leftId:
   if (!media) return null;
   const offset = t - hit.start;
   if (offset < pf || hit.end - t < pf) return null;
-  const left: ClipItem = { ...clip, sourceOut: clip.sourceIn + offset };
+  const sp = clipSpeed(clip);
+  const cut = sourceAt(clip, hit.start, t);
+  const left: ClipItem = { ...clip, sourceOut: cut };
   // The right half starts on the source frame that is visible at the split point.
-  const rightIn = snapToFrame(clip.sourceIn + offset, media.info.frameRate, 'floor');
+  const rightIn = snapToFrame(cut, media.info.frameRate, 'floor');
   const right: ClipItem = {
     ...clip,
     id: newId('clip'),
-    ...legalRange(project, media, rightIn, rightIn + (hit.end - t), 'in'),
+    ...legalRange(project, media, rightIn, rightIn + Math.round((hit.end - t) * sp), 'in', sp),
   };
   items.splice(hit.index, 1, left, right);
   return { project: { ...project, sequence: { items } }, leftId: left.id, rightId: right.id };
@@ -170,7 +208,7 @@ export function setClipRange(project: Project, clipId: string, sourceIn: Ticks, 
   return updateClip(project, clipId, (c) => {
     const media = findMedia(project, c.mediaId);
     if (!media) return c;
-    return { ...c, ...legalRange(project, media, sourceIn, sourceOut, anchor) };
+    return { ...c, ...legalRange(project, media, sourceIn, sourceOut, anchor, clipSpeed(c)) };
   });
 }
 
@@ -178,8 +216,9 @@ export function setClipRange(project: Project, clipId: string, sourceIn: Ticks, 
 export function trimEdge(project: Project, clipId: string, edge: 'start' | 'end', delta: Ticks): Project {
   const clip = getItem(project, clipId);
   if (!clip || clip.kind !== 'clip') return project;
-  if (edge === 'start') return setClipRange(project, clipId, clip.sourceIn + delta, clip.sourceOut, 'out');
-  return setClipRange(project, clipId, clip.sourceIn, clip.sourceOut + delta, 'in');
+  const d = Math.round(delta * clipSpeed(clip)); // timeline delta → source delta
+  if (edge === 'start') return setClipRange(project, clipId, clip.sourceIn + d, clip.sourceOut, 'out');
+  return setClipRange(project, clipId, clip.sourceIn, clip.sourceOut + d, 'in');
 }
 
 export function setGapDuration(project: Project, gapId: string, duration: Ticks): Project {
@@ -291,7 +330,7 @@ export function removeSourceRanges(
   if (parts.length === 1 && parts[0].start === clip.sourceIn && parts[0].end === clip.sourceOut) return { project, parts: 1, removed: 0 };
   const anim = clip.animation;
   const newClips: ClipItem[] = parts.map((k, i) => {
-    const c: ClipItem = { ...clip, id: i === 0 ? clip.id : newId('clip'), ...legalRange(project, media, k.start, k.end, 'in') };
+    const c: ClipItem = { ...clip, id: i === 0 ? clip.id : newId('clip'), ...legalRange(project, media, k.start, k.end, 'in', clipSpeed(clip)) };
     if (anim) {
       // In-animation stays on the first part, out-animation on the last; keyframes follow the footage.
       const a: ClipAnimation = { ...anim, in: i === 0 ? anim.in : undefined, out: i === parts.length - 1 ? anim.out : undefined };
@@ -302,8 +341,8 @@ export function removeSourceRanges(
     return c;
   });
   const items = project.sequence.items.flatMap((it) => (it.id === clipId ? newClips : [it]));
-  const kept = newClips.reduce((s, c) => s + (c.sourceOut - c.sourceIn), 0);
-  return { project: withItems(project, items), parts: newClips.length, removed: clip.sourceOut - clip.sourceIn - kept };
+  const kept = newClips.reduce((s, c) => s + itemDuration(c), 0);
+  return { project: withItems(project, items), parts: newClips.length, removed: itemDuration(clip) - kept }; // timeline time
 }
 
 /** Split a clip at the given SOURCE times (e.g. detected scene changes). */
@@ -315,7 +354,7 @@ export function splitAtSourceTimes(project: Project, clipId: string, times: Tick
     const clip = getItem(p, current);
     if (!clip || clip.kind !== 'clip' || s <= clip.sourceIn || s >= clip.sourceOut) continue;
     const l = layoutSequence(p).items.find((x) => x.item.id === current)!;
-    const r = splitAt(p, l.start + (s - clip.sourceIn));
+    const r = splitAt(p, timelineAt(clip, l.start, s));
     if (!r) continue;
     p = r.project;
     current = r.rightId;

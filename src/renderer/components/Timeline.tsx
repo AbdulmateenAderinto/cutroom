@@ -10,7 +10,7 @@
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ANIM_PROPERTIES } from '../../shared/animation';
-import { type ClipItem, type LaidOutItem, type TrackItem, findMedia, itemDuration, layoutSequence } from '../../shared/model';
+import { type ClipItem, type LaidOutItem, type TrackItem, findMedia, itemDuration, layoutSequence, timelineAt } from '../../shared/model';
 import * as ops from '../../shared/ops';
 import { type Ticks, formatDuration, formatTimecode, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
@@ -337,7 +337,7 @@ function ClipBlock(props: {
       title={`${props.name} — ${formatDuration(props.l.end - props.l.start)}. Drag to reorder; drag edges to trim.`}
     >
       <div className="clip-label">
-        <span className="clip-name">{props.offline ? '⚠ ' : ''}{props.name}</span>
+        <span className="clip-name">{props.offline ? '⚠ ' : ''}{props.l.item.kind === 'clip' && props.l.item.speed ? `${props.l.item.speed}× · ` : ''}{props.name}</span>
         <span className="clip-dur">{formatDuration(props.l.end - props.l.start)}{audio}</span>
       </div>
  {item.kind === 'clip' && item.animation && <AnimationMarks clip={item} pps={props.pps} width={props.w} />}
@@ -352,7 +352,7 @@ function ClipBlock(props: {
 function ReviewMarks({ clip, pps }: { clip: ClipItem; pps: number }) {
   const review = useStore((s) => (s.review?.clipId === clip.id ? s.review : null));
   if (!review) return null;
-  const px = (t: Ticks) => ticksToSeconds(t - clip.sourceIn) * pps;
+  const px = (t: Ticks) => ticksToSeconds(timelineAt(clip, 0, t)) * pps; // source time → x within the clip
   return (
     <>
       {review.ranges.map((r, i) => {
@@ -377,7 +377,7 @@ function AnimationMarks({ clip, pps, width }: { clip: ClipItem; pps: number; wid
       {a.out && <div className="anim-zone out" style={{ width: Math.min(width, px(a.out.duration)) }} title={`Out: ${a.out.preset}`} />}
       {a.motion && <div className="anim-motion" title={`Motion: ${a.motion.preset}`}>↗</div>}
       {keys.map((at) => (
-        <div key={at} className="kf-mark" style={{ left: px(at - clip.sourceIn) - 4 }} title="Keyframe" />
+        <div key={at} className="kf-mark" style={{ left: ticksToSeconds(timelineAt(clip, 0, at)) * pps - 4 }} title="Keyframe" />
       ))}
     </>
   );

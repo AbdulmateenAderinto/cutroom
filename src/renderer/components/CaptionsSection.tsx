@@ -3,7 +3,7 @@
  */
 import { useState } from 'react';
 import { type CaptionLook, DEFAULT_CAPTIONS, buildCues, replaceWords } from '../../shared/captions';
-import { type ClipItem, type Project, findMedia, isHexColor, layoutSequence } from '../../shared/model';
+import { type ClipItem, type Project, findMedia, isHexColor, layoutSequence, sourceAt } from '../../shared/model';
 import * as ops from '../../shared/ops';
 import { formatTimecode } from '../../shared/time';
 import { engine } from '../preview/engine';
@@ -80,8 +80,8 @@ export function ClipCaptions({ clip, project }: { clip: ClipItem; project: Proje
         {cues.length === 0 && <p className="muted small">No speech in this part of the clip.</p>}
         {cues.map((q, i) => {
           const text = q.words.map((w) => w.text).join(' ');
-          const srcStart = clip.sourceIn + (q.words[0].start - lay.start);
-          const srcEnd = clip.sourceIn + (q.words[q.words.length - 1].end - lay.start);
+          const srcStart = sourceAt(clip, lay.start, q.words[0].start);
+          const srcEnd = sourceAt(clip, lay.start, q.words[q.words.length - 1].end);
           return (
             <div key={`${q.start}-${i}`} className="cue-row">
               <button className="btn tiny ghost mono" title="Go to this line" onClick={() => engine.seek(q.start)}>

@@ -156,8 +156,14 @@ export const CONTROL_TOOLS: ToolDef[] = [
   {
     name: 'set_clip_audio',
     runs: 'renderer',
-    description: 'Set a clip\'s volume (0..1) and/or mute it.',
-    inputSchema: obj({ clip_id: str('clip id'), volume: num('0..1'), muted: bool('mute') }, ['clip_id']),
+    description: 'Set a clip\'s volume (0..2, 1 = original) and/or mute it.',
+    inputSchema: obj({ clip_id: str('clip id'), volume: num('0..2'), muted: bool('mute') }, ['clip_id']),
+  },
+  {
+    name: 'set_speed',
+    runs: 'renderer',
+    description: 'Play a video clip faster or slower (0.25 = quarter speed slow motion … 4 = four times faster). The clip keeps the same footage, so it gets shorter or longer on the timeline and later clips move. Sound keeps its pitch. Not for photos (change their duration instead).',
+    inputSchema: obj({ clip_id: str('clip id'), speed: num('0.25..4 (1 = normal); two decimals') }, ['clip_id', 'speed']),
   },
 
   // ---- Animation ----

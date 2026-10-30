@@ -5,7 +5,7 @@
  *
  * Preview and export draw cues with the same Canvas 2D code (src/renderer/captions/draw.ts).
  */
-import { type ClipItem, type Project, type TranscriptWord, findMedia, layoutSequence } from './model';
+import { type ClipItem, type Project, type TranscriptWord, findMedia, layoutSequence, timelineAt } from './model';
 import { type Rational, type Ticks, TICKS_PER_SECOND, snapToFrame } from './time';
 
 export type CaptionLook = 'outline' | 'box' | 'plain';
@@ -71,8 +71,8 @@ export function clipWords(project: Project, clip: ClipItem, clipStart: Ticks): C
     if (inside < (w.end - w.start) / 2) continue;
     out.push({
       text: w.text,
-      start: clipStart + Math.max(0, w.start - clip.sourceIn),
-      end: clipStart + Math.min(clip.sourceOut, w.end) - clip.sourceIn,
+      start: timelineAt(clip, clipStart, Math.max(w.start, clip.sourceIn)),
+      end: timelineAt(clip, clipStart, Math.min(clip.sourceOut, w.end)),
     });
   }
   return out;

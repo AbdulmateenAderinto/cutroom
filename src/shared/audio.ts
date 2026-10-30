@@ -5,7 +5,7 @@
  * where the project (video track) ends. The ducking envelope — how much a track is lowered while
  * the video track has sound — is computed here once and used by both preview and export.
  */
-import { type AudioClip, type AudioTrack, type Project, findMedia, layoutSequence, mediaKind, newId } from './model';
+import { type AudioClip, type AudioTrack, type Project, findMedia, layoutSequence, mediaKind, newId, timelineAt } from './model';
 import { type Ticks, TICKS_PER_SECOND, frameDuration, snapToFrame } from './time';
 
 export const MAX_VOLUME = 2;
@@ -200,7 +200,7 @@ export function speechIntervals(p: Project): { start: Ticks; end: Ticks }[] {
     for (const r of findMedia(p, clip.mediaId)?.speech ?? []) {
       const a = Math.max(r.start, clip.sourceIn);
       const b = Math.min(r.end, clip.sourceOut);
-      if (b > a) out.push({ start: l.start + a - clip.sourceIn, end: l.start + b - clip.sourceIn });
+      if (b > a) out.push({ start: timelineAt(clip, l.start, a), end: timelineAt(clip, l.start, b) });
     }
   }
   out.sort((x, y) => x.start - y.start);

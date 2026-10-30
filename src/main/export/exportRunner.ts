@@ -14,6 +14,7 @@ import type { MediaRef, Project } from '../../shared/model';
 import { type CaptionTrack, type ExportSettings, buildExportPlan, canvasInOutput, validateExportSettings } from '../../shared/exportPlan';
 import { type Rational, parseRational, rateToFloat } from '../../shared/time';
 import { ffmpegPath, ffprobePath } from '../media/ffbin';
+import { timeStretchFilter } from './encoders';
 
 export interface ExportProgress {
   fraction: number; // 0..1
@@ -77,6 +78,8 @@ export interface RunExportOptions {
   onProgress?: (p: ExportProgress) => void;
   mediaPath?: (m: MediaRef) => string;
   captions?: CaptionTrack | null;
+  /** Force a time-stretch filter for speed changes (default: the best one available). */
+  timeStretch?: 'rubberband' | 'atempo';
 }
 
 /**
@@ -142,7 +145,8 @@ export async function runExport(project: Project, settings: ExportSettings, opts
   }
 
   async function encode(): Promise<ExportResult> {
-  const plan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path), { captionTrack });
+  const timeStretch = opts.timeStretch ?? (project.sequence.items.some((i) => i.kind === 'clip' && i.speed) ? await timeStretchFilter() : 'atempo');
+  const plan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path), { captionTrack, timeStretch });
 
   let bin: string;
   try { bin = ffmpegPath(); } catch (e) { return fail((e as Error).message); }

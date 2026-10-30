@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { evalAnimation } from '../../shared/animation';
-import { type ClipItem, animateRect, computeClipRect, findMedia, layoutSequence, toManualFraming } from '../../shared/model';
+import { type ClipItem, animateRect, clipSpeed, computeClipRect, findMedia, layoutSequence, toManualFraming } from '../../shared/model';
 import { setFraming } from '../../shared/ops';
 import { formatTimecode } from '../../shared/time';
 import { OverlayLayer, TitleHandles } from '../captions/OverlayLayer';
@@ -73,7 +73,7 @@ export function PreviewPanel() {
   const baseRect = clip && media ? computeClipRect(media.info.displayWidth, media.info.displayHeight, canvas.width, canvas.height, clip.framing) : null;
   const lay = clip ? layoutSequence(project).items.find((l) => l.item.id === clip.id) : undefined;
   const rect = baseRect && clip && lay
-    ? animateRect(baseRect, evalAnimation(clip.animation, Math.min(Math.max(0, time - lay.start), lay.end - lay.start), lay.end - lay.start, clip.sourceIn), canvas.width, canvas.height)
+    ? animateRect(baseRect, evalAnimation(clip.animation, Math.min(Math.max(0, time - lay.start), lay.end - lay.start), lay.end - lay.start, clip.sourceIn, clipSpeed(clip)), canvas.width, canvas.height)
     : baseRect;
   const k = size.w / canvas.width; // canvas px → screen px
   const showOverlay = !!(clip && rect && !playing && selectedId === clip.id);

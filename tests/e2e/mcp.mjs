@@ -321,6 +321,20 @@ await step('title tools: add_title, set_title, remove_title; get_frame shows the
   assert((await call('get_project', {})).json.titles.length === 0, 'title not removed');
 });
 
+await step('set_speed: 2× halves the clip; a bad value is refused; undo', async () => {
+  const before = (await call('get_project', {})).json;
+  const c = before.timeline.find((x) => x.kind === 'clip');
+  const len = c.end_s - c.start_s;
+  const r = (await call('set_speed', { clip_id: c.id, speed: 2 })).json;
+  assert(r.speed === 2 && Math.abs(r.end_s - r.start_s - len / 2) < 0.05, JSON.stringify(r));
+  const after = (await call('get_project', {})).json.timeline.find((x) => x.id === c.id);
+  assert(after.speed === 2, JSON.stringify(after));
+  const bad = await client.callTool({ name: 'set_speed', arguments: { clip_id: c.id, speed: 'fast' } });
+  assert(bad.isError, 'non-numeric speed accepted');
+  await call('undo', {});
+  assert(!(await call('get_project', {})).json.timeline.find((x) => x.id === c.id).speed, 'undo did not remove the speed');
+});
+
 await step('turning AI control off disconnects the bridge', async () => {
   await page.evaluate(() => window.cutroom.setAiEnabled(false));
   const r = await client.callTool({ name: 'get_project', arguments: {} });

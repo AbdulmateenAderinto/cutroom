@@ -13,7 +13,7 @@ import {
   OUT_PRESETS,
   keyframeValue,
 } from '../../shared/animation';
-import { type ClipItem, type Project, findMedia, layoutSequence } from '../../shared/model';
+import { type ClipItem, type Project, findMedia, layoutSequence, sourceAt, timelineAt } from '../../shared/model';
 import * as ops from '../../shared/ops';
 import { TICKS_PER_SECOND, formatTimecode, snapToFrame } from '../../shared/time';
 import { engine } from '../preview/engine';
@@ -37,12 +37,12 @@ export function AnimationSection({ clip, project }: { clip: ClipItem; project: P
   const id = clip.id;
   const dur = lay.end - lay.start;
   const inside = time >= lay.start && time < lay.end;
-  const at = snapToFrame(clip.sourceIn + (time - lay.start), media.info.frameRate, 'round');
+  const at = snapToFrame(sourceAt(clip, lay.start, time), media.info.frameRate, 'round');
   const keysAll = ANIM_PROPERTIES.flatMap((p) => anim.keyframes?.[p] ?? []).map((k) => k.at);
   const uniq = [...new Set(keysAll)].sort((a, b) => a - b);
   const toUnits = (p: AnimProperty, v: number) => (p === 'x' ? v * cw : p === 'y' ? v * ch : v * 100);
   const fromUnits = (p: AnimProperty, v: number) => (p === 'x' ? v / cw : p === 'y' ? v / ch : v / 100);
-  const seekSource = (s: number) => engine.seek(lay.start + (s - clip.sourceIn));
+  const seekSource = (s: number) => engine.seek(timelineAt(clip, lay.start, s));
   const sec = (t: number) => Math.round((t / TICKS_PER_SECOND) * 10) / 10;
 
   return (
@@ -111,7 +111,7 @@ export function AnimationSection({ clip, project }: { clip: ClipItem; project: P
             const here = keys.find((k) => k.at === at);
             const meta = LABELS[prop];
             // Keyframed value only (presets are applied on top and are not baked into keyframes).
-            const shown = Math.round(toUnits(prop, keyframeValue(keys, clip.sourceIn + (time - lay.start), prop)) * 10) / 10;
+            const shown = Math.round(toUnits(prop, keyframeValue(keys, sourceAt(clip, lay.start, time), prop)) * 10) / 10;
             return (
               <div key={prop} className="kf-row">
                 <button

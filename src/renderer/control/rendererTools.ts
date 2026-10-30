@@ -18,6 +18,8 @@ import {
   isHexColor,
   layoutSequence,
   newId,
+  sourceAt,
+  timelineAt,
 } from '../../shared/model';
 import {
   addAudioClip, deleteAudioClip, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip, setAudioClip, setAudioTrack, setSpeech, trimAudioClip,
@@ -140,6 +142,7 @@ export function projectSummary(p: Project) {
         media_name: findMedia(p, c.mediaId)?.name,
         source_in_s: sec(c.sourceIn),
         source_out_s: sec(c.sourceOut),
+        ...(c.speed ? { speed: c.speed } : {}),
         framing: c.framing,
         volume: c.volume,
         muted: c.muted,
@@ -149,7 +152,7 @@ export function projectSummary(p: Project) {
               out: c.animation.out && { preset: c.animation.out.preset, duration_s: sec(c.animation.out.duration) },
               motion: c.animation.motion,
               keyframes: Object.fromEntries(
-                Object.entries(c.animation.keyframes ?? {}).map(([k, keys]) => [k, keys!.map((kf) => ({ time_s: sec(l.start + kf.at - c.sourceIn), value: kf.value, easing: kf.easing }))]),
+                Object.entries(c.animation.keyframes ?? {}).map(([k, keys]) => [k, keys!.map((kf) => ({ time_s: sec(timelineAt(c, l.start, kf.at)), value: kf.value, easing: kf.easing }))]),
               ),
             }
           : undefined,
@@ -446,6 +449,16 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         return ok({ volume: n.volume, muted: n.muted });
       }
 
+      case 'set_speed': {
+        const c = clipOrThrow(p, args.clip_id);
+        if (findMedia(p, c.mediaId)?.info.kind === 'image') throw new ToolError('Photos have no speed. Change the clip duration with set_clip_range instead.');
+        if (!Number.isFinite(args.speed)) throw new ToolError('speed must be a number between 0.25 and 4.');
+        edit(`set speed to ${args.speed}×`, (pr) => ops.setSpeed(pr, c.id, Number(args.speed)));
+        const n = clipOrThrow(store.get().project, c.id);
+        const l = layoutSequence(store.get().project).items.find((x) => x.item.id === c.id)!;
+        return ok({ speed: n.speed ?? 1, start_s: sec(l.start), end_s: sec(l.end), project_duration_s: sec(layoutSequence(store.get().project).duration) });
+      }
+
       // ---- animation ----
       case 'set_animation': {
         const c = clipOrThrow(p, args.clip_id);
@@ -464,7 +477,7 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         const l = layoutSequence(p).items.find((x) => x.item.id === c.id)!;
         const t = T(args.time);
         if (t < l.start || t > l.end) throw new ToolError(`time must be within the clip (${sec(l.start)}–${sec(l.end)} s).`);
-        edit(`keyframed ${args.property}`, (pr) => ops.setKeyframe(pr, c.id, args.property, c.sourceIn + (t - l.start), Number(args.value), args.easing));
+        edit(`keyframed ${args.property}`, (pr) => ops.setKeyframe(pr, c.id, args.property, sourceAt(c, l.start, t), Number(args.value), args.easing));
         return ok(projectSummary(store.get().project).timeline.find((x) => x.id === c.id));
       }
       case 'remove_keyframes': {
@@ -474,7 +487,7 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
           ops.setAnimation(pr, c.id, (a) => {
             if (!args.property) return { ...a, keyframes: undefined };
             const keys = a.keyframes?.[args.property as keyof NonNullable<ClipAnimation['keyframes']>] ?? [];
-            const at = args.time === undefined ? null : c.sourceIn + (T(args.time) - l.start);
+            const at = args.time === undefined ? null : sourceAt(c, l.start, T(args.time));
             const half = frameDuration(p.frameRate) / 2; // match keyframes within half a frame
             return { ...a, keyframes: { ...a.keyframes, [args.property]: at === null ? [] : keys.filter((k) => Math.abs(k.at - at) > half) } };
           }),

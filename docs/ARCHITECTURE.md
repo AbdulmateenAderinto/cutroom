@@ -94,6 +94,12 @@ Safety: FFmpeg writes `name.mp4.partial`. The result is checked with ffprobe (co
 duration, audio present) and only then renamed to `name.mp4`. On failure or cancel the partial file is
 deleted. Arguments are always an array (`spawn`, never a shell), so any file name is safe.
 
+**Speed** (`ClipItem.speed`): timeline length = source length / speed, kept on the frame grid by
+`legalRange`. Every conversion between timeline and source time goes through `sourceAt()` /
+`timelineAt()` (split, trim, keyframes, captions, ducking, preview). Export divides video timestamps
+by the speed and time-stretches sound with `rubberband` (or `atempo`), padded so the stretcher
+doesn't drop its last window; the segment is then trimmed to an exact sample count as usual.
+
 **Range export** builds the timeline only up to the range end (the clip straddling it renders fewer
 frames, with its animation still timed on its full length), renders clips wholly before the range as
 plain background without decoding them, and trims the start off video and audio. So every frame in the
@@ -172,4 +178,3 @@ lists them; the server validates arguments. Editing tools execute in the window 
 
 - **Colour adjustments:** a second visual layer in the preview, and an extra
   overlay or `eq` stage per segment in the export plan.
-- **Speed changes:** `ClipItem.speed`. Timeline duration = source range / speed; `setpts`/`atempo` in export.

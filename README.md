@@ -12,7 +12,9 @@ Status: the core workflow (import → edit → save → export) works and is tes
   remove filler words, and burned-in captions that follow every edit.
 - **Music and photos:** audio tracks with waveforms, fades, volume up to 200% and automatic
   ducking under speech; photos (JPEG/PNG/WebP, transparency, EXIF rotation) as clips with Ken Burns moves.
-- **Titles:** text rows with styles (title, lower third, quote…), fonts, box/outline/shadow looks,
+- **Speed:** select a clip and pick 0.25×–4× in its **Speed** section (sound keeps its pitch).
+
+**Titles:** text rows with styles (title, lower third, quote…), fonts, box/outline/shadow looks,
   drag-to-position in the preview, and fade/rise/pop/typewriter animations.
 - **AI control (MCP):** let Claude Desktop or Claude Code edit with you. See [docs/AI.md](docs/AI.md).
 

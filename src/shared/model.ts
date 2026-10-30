@@ -95,8 +95,10 @@ export interface ClipItem {
   id: string;
   mediaId: string;
   sourceIn: Ticks;
-  sourceOut: Ticks; // exclusive; timeline duration = sourceOut - sourceIn (speed is always 1 for now)
+  sourceOut: Ticks; // exclusive; timeline duration = (sourceOut - sourceIn) / speed
   framing: Framing;
+  /** Playback speed, 0.25..4 (absent = 1). Sound keeps its pitch. */
+  speed?: number;
   volume: number; // 0..2 (1 = original level)
   muted: boolean;
   animation?: ClipAnimation;
@@ -213,8 +215,32 @@ export function createProject(name = 'Untitled'): Project {
   };
 }
 
+export const MIN_SPEED = 0.25;
+export const MAX_SPEED = 4;
+
+export function clipSpeed(c: ClipItem): number {
+  return c.speed ?? 1;
+}
+
+/** Timeline length of `sourceLength` ticks of a clip's media. */
+export function scaledDuration(sourceLength: Ticks, speed: number): Ticks {
+  return speed === 1 ? sourceLength : Math.round(sourceLength / speed);
+}
+
 export function itemDuration(item: TrackItem): Ticks {
-  return item.kind === 'clip' ? item.sourceOut - item.sourceIn : item.duration;
+  return item.kind === 'clip' ? scaledDuration(item.sourceOut - item.sourceIn, clipSpeed(item)) : item.duration;
+}
+
+/** Source (media) time shown at timeline time t, for a clip starting at `start` on the timeline. */
+export function sourceAt(c: ClipItem, start: Ticks, t: Ticks): Ticks {
+  const s = clipSpeed(c);
+  return c.sourceIn + (s === 1 ? t - start : Math.round((t - start) * s));
+}
+
+/** Timeline time at which source time `src` of a clip starting at `start` is shown. */
+export function timelineAt(c: ClipItem, start: Ticks, src: Ticks): Ticks {
+  const s = clipSpeed(c);
+  return start + (s === 1 ? src - c.sourceIn : Math.round((src - c.sourceIn) / s));
 }
 
 export interface LaidOutItem {

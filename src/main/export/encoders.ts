@@ -45,3 +45,21 @@ async function probe(): Promise<EncoderAvailability> {
     );
   });
 }
+
+let stretch: Promise<'rubberband' | 'atempo'> | null = null;
+
+/** The best pitch-preserving time-stretch filter in this FFmpeg build (for speed changes). */
+export function timeStretchFilter(): Promise<'rubberband' | 'atempo'> {
+  stretch ??= new Promise((resolve) => {
+    let bin: string;
+    try {
+      bin = ffmpegPath();
+    } catch {
+      return resolve('atempo');
+    }
+    execFile(bin, ['-hide_banner', '-filters'], { timeout: 15_000, maxBuffer: 4 << 20 }, (err, out) => {
+      resolve(!err && /\srubberband\s/.test(String(out)) ? 'rubberband' : 'atempo');
+    });
+  });
+  return stretch;
+}

@@ -24,6 +24,9 @@ import {
   createProject,
   findMedia,
   layoutSequence,
+  clipSpeed,
+  sourceAt,
+  timelineAt,
 } from '../../shared/model';
 import { type Ticks, TICKS_PER_SECOND, frameDuration, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { evalAnimation } from '../../shared/animation';
@@ -178,7 +181,7 @@ class PreviewEngine {
     const { width: cw, height: ch } = this.seq.project.canvas;
     const base = computeClipRect(m.info.displayWidth, m.info.displayHeight, cw, ch, clip.framing);
     const dur = l.end - l.start;
-    const st = evalAnimation(clip.animation, Math.min(Math.max(0, t - l.start), dur), dur, clip.sourceIn);
+    const st = evalAnimation(clip.animation, Math.min(Math.max(0, t - l.start), dur), dur, clip.sourceIn, clipSpeed(clip));
     const r = animateRect(base, st, cw, ch);
     el.style.opacity = String(st.opacity);
     el.style.left = `${(r.x / cw) * 100}%`;
@@ -198,7 +201,7 @@ class PreviewEngine {
   private sourceSeconds(clip: ClipItem, l: LaidOutItem, t: Ticks): number {
     // A quarter-frame nudge: seeking to an exact frame boundary can land on the previous frame.
     const nudge = frameDuration(findMedia(this.seq.project, clip.mediaId)?.info.frameRate ?? this.seq.project.frameRate) / 4;
-    return ticksToSeconds(clip.sourceIn + (t - l.start) + nudge);
+    return ticksToSeconds(sourceAt(clip, l.start, t) + nudge);
   }
 
   /** Show the frame at timeline time t (paused). */
@@ -242,6 +245,10 @@ class PreviewEngine {
     const displayT = Math.min(t, l.end - this.frame());
     const target = this.sourceSeconds(clip, l, displayT);
     if (Math.abs(el.currentTime - target) > (forPlay ? 0.02 : 0.002)) el.currentTime = target;
+    // Speed: the element plays its media faster/slower; pitch is kept (as in the export).
+    const rate = clipSpeed(clip);
+    if (el.playbackRate !== rate) el.playbackRate = rate;
+    el.preservesPitch = true;
     this.applyStyle(idx, l, displayT);
     this.show(idx);
     return el;
@@ -309,7 +316,7 @@ class PreviewEngine {
     const el = this.active >= 0 ? this.els[this.active] : null;
     if (l.item.kind === 'clip' && el && el.style.display !== 'none') {
       const clip = l.item;
-      t = l.start + (secondsToTicks(el.currentTime) - clip.sourceIn);
+      t = timelineAt(clip, l.start, secondsToTicks(el.currentTime));
       if (el.ended) t = l.end;
     } else {
       t = this.wallT0 + secondsToTicks((performance.now() - this.wallStart) / 1000);

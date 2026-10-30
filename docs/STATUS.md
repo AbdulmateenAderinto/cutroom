@@ -48,7 +48,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 39 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 40 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -79,12 +79,22 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Move, trim, split, duplicate, delete, undo; save/reopen | ✅ | |
 | AI tools: `add_title`, `set_title`, `remove_title` | ✅ | |
 
+## Speed
+
+| Feature | Status | Notes |
+|---|---|---|
+| Constant speed per clip, 0.25×–4× (buttons or typed, two decimals) | ✅ | Clip keeps its footage; timeline length changes (ripple) |
+| Every exported frame is the expected source frame (0.25×, 0.5×, 1.5×, 2×) | ✅ | Decoded frame numbers checked one by one |
+| Sound keeps its pitch | ✅ | `rubberband` when FFmpeg has it, else `atempo`; see limitations for sync |
+| Split, trim, keyframes, captions, ducking and pause removal follow the speed | ✅ | |
+| Preview plays at the speed (`playbackRate`, pitch kept) and matches the export | ✅ | |
+| AI tool `set_speed` | ✅ | |
+
 ## Planned, in this order
 
-1. 🔜 Constant-speed changes
-2. 🔜 Transitions (crossfade, dip to colour)
-3. 🔜 Exposure, contrast, saturation, temperature
-4. 🔜 `.app`/`.dmg` packaging
+1. 🔜 Transitions (crossfade, dip to colour)
+2. 🔜 Exposure, contrast, saturation, temperature
+3. 🔜 `.app`/`.dmg` packaging
 
 Not planned yet: generative tools, background removal, motion tracking, optical flow,
 plugins, complex compositing, proxies.
@@ -157,6 +167,10 @@ dialog preselects the range, a CRF 24 export of the range has exactly 45 frames 
 frame 30, presets apply/save/reload/delete, the hardware encoder is disabled with its reason when it
 doesn't work, and Alt+X clears the range.
 
+**Speed UI run (seventh script, 5 steps):** 2× button halves the clip and labels it, the preview
+shows source 2 s at timeline 1 s and plays at playbackRate 2, typing 0.5 gives 8 s and undo restores,
+and preview vs export at two frames (each closer to its own export frame than to frames 3 away).
+
 **MCP run (`npm run test:mcp`, 12 steps):** security checks (no token, wrong token, browser origin
 all refused), tool listing, import, contact sheet and frames, `build_timeline`, editing plus undo/redo,
 readable errors for bad input, timeline frame capture, export with polling, analysis tools, speech
@@ -211,6 +225,12 @@ progress/result screens, missing-media state and the gap rendering.
   frame each output frame; extreme zooms (> 8192 px) are clamped.
 - **Scene detection** uses brightness changes: cuts between shots of similar brightness and colour
   can be missed. Lower the sensitivity to find more.
+- **Speed and sound:** pitch-preserving time stretch is not sample-exact. Measured beep-vs-flash offsets
+  in exports (negative = sound early): with `rubberband` (used when the FFmpeg build has it, as
+  Homebrew's does) −51 ms at 0.25×, −30 ms at 0.5×, +8…+15 ms at 2×; with the `atempo` fallback up to
+  −118 ms at 0.25×, −44 ms at 0.5×, −15 ms at 2×. Normal-speed clips are unaffected (sample-exact).
+  The preview uses Chromium's own time stretch, whose offset has not been measured. Speed ramps
+  (changing speed within a clip) are not supported.
 - **Titles:** fonts are the ones installed on the computer (a fallback is used if one is missing), so a
   project can look different on another Mac. Text is drawn at the output resolution, so export is sharp;
   the preview draws at the on-screen size. No per-word styling, rotation or keyframed motion for titles yet.

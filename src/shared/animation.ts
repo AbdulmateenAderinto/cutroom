@@ -143,9 +143,9 @@ function combine(a: AnimState, b: AnimState): AnimState {
  * rel: time since the clip's start on the timeline; duration: the clip's timeline duration;
  * sourceIn: the clip's in-point (rel + sourceIn = source time, used for keyframes).
  */
-export function evalAnimation(anim: ClipAnimation | undefined, rel: Ticks, duration: Ticks, sourceIn: Ticks): AnimState {
+export function evalAnimation(anim: ClipAnimation | undefined, rel: Ticks, duration: Ticks, sourceIn: Ticks, speed = 1): AnimState {
   if (!anim) return IDENTITY;
-  const s = sourceIn + rel;
+  const s = sourceIn + (speed === 1 ? rel : Math.round(rel * speed)); // keyframes sit on source time
   const kf = anim.keyframes ?? {};
   let st: AnimState = {
     scale: keyframeValue(kf.scale, s, 'scale'),

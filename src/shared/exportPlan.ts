@@ -24,6 +24,7 @@ import {
   evenDim,
   findMedia,
   layoutSequence,
+  clipSpeed,
 } from './model';
 import {
   type Rational,
@@ -173,8 +174,37 @@ export interface CaptionTrack {
 }
 
 export interface ExportExtras {
+  /**
+   * Pitch-preserving time stretch for speed changes: 'rubberband' when the FFmpeg build has it
+   * (sound lines up within ~50 ms at 0.25×, ~30 ms at 0.5×, ~15 ms when faster), else 'atempo'
+   * (up to ~120 ms early at 0.25×, ~40 ms at 0.5×). Measured with beeps; see STATUS.md.
+   */
+  timeStretch?: 'rubberband' | 'atempo';
   /** ffconcat file listing caption PNGs (canvas-in-output size) with durations; see exportRunner. */
   captionTrack?: string;
+}
+
+/**
+ * Pitch-preserving tempo change for a speed. rubberband handles any ratio in one stage; atempo
+ * handles 0.5–2× per stage (chained for 0.25× and 4×).
+ */
+function tempoFilter(speed: number, kind: 'rubberband' | 'atempo'): string {
+  if (speed === 1) return '';
+  if (kind === 'rubberband') return `apad=pad_dur=0.5,rubberband=tempo=${speed},`;
+  const stages: number[] = [];
+  let r = speed;
+  while (r > 2) {
+    stages.push(2);
+    r /= 2;
+  }
+  while (r < 0.5) {
+    stages.push(0.5);
+    r /= 0.5;
+  }
+  stages.push(r);
+  // apad first: at the end of a file there is nothing more to read, and without trailing input
+  // atempo drops its last window (measured: 10 ms of silence at 0.5×, 35 ms at 0.25×).
+  return 'apad=pad_dur=0.25,' + stages.map((x) => `atempo=${Math.round(x * 1e6) / 1e6},`).join('');
 }
 
 export function buildExportPlan(project: Project, s: ExportSettings, outputFile: string, mediaPath: (m: MediaRef) => string, extras: ExportExtras = {}): ExportPlan {
@@ -241,7 +271,13 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       : `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${info.colorRange === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
     // Transparent PNG/WebP keep their alpha so the background colour shows through.
     const fgFormat = isImage && info.hasAlpha ? 'yuva420p' : 'yuv420p';
-    const readFor0 = ticksToSeconds(item.sourceOut - item.sourceIn) + 2 * ticksToSeconds(frameDuration(rate));
+    const speed = clipSpeed(item);
+    // Speed: timestamps are divided by the speed (frames shown sooner/later); sound is time-stretched
+    // with its pitch kept (tempoFilter), like the preview (HTMLMediaElement.preservesPitch).
+    const pts = speed === 1 ? 'setpts=PTS-STARTPTS' : `setpts=(PTS-STARTPTS)/${speed}`;
+    // The time stretch needs input past the clip's end to produce its last output window, so read
+    // a little more where the file has it (the exact sample trim below removes the excess).
+    const readFor0 = ticksToSeconds(item.sourceOut - item.sourceIn) + 2 * speed * ticksToSeconds(frameDuration(rate)) + (speed === 1 ? 0 : 0.25);
     let lead = 0;
     if (isImage) {
       // A still image, repeated at the output frame rate for as long as the clip lasts.
@@ -273,7 +309,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       let first = prev;
       for (let j = 0; j < frames; j++) {
         const rel = Math.max(0, frameToTicks(f0 + j, rate) - l.start);
-        const st = evalAnimation(item.animation, Math.min(rel, dur), dur, item.sourceIn);
+        const st = evalAnimation(item.animation, Math.min(rel, dur), dur, item.sourceIn, clipSpeed(item));
         const r = animateRect(r0, st, cw, ch);
         const cur = {
           w: Math.min(MAX_ANIMATED_DIM, Math.max(2, Math.round(r.w * k))),
@@ -295,7 +331,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       filters.push(
         // Pixel format is converted BEFORE the resizing scale: a format filter after it would
         // stop size changes from reaching the overlay (verified with FFmpeg 6.1).
-        `[${i}:v:0]setpts=PTS-STARTPTS,${decode}${isImage ? `scale=${colour.slice(1)},` : ''}format=${fgFormat},${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic${isImage ? '' : colour},setsar=1[fg${n}]`,
+        `[${i}:v:0]${pts},${decode}${isImage ? `scale=${colour.slice(1)},` : ''}format=${fgFormat},${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic${isImage ? '' : colour},setsar=1[fg${n}]`,
       );
       if (fade) filters.push(`[bg${n}]split[bga${n}][bgb${n}]`);
       const base = fade ? `bga${n}` : `bg${n}`;
@@ -318,7 +354,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       const rotated = info.rotation % 180 !== 0;
       const fw = rotated ? info.height : info.width;
       const fh = rotated ? info.width : info.height;
-      const chain = ['setpts=PTS-STARTPTS', ...(isImage ? ['format=rgba'] : [])];
+      const chain = [pts, ...(isImage ? ['format=rgba'] : [])];
       const fullyVisible = R.x >= 0 && R.y >= 0 && R.x + R.w <= bw + 0.5 && R.y + R.h <= bh + 0.5;
       if (!fullyVisible) {
         // Source region that maps onto the visible part, clamped to the frame (rounding of the
@@ -341,7 +377,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
 
     if (info.hasAudio && !item.muted && item.volume > 0) {
       filters.push(
-        `[${i}:a:0]atrim=start=${f6(lead)},asetpts=PTS-${f6(lead)}/TB,` +
+        `[${i}:a:0]atrim=start=${f6(lead)},asetpts=PTS-${f6(lead)}/TB,${tempoFilter(speed, extras.timeStretch ?? 'atempo')}` +
           `aresample=${sr}:async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo,` +
           `volume=${item.volume.toFixed(4)},apad,atrim=end_sample=${samples}[${a}]`,
       );
