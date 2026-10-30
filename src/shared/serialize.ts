@@ -40,6 +40,8 @@ function migrate(data: any): Project {
   if (data.version === 3) data.version = 4;
   // v4 → v5: titles were added as an optional field; nothing to convert.
   if (data.version === 4) data.version = 5;
+  // v5 → v6: overlay video tracks were added as an optional field; nothing to convert.
+  if (data.version === 5) data.version = 6;
   return data as Project;
 }
 
@@ -71,6 +73,12 @@ function validate(p: Project) {
       check(mediaIds.has(c.mediaId), `audio clip ${c.id} refers to unknown media`);
       check(isInt(c.start) && c.start >= 0 && isInt(c.sourceIn) && isInt(c.sourceOut) && c.sourceOut > c.sourceIn, `audio clip ${c.id} has bad timing`);
     }
+  }
+  for (const o of p.overlays ?? []) {
+    check(typeof o.id === 'string' && mediaIds.has(o.mediaId), `overlay ${o.id} refers to unknown media`);
+    check(isInt(o.start) && o.start >= 0 && isInt(o.row) && o.row >= 0, `overlay ${o.id} has bad placement`);
+    check(isInt(o.sourceIn) && isInt(o.sourceOut) && o.sourceOut > o.sourceIn && o.sourceIn >= 0, `overlay ${o.id} has bad in/out points`);
+    check(['fit', 'fill', 'manual'].includes(o.framing?.mode), `overlay ${o.id} has bad framing`);
   }
   for (const t of p.titles ?? []) {
     check(typeof t.id === 'string' && typeof t.text === 'string' && t.style && typeof t.style === 'object', 'bad title');

@@ -76,6 +76,7 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Import | MP4/MOV/MKV/WebM/AVI/MTS/MXF… (H.264, HEVC, ProRes, DNxHR…), GIF; MP3/WAV/AIFF/OGG…; JPEG/PNG/TIFF/HEIC (Mac). Preview copies for formats the preview can't play |
 | Editing | Trim, split, delete (close gap / leave gap), reorder, duplicate, undo/redo, snapping, frame stepping |
 | Framing | Canvas presets (16:9, 9:16, 1:1, 4:5, custom), Fit / Fill / Manual per clip |
+| Overlays | Video tracks V2, V3… over the main track: picture-in-picture (**⧉ PiP** in the Media panel), corner presets, drag/resize in the preview |
 | Animation | In/out presets, slow zoom/pan, keyframes with easing |
 | Music | Audio tracks, waveforms, fades, volume to 200%, auto-ducking under speech |
 | Photos | JPEG/PNG/WebP clips, EXIF rotation, transparency, Ken Burns |
@@ -85,9 +86,9 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Colour | Exposure, contrast, saturation, temperature |
 | Smart tools | Remove pauses, split at scenes, transcribe (whisper.cpp), remove filler words, captions |
 | Export | H.264, HEVC (Apple `hvc1`) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
-| AI | 42 MCP tools so Claude can edit, look at frames and export |
+| AI | 45 MCP tools so Claude can edit, look at frames and export |
 
-Projects save as `.cutroom` files (format version 5; older ones open fine).
+Projects save as `.cutroom` files (format version 6; older ones open fine).
 
 ## 6. Verify on your Mac (not possible in the cloud session)
 
@@ -97,6 +98,7 @@ Tick these off; anything that fails is worth a GitHub issue or a message to Clau
 - [ ] Import a few iPhone clips (HEVC, portrait, maybe HDR) and **HEIC photos** (converted with macOS's sips — untested so far).
 - [ ] Import a ProRes or camera file (.mov/.mts/.mxf): "Preparing…" then preview; export matches.
 - [ ] Playback is smooth with real 4K footage; music stays in sync.
+- [ ] Picture-in-picture: two 4K clips at once (main + PiP) still play smoothly; the PiP stays in sync.
 - [ ] Export with **Apple hardware — VideoToolbox** in the export dialog (it is only offered if a test encode works).
 - [ ] AirDrop an *Apple devices — HEVC* export to an iPhone; open it in Photos. Open a ProRes export in Final Cut Pro.
 - [ ] Try the keyboard shortcuts (press **?** for the list), especially J/K/L and ⌘C/⌘V on a Mac keyboard.
@@ -166,5 +168,4 @@ cd ~/cutroom && claude
 A good first message: *"Read HANDOFF.md and docs/STATUS.md, run `npm test` and `npm run test:e2e`
 on this Mac, and fix anything that fails. Then work through the checklist in HANDOFF.md section 6."*
 
-Ideas for what's next: speed ramps, more transition shapes, a second video track (picture-in-picture),
-curves/LUTs, notarized builds, bundled FFmpeg (needs a licensing decision), proxies for 4K editing.
+Ideas for what's next: speed ramps, more transition shapes, curves/LUTs, notarized builds, bundled FFmpeg (needs a licensing decision), proxies for 4K editing.

@@ -69,6 +69,12 @@ H.264/HEVC on macOS via VideoToolbox).
 - Preview quality is not export quality: the browser decodes the original and draws it at preview
   size; export always renders from the original files at the chosen output size.
 
+- Overlay-track clips (`Project.overlays`, src/shared/overlays.ts) each get their own `<video>`/`<img>`
+  in a layer above the main track (and its dips) and below titles/captions, created about 2 s before
+  they start and removed after. They follow the timeline clock like music: `playbackRate` = speed ×
+  shuttle, re-seeked only on real drift (> 0.1 s), seeked exactly when paused. They are positioned with
+  the same `applyStyle()` as main clips, via `overlayLayout()` (an overlay seen as a laid-out clip).
+
 If preview of heavy footage (4K HEVC, long GOP) becomes sluggish, the hook for proxies is
 `elementFor()` in the engine. It would load a proxy URL instead of the original, while export keeps using originals.
 
@@ -85,6 +91,13 @@ photo: -loop 1 -framerate <output rate> -t … -i file, decoded to RGB(A) → sa
 gap:   background colour × N frames + silence × M samples
 then:  concat → (pad or crop if the output aspect differs, chosen explicitly) → libx264 + AAC → MP4
 ```
+
+**Overlay tracks** (picture-in-picture): after the concat, each overlay clip goes through the same
+`renderClip()` as a main clip, but on a transparent canvas (`layer` mode: `color=black@0`, `yuva420p`;
+fades scale the alpha with `blend` `c3_opacity` instead of mixing with the background colour), for
+its own frames only. It is shifted to its start (`setpts=…+start/TB`) and laid over the main track with
+`overlay=…:eof_action=pass`, lowest row first. Its sound is delayed to its start (`adelay`) and mixed
+with the audio tracks. Nothing past the main track's end is exported (as for audio tracks).
 
 N and M come from the cumulative timeline boundaries rounded once each, with audio boundaries derived
 from the same video frame boundaries. So no rounding drift builds up, and every cut is sample-aligned

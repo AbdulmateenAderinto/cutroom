@@ -236,6 +236,37 @@ export const CONTROL_TOOLS: ToolDef[] = [
     description: 'Delete a title.',
     inputSchema: obj({ title_id: str('title id') }, ['title_id']),
   },
+  // ---- Overlay tracks (picture-in-picture) ----
+  {
+    name: 'add_overlay',
+    runs: 'renderer',
+    description: 'Put a video or photo on an overlay track (V2, V3, …) over the main track at a TIMELINE time: picture-in-picture, a logo, a cutaway. By default it is 35% of its Fit size in the bottom-right corner, on the lowest free track (overlays never overlap on a track; higher tracks draw on top). Its sound is mixed in. Overlays keep their timeline position when main-track clips are edited; nothing past the end of the main track is exported. The clip tools (set_framing, set_color, set_speed, set_animation, set_keyframe, set_clip_audio) also work with an overlay id. Check with get_frame.',
+    inputSchema: obj({
+      media_id: str('media id (video or photo)'),
+      start: num('timeline seconds (default: the playhead)'),
+      row: num('overlay track: 0 = V2, 1 = V3, … (default: lowest free)'),
+      position: str('where to put it', { enum: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight', 'center', 'full'] }),
+      size: num('fraction of the Fit size, e.g. 0.35 (ignored for full)'),
+      source_in: num('seconds into the file'),
+      source_out: num('seconds into the file'),
+    }, ['media_id']),
+  },
+  {
+    name: 'set_overlay',
+    runs: 'renderer',
+    description: 'Change an overlay clip: move it (start, row), place it (position, size), or trim it (source_in/source_out in file seconds). Only the given fields change.',
+    inputSchema: obj({
+      overlay_id: str('overlay id'), start: num('timeline seconds'), row: num('overlay track (0 = V2)'),
+      position: str('where to put it', { enum: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight', 'center', 'full'] }), size: num('fraction of the Fit size'),
+      source_in: num('file seconds'), source_out: num('file seconds'),
+    }, ['overlay_id']),
+  },
+  {
+    name: 'remove_overlay',
+    runs: 'renderer',
+    description: 'Delete an overlay clip.',
+    inputSchema: obj({ overlay_id: str('overlay id') }, ['overlay_id']),
+  },
   // ---- Audio tracks (music, voice-over) ----
   {
     name: 'add_audio',

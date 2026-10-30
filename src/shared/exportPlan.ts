@@ -33,6 +33,7 @@ import {
 } from './model';
 import { dipColour, resolveTransitions } from './transitions';
 import { clipColor, ffmpegMixer } from './color';
+import { overlayLayout, overlays } from './overlays';
 import {
   type Rational,
   type Ticks,
@@ -286,6 +287,10 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     `color=c=${bg}:s=${w}x${h}:r=${rateStr},trim=end_frame=${frames},format=rgb24,` +
     `scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1`;
 
+  // Fully transparent canvas, for overlay-track clips.
+  const clear = (w: number, h: number, frames: number) =>
+    `color=c=black@0:s=${w}x${h}:r=${rateStr},trim=end_frame=${frames},format=yuva420p,setsar=1`;
+
   const inputs: string[] = [];
   const filters: string[] = [];
   const concatPads: string[] = [];
@@ -315,14 +320,18 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
    * Clip `l` composed on the canvas for output frames [f0, f1). The frames may reach past the
    * clip's own edges (a crossfade shows footage before its start / after its end); source times
    * always come from sourceAt(), so they match the preview.
+   *
+   * `layer`: composed on a transparent canvas instead (an overlay-track clip, laid over the main
+   * track afterwards); fades then change the alpha instead of mixing with the background colour.
    */
-  const renderClip = (l: LaidOutItem, f0: number, f1: number): [string, string] => {
+  const renderClip = (l: LaidOutItem, f0: number, f1: number, layer = false): [string, string] => {
     const n = segN++;
     const frames = f1 - f0;
     const samples = samplesOf(f0, f1);
     const v = `v${n}`;
     const a = `a${n}`;
-    filters.push(`${background(bw, bh, frames)}[bg${n}]`);
+    const outFmt = layer ? 'yuva420p' : 'yuv420p';
+    filters.push(`${layer ? clear(bw, bh, frames) : background(bw, bh, frames)}[bg${n}]`);
     const silence = `anullsrc=r=${sr}:cl=stereo,atrim=end_sample=${samples}[${a}]`;
     const item = l.item as ClipItem;
     const srcStart = sourceAt(item, l.start, frameToTicks(f0, rate));
@@ -344,7 +353,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       ? ':out_color_matrix=bt709:out_range=tv'
       : `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${range === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
     // Transparent PNG/WebP keep their alpha so the background colour shows through.
-    const fgFormat = isImage && info.hasAlpha ? 'yuva420p' : 'yuv420p';
+    const fgFormat = layer || (isImage && info.hasAlpha) ? 'yuva420p' : 'yuv420p';
     const speed = clipSpeed(item);
     // Speed: timestamps are divided by the speed (frames shown sooner/later); sound is time-stretched
     // with its pitch kept (tempoFilter), like the preview (HTMLMediaElement.preservesPitch).
@@ -407,7 +416,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
         const at = Math.max(0, j / (rate.num / rate.den) - quarter).toFixed(6);
         if (j > 0 && (cur.w !== prev.w || cur.h !== prev.h)) sizeCmds.push(`${at} scale@s${n} w ${cur.w}, scale@s${n} h ${cur.h}`);
         if (j > 0 && (cur.x !== prev.x || cur.y !== prev.y)) posCmds.push(`${at} overlay@o${n} x ${cur.x}, overlay@o${n} y ${cur.y}`);
-        if (j > 0 && cur.o !== prev.o) opCmds.push(`${at} ${['c0', 'c1', 'c2'].map((c) => `blend@b${n} ${c}_opacity ${cur.o}`).join(', ')}`);
+        if (j > 0 && cur.o !== prev.o) opCmds.push(`${at} ${(layer ? ['c3'] : ['c0', 'c1', 'c2']).map((c) => `blend@b${n} ${c}_opacity ${cur.o}`).join(', ')}`);
         prev = cur;
       }
       const sendcmd = (cmds: string[]) => (cmds.length ? `sendcmd=c='${cmds.join(';')}',` : '');
@@ -420,14 +429,17 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       if (fade) filters.push(`[bg${n}]split[bga${n}][bgb${n}]`);
       const base = fade ? `bga${n}` : `bg${n}`;
       filters.push(`[${base}]${sendcmd(posCmds).replace(/,$/, '') || 'null'}[bgp${n}]`);
-      const layer = fade ? `lay${n}` : v;
+      const lay = fade ? `lay${n}` : v;
       filters.push(
-        `[bgp${n}][fg${n}]overlay@o${n}=x=${first.x}:y=${first.y}:eof_action=repeat:format=auto,trim=end_frame=${frames},format=yuv420p[${layer}]`,
+        `[bgp${n}][fg${n}]overlay@o${n}=x=${first.x}:y=${first.y}:eof_action=repeat:format=auto,trim=end_frame=${frames},format=${outFmt}[${lay}]`,
       );
       if (fade) {
         filters.push(`[bgb${n}]${sendcmd(opCmds).replace(/,$/, '') || 'null'}[bgo${n}]`);
         const o = first.o;
-        filters.push(`[${layer}][bgo${n}]blend@b${n}=all_mode=normal:c0_opacity=${o}:c1_opacity=${o}:c2_opacity=${o},format=yuv420p[${v}]`);
+        // On the main track the picture is mixed with the background colour; on an overlay track
+        // only the alpha changes (colour from the clip, alpha × opacity).
+        const ops = layer ? `c0_opacity=1:c1_opacity=1:c2_opacity=1:c3_opacity=${o}` : `c0_opacity=${o}:c1_opacity=${o}:c2_opacity=${o}`;
+        filters.push(`[${lay}][bgo${n}]blend@b${n}=all_mode=normal:${ops},format=${outFmt}[${v}]`);
       }
     } else if (V) {
       const ox = Math.round(V.x);
@@ -454,9 +466,9 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       chain.push(`scale=w=${ow}:h=${oh}:flags=bicubic${colour}`, `format=${fgFormat}`, 'setsar=1');
       filters.push(`[${i}:v:0]${chain.join(',')}[fg${n}]`);
       // overlay keeps going while the clip input lasts, so cut back to exactly N frames.
-      filters.push(`[bg${n}][fg${n}]overlay=x=${ox}:y=${oy}:eof_action=repeat:format=auto,trim=end_frame=${frames},format=yuv420p[${v}]`);
+      filters.push(`[bg${n}][fg${n}]overlay=x=${ox}:y=${oy}:eof_action=repeat:format=auto,trim=end_frame=${frames},format=${outFmt}[${v}]`);
     } else {
-      filters.push(`[bg${n}]format=yuv420p[${v}]`); // framed entirely off-canvas
+      filters.push(`[bg${n}]format=${outFmt}[${v}]`); // framed entirely off-canvas
     }
 
     if (info.hasAudio && !item.muted && item.volume > 0) {
@@ -541,15 +553,37 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   }
 
   filters.push(`${concatPads.join('')}concat=n=${concatPads.length}:v=1:a=1[vcat0][acat]`);
+
+  // ---- Overlay tracks (picture-in-picture): each clip rendered on a transparent canvas for its own
+  // frames, shifted to its start and laid over the main track (lowest row first, so higher rows end
+  // up on top). Like audio tracks, nothing plays past the main track's end.
+  const overlayAudio: string[] = [];
+  let vMain = '[vcat0]';
+  [...overlays(project)].sort((x, y) => x.row - y.row || x.start - y.start).forEach((o, oi) => {
+    const lo = overlayLayout(o);
+    const f0 = Math.max(fr(lo.start), rangeA);
+    const f1 = Math.min(fr(lo.end), totalFrames);
+    if (f1 <= f0) return;
+    const [ov, oa] = renderClip(lo, f0, f1, true);
+    const t0 = f6(ticksToSeconds(frameToTicks(f0, rate)));
+    filters.push(`${ov}setpts=PTS-STARTPTS+${t0}/TB[ovs${oi}]`);
+    filters.push(`${vMain}[ovs${oi}]overlay=x=0:y=0:eof_action=pass:format=auto,format=yuv420p[vov${oi}]`);
+    vMain = `[vov${oi}]`;
+    if (o.muted || o.volume === 0 || !findMedia(project, o.mediaId)?.info.hasAudio) return;
+    filters.push(`${oa}adelay=delays=${ticksToSamples(frameToTicks(f0, rate), sr)}S:all=1[ova${oi}]`);
+    overlayAudio.push(`[ova${oi}]`);
+  });
+  if (vMain !== '[vcat0]') filters.push(`${vMain}null[vcat1]`);
+  const vBase = vMain === '[vcat0]' ? '[vcat0]' : '[vcat1]';
   if (extras.captionTrack) {
     // Caption images (drawn by the app, so they match the preview) as one timed PNG stream.
     // RGB → YUV with BT.709, like the backgrounds, so coloured text keeps its colour.
     inputs.push('-f', 'concat', '-safe', '0', '-i', extras.captionTrack);
     filters.push(`[${inputIndex}:v:0]format=rgba,scale=out_color_matrix=bt709:out_range=tv,format=yuva420p[cap]`);
-    filters.push(`[vcat0][cap]overlay=x=0:y=0:format=auto:eof_action=pass,format=yuv420p[vcat]`);
+    filters.push(`${vBase}[cap]overlay=x=0:y=0:format=auto:eof_action=pass,format=yuv420p[vcat]`);
     inputIndex++;
   } else {
-    filters.push('[vcat0]null[vcat]');
+    filters.push(`${vBase}null[vcat]`);
   }
   if (bw === s.width && bh === s.height) {
     filters.push('[vcat]setsar=1,format=yuv420p[vfull]');
@@ -620,6 +654,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     trackPads.push(`[trk${ti}]`);
   });
   let audioOut = '[acat]';
+  trackPads.push(...overlayAudio);
   if (trackPads.length) {
     // Sum (not average) the tracks, then a transparent limiter so loud overlaps cannot clip.
     filters.push(`[acat]${trackPads.join('')}amix=inputs=${trackPads.length + 1}:normalize=0:duration=first,alimiter=limit=0.98:level=0:latency=1[amix]`);

@@ -1,5 +1,6 @@
 /**
- * Timeline: one magnetic video track (clips play back-to-back; audio travels with each clip).
+ * Timeline: one magnetic main video track (clips play back-to-back; audio travels with each clip),
+ * freely placed overlay video tracks above it (picture-in-picture), text rows and audio tracks.
  *
  * Mouse:
  *   - click a clip to select it; drag its body to reorder
@@ -19,6 +20,8 @@ import { playhead, usePlayhead } from '../state/playhead';
 import { beginGesture, commit, endGesture, store, updateGesture, useStore } from '../state/store';
 import { AudioTracks } from './AudioTracks';
 import { TextRows } from './TextRows';
+import { OverlayRows } from './OverlayRows';
+import { overlayEnd } from '../../shared/overlays';
 import { TRANSITION_KINDS, resolveTransitions } from '../../shared/transitions';
 import { MEDIA_DRAG_TYPE } from './MediaBin';
 import { audioClipEnd } from '../../shared/audio';
@@ -93,8 +96,9 @@ export function Timeline() {
   const audioEdges = (exclude?: string) =>
     (project.audioTracks ?? []).flatMap((tr) => tr.clips.filter((c) => c.id !== exclude).flatMap((c) => [c.start, audioClipEnd(c)]));
   const titleEdges = (exclude?: string) => (project.titles ?? []).filter((t) => t.id !== exclude).flatMap((t) => [t.start, t.start + t.duration]);
+  const overlayEdges = (exclude?: string) => (project.overlays ?? []).filter((o) => o.id !== exclude).flatMap((o) => [o.start, overlayEnd(o)]);
   const freeSnap = (t: Ticks, alt: boolean, exclude?: string) =>
-    snapTime(t, [...cutPoints(), playhead.get().time, ...audioEdges(exclude), ...titleEdges(exclude)], alt);
+    snapTime(t, [...cutPoints(), playhead.get().time, ...audioEdges(exclude), ...titleEdges(exclude), ...overlayEdges(exclude)], alt);
 
   const insertionIndex = (t: Ticks) => lay.items.filter((l) => (l.start + l.end) / 2 < t).length;
 
@@ -222,7 +226,7 @@ export function Timeline() {
   const markerIndex = drag ? drag.index : dropIndex;
   const markerX = markerIndex === null ? null : tToX(markerIndex < lay.items.length ? lay.items[markerIndex].start : lay.duration);
   const selectedId = selection?.kind === 'item' ? selection.id : null;
-  const hasSelection = !!selectedId || selection?.kind === 'audio' || selection?.kind === 'title';
+  const hasSelection = !!selectedId || selection?.kind === 'audio' || selection?.kind === 'title' || selection?.kind === 'overlay';
   const previewIdx = trimPreview ? lay.items.findIndex((l) => l.item.id === trimPreview.id) : -1;
 
   return (
@@ -266,6 +270,7 @@ export function Timeline() {
         <div className="tl-content" style={{ width: contentWidth }}>
           <Ruler pps={pps} scrollLeft={scroll.left} width={scroll.width} rate={rate} onPointerDown={onRulerDown} />
           <TextRows pps={pps} tToX={tToX} xToT={xToT} contentX={contentX} duration={lay.duration} snap={freeSnap} />
+          <OverlayRows pps={pps} tToX={tToX} xToT={xToT} contentX={contentX} duration={lay.duration} snap={freeSnap} />
           <div className="tl-track" onDragOver={onDragOver} onDragLeave={() => setDropIndex(null)} onDrop={onDrop}>
             {lay.items.length === 0 && (
               <div className="tl-empty">Drag media here, or use “+ Add to timeline” in the Media panel.</div>

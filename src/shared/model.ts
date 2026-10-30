@@ -14,8 +14,8 @@ import type { CaptionSettings } from './captions';
 import type { Rational, Ticks } from './time';
 
 export const PROJECT_FORMAT = 'cutroom-project';
-/** v2: clip animations. v3: transcripts and captions. v4: audio tracks and audio-only media. */
-export const PROJECT_VERSION = 5;
+/** v2: clip animations. v3: transcripts and captions. v4: audio tracks and audio-only media. v5: titles. v6: overlay video tracks. */
+export const PROJECT_VERSION = 6;
 export const PROJECT_EXTENSION = 'cutroom';
 
 export type MediaKind = 'video' | 'audio' | 'image';
@@ -118,6 +118,16 @@ export interface ClipItem {
   animation?: ClipAnimation;
 }
 
+/**
+ * A clip on an overlay video track (V2, V3, …): placed freely in time, drawn over the main track
+ * (higher rows on top), e.g. picture-in-picture. It has every property of a main-track clip.
+ */
+export interface OverlayClip extends Omit<ClipItem, 'kind' | 'transition'> {
+  kind: 'overlay';
+  row: number; // 0 = V2, just above the main track
+  start: Ticks; // timeline time
+}
+
 /** A clip on an audio track. Unlike the video track, audio clips are placed freely in time. */
 export interface AudioClip {
   id: string;
@@ -203,6 +213,8 @@ export interface Project {
   captions?: CaptionSettings;
   /** Music / voice-over tracks, mixed under the video track's audio. */
   audioTracks?: AudioTrack[];
+  /** Overlay video tracks (picture-in-picture, stacked clips), drawn over the main track. */
+  overlays?: OverlayClip[];
   /** Titles and text overlays, drawn above the picture (and below captions). */
   titles?: TitleClip[];
 }

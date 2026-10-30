@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { evalAnimation } from '../../shared/animation';
-import { type ClipItem, animateRect, clipSpeed, computeClipRect, findMedia, layoutSequence, toManualFraming } from '../../shared/model';
+import { type ClipItem, type LaidOutItem, animateRect, clipSpeed, computeClipRect, findMedia, layoutSequence, toManualFraming } from '../../shared/model';
+import { asClip, overlayLayout, overlaysAt } from '../../shared/overlays';
 import { setFraming } from '../../shared/ops';
 import { formatTimecode } from '../../shared/time';
 import { OverlayLayer, TitleHandles } from '../captions/OverlayLayer';
@@ -29,15 +30,26 @@ function useStageSize(wrap: React.RefObject<HTMLDivElement | null>, aspect: numb
   return size;
 }
 
-/** The clip under the playhead on the timeline (not in source preview). */
-function useClipUnderPlayhead(): ClipItem | null {
+interface Target {
+  clip: ClipItem;
+  lay: LaidOutItem;
+  overlay: boolean;
+}
+
+/**
+ * Clips in the picture at the playhead (not in source preview), topmost first: overlay-track clips
+ * (highest track first), then the main-track clip.
+ */
+function useTargetsUnderPlayhead(): Target[] {
   const project = useStore((s) => s.project);
   const sourceMode = useStore((s) => s.previewMediaId !== null);
   const time = usePlayhead((p) => p.time);
-  if (sourceMode) return null;
+  if (sourceMode) return [];
+  const out: Target[] = overlaysAt(project, time).reverse().map((o) => ({ clip: asClip(o), lay: overlayLayout(o), overlay: true }));
   const lay = layoutSequence(project);
   const hit = lay.items.find((l) => time >= l.start && time < l.end) ?? (time >= lay.duration ? lay.items[lay.items.length - 1] : undefined);
-  return hit?.item.kind === 'clip' ? hit.item : null;
+  if (hit?.item.kind === 'clip') out.push({ clip: hit.item, lay: hit, overlay: false });
+  return out;
 }
 
 export function PreviewPanel() {
@@ -48,6 +60,7 @@ export function PreviewPanel() {
   const tv = useRef<HTMLVideoElement>(null);
   const timg = useRef<HTMLImageElement>(null);
   const dip = useRef<HTMLDivElement>(null);
+  const ovl = useRef<HTMLDivElement>(null);
   const project = useStore((s) => s.project);
   const previewMediaId = useStore((s) => s.previewMediaId);
   const snapping = useStore((s) => s.snapping);
@@ -62,13 +75,16 @@ export function PreviewPanel() {
     ? { width: sourceMedia.info.displayWidth, height: sourceMedia.info.displayHeight }
     : project.canvas;
   const size = useStageSize(wrap, canvas.width / canvas.height);
-  const clip = useClipUnderPlayhead();
-  const selectedId = useStore((s) => (s.selection?.kind === 'item' ? s.selection.id : null));
+  const targets = useTargetsUnderPlayhead();
+  const selectedId = useStore((s) => (s.selection?.kind === 'item' || s.selection?.kind === 'overlay' ? s.selection.id : null));
+  // The clip the framing handles act on: the selected one if it is in the picture, else the main clip.
+  const active = targets.find((x) => x.clip.id === selectedId) ?? targets.find((x) => !x.overlay) ?? null;
+  const clip = active?.clip ?? null;
 
   useEffect(() => {
     engine.onOffline = setOffline;
     engine.onPreparing = setPreparing;
-    engine.attach(va.current!, vb.current!, im.current!, { tv: tv.current!, timg: timg.current!, dip: dip.current! });
+    engine.attach(va.current!, vb.current!, im.current!, { tv: tv.current!, timg: timg.current!, dip: dip.current!, overlays: ovl.current! });
     return () => engine.detach();
   }, []);
 
@@ -77,11 +93,15 @@ export function PreviewPanel() {
 
   // --- Direct manipulation of framing (drag to move, corner handle to scale) ---
   const media = clip ? findMedia(project, clip.mediaId) : undefined;
-  const baseRect = clip && media ? computeClipRect(media.info.displayWidth, media.info.displayHeight, canvas.width, canvas.height, clip.framing) : null;
-  const lay = clip ? layoutSequence(project).items.find((l) => l.item.id === clip.id) : undefined;
-  const rect = baseRect && clip && lay
-    ? animateRect(baseRect, evalAnimation(clip.animation, Math.min(Math.max(0, time - lay.start), lay.end - lay.start), lay.end - lay.start, clip.sourceIn, clipSpeed(clip)), canvas.width, canvas.height)
-    : baseRect;
+  /** Where a target is drawn at the playhead (framing + animation, as the engine draws it). */
+  const rectOf = (x: Target) => {
+    const m = findMedia(project, x.clip.mediaId);
+    if (!m) return null;
+    const base = computeClipRect(m.info.displayWidth, m.info.displayHeight, canvas.width, canvas.height, x.clip.framing);
+    const d = x.lay.end - x.lay.start;
+    return animateRect(base, evalAnimation(x.clip.animation, Math.min(Math.max(0, time - x.lay.start), d), d, x.clip.sourceIn, clipSpeed(x.clip)), canvas.width, canvas.height);
+  };
+  const rect = active ? rectOf(active) : null;
   const k = size.w / canvas.width; // canvas px → screen px
   const showOverlay = !!(clip && rect && !playing && selectedId === clip.id);
 
@@ -100,7 +120,7 @@ export function PreviewPanel() {
     const x0 = e.clientX;
     const y0 = e.clientY;
     const id = clip.id;
-    store.set({ selection: { kind: 'item', id } });
+    store.set({ selection: { kind: active?.overlay ? 'overlay' : 'item', id } });
     beginGesture();
     const move = (ev: PointerEvent) => {
       let f = { ...startFraming };
@@ -127,14 +147,18 @@ export function PreviewPanel() {
   };
 
   const onStagePointerDown = (e: React.PointerEvent) => {
-    if (!clip || !rect || playing) return;
+    if (playing) return;
     const stage = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const x = (e.clientX - stage.left) / k;
     const y = (e.clientY - stage.top) / k;
-    const inside = x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
-    if (!inside) return;
-    if (selectedId !== clip.id) {
-      store.set({ selection: { kind: 'item', id: clip.id } });
+    // The topmost clip under the pointer (an overlay above the main track).
+    const hit = targets.find((tg) => {
+      const r = rectOf(tg);
+      return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+    });
+    if (!hit) return;
+    if (selectedId !== hit.clip.id) {
+      store.set({ selection: { kind: hit.overlay ? 'overlay' : 'item', id: hit.clip.id } });
       return;
     }
     startDrag(e, 'move');
@@ -164,6 +188,7 @@ export function PreviewPanel() {
             <video ref={tv} className="stage-video transition-video" />
             <img ref={timg} className="stage-video" alt="" />
             <div ref={dip} className="stage-dip" />
+            <div ref={ovl} className="stage-overlays" />
             {!sourceMedia && <OverlayLayer project={project} width={size.w} height={size.h} />}
             {preparingId && !offline && (
               <div className="stage-message">

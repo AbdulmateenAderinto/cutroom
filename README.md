@@ -85,6 +85,11 @@ fade. Click the track name for track volume, mute and **Lower under speech** (du
 **Photos:** import JPEG/PNG/WebP files and add them like videos. Each becomes a 4-second clip; drag its
 end to change that. Try **Motion → Slow zoom in** in its Animation section.
 
+**Picture-in-picture:** click **⧉ PiP** on a video or photo in the Media panel. It goes on an
+overlay track (V2) at the playhead, small in the bottom-right corner. Drag it in the preview (the
+corner handle resizes it) or pick a corner in its panel; drag its block on the timeline to change when
+it shows. Overlapping overlays go on V3, V4…; higher tracks draw on top.
+
 **Titles:** click **+ Text** above the timeline (or press T). Type in the **Text** box, pick a style,
 and drag the text in the preview to place it. Drag its block on the timeline to change when it shows.
 

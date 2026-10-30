@@ -9,6 +9,7 @@ import {
   type ClipItem,
   DEFAULT_FRAMING,
   type Framing,
+  type LaidOutItem,
   type MediaRef,
   type Project,
   type TitleClip,
@@ -26,6 +27,7 @@ import {
 } from '../../shared/audio';
 import { buildCues, fillerRanges } from '../../shared/captions';
 import { addTitle, deleteTitle, findTitle, moveTitle, updateTitle } from '../../shared/titles';
+import { addOverlay, asClip, clipLayout, deleteOverlay, findOverlay, moveOverlay, overlayLayout, pipFraming, updateOverlay } from '../../shared/overlays';
 import { transitionInfo } from '../../shared/transitions';
 import { NEUTRAL } from '../../shared/color';
 import * as ops from '../../shared/ops';
@@ -44,7 +46,10 @@ const T = (s: number) => secondsToTicks(Number(s));
 
 class ToolError extends Error {}
 
+/** A clip on the main track or an overlay track (clip tools work on both). */
 function clipOrThrow(p: Project, id: string): ClipItem {
+  const o = findOverlay(p, id);
+  if (o) return asClip(o);
   const it = p.sequence.items.find((i) => i.id === id);
   if (!it) throw new ToolError(`No timeline item with id ${id}. Call get_project for current ids.`);
   if (it.kind !== 'clip') throw new ToolError(`${id} is a gap, not a clip.`);
@@ -137,32 +142,45 @@ export function projectSummary(p: Project) {
     timeline: lay.items.map((l) => {
       const base = { position: l.index, id: l.item.id, kind: l.item.kind, start_s: sec(l.start), end_s: sec(l.end) };
       if (l.item.kind === 'gap') return base;
-      const c = l.item;
-      return {
-        ...base,
-        media_id: c.mediaId,
-        media_name: findMedia(p, c.mediaId)?.name,
-        source_in_s: sec(c.sourceIn),
-        source_out_s: sec(c.sourceOut),
-        ...(c.speed ? { speed: c.speed } : {}),
-        ...(c.color ? { color: c.color } : {}),
-        ...(c.transition ? { transition_to_next: { kind: c.transition.kind, duration_s: sec(c.transition.duration) } } : {}),
-        framing: c.framing,
-        volume: c.volume,
-        muted: c.muted,
-        animation: c.animation
-          ? {
-              in: c.animation.in && { preset: c.animation.in.preset, duration_s: sec(c.animation.in.duration) },
-              out: c.animation.out && { preset: c.animation.out.preset, duration_s: sec(c.animation.out.duration) },
-              motion: c.animation.motion,
-              keyframes: Object.fromEntries(
-                Object.entries(c.animation.keyframes ?? {}).map(([k, keys]) => [k, keys!.map((kf) => ({ time_s: sec(timelineAt(c, l.start, kf.at)), value: kf.value, easing: kf.easing }))]),
-              ),
-            }
-          : undefined,
-      };
+      return { ...base, ...clipSummary(p, l.item, l) };
+    }),
+    overlays: (p.overlays ?? []).map((o) => {
+      const l = overlayLayout(o);
+      return { id: o.id, track: `V${o.row + 2}`, row: o.row, start_s: sec(l.start), end_s: sec(l.end), ...clipSummary(p, l.item as ClipItem, l) };
     }),
   };
+}
+
+/** One clip's properties (main track or overlay track). */
+function clipSummary(p: Project, c: ClipItem, l: LaidOutItem) {
+  return {
+    media_id: c.mediaId,
+    media_name: findMedia(p, c.mediaId)?.name,
+    source_in_s: sec(c.sourceIn),
+    source_out_s: sec(c.sourceOut),
+    ...(c.speed ? { speed: c.speed } : {}),
+    ...(c.color ? { color: c.color } : {}),
+    ...(c.transition ? { transition_to_next: { kind: c.transition.kind, duration_s: sec(c.transition.duration) } } : {}),
+    framing: c.framing,
+    volume: c.volume,
+    muted: c.muted,
+    animation: c.animation
+      ? {
+          in: c.animation.in && { preset: c.animation.in.preset, duration_s: sec(c.animation.in.duration) },
+          out: c.animation.out && { preset: c.animation.out.preset, duration_s: sec(c.animation.out.duration) },
+          motion: c.animation.motion,
+          keyframes: Object.fromEntries(
+            Object.entries(c.animation.keyframes ?? {}).map(([k, keys]) => [k, keys!.map((kf) => ({ time_s: sec(timelineAt(c, l.start, kf.at)), value: kf.value, easing: kf.easing }))]),
+          ),
+        }
+      : undefined,
+  };
+}
+
+/** A clip's entry from get_project (main track or overlay). */
+function clipInfo(id: string) {
+  const s = projectSummary(store.get().project);
+  return s.timeline.find((x) => x.id === id) ?? s.overlays.find((x) => x.id === id);
 }
 
 /** Apply an edit; returns false (and nothing changes) if it had no effect. */
@@ -268,6 +286,47 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         edit('changed a title', () => next, { selection: { kind: 'title', id: old.id } });
         const t = findTitle(store.get().project, old.id)!;
         return ok({ title_id: t.id, row: t.row, start_s: sec(t.start), end_s: sec(t.start + t.duration) });
+      }
+      // ---- overlay tracks (picture-in-picture) ----
+      case 'add_overlay':
+      case 'set_overlay': {
+        const adding = name === 'add_overlay';
+        let next = p;
+        let id: string = args.overlay_id;
+        if (adding) {
+          const m = mediaOrThrow(p, args.media_id);
+          if (m.info.kind === 'audio') throw new ToolError(`${m.name} is an audio file: use add_audio.`);
+          const r = addOverlay(p, m.id, T(args.start ?? ticksToSeconds(playhead.get().time)), { row: args.row, corner: args.position, size: args.size });
+          if (!r) throw new ToolError('That media is too short to add.');
+          next = r.project;
+          id = r.id;
+        } else if (!findOverlay(p, id)) throw new ToolError(`No overlay with id ${id}. Call get_project for current ids.`);
+        const o = findOverlay(next, id)!;
+        const m = findMedia(next, o.mediaId)!;
+        if (args.source_in !== undefined || args.source_out !== undefined) {
+          const inT = args.source_in !== undefined ? T(args.source_in) : o.sourceIn;
+          const outT = args.source_out !== undefined ? T(args.source_out) : o.sourceOut;
+          if (!(outT > inT)) throw new ToolError('source_out must be greater than source_in.');
+          const range = ops.legalRange(next, m, inT, outT, 'in', o.speed ?? 1);
+          next = updateOverlay(next, id, (x) => ({ ...x, ...range }));
+        }
+        if (!adding && (args.position !== undefined || args.size !== undefined)) {
+          const cur = findOverlay(next, id)!;
+          const size = args.size ?? (cur.framing.mode === 'manual' ? cur.framing.scale : 0.35);
+          next = ops.setFraming(next, id, pipFraming(m.info.displayWidth, m.info.displayHeight, next.canvas.width, next.canvas.height, args.position ?? 'bottomRight', size));
+        }
+        if (!adding && (args.start !== undefined || args.row !== undefined)) {
+          const cur = findOverlay(next, id)!;
+          next = moveOverlay(next, id, args.start !== undefined ? T(args.start) : cur.start, args.row);
+        }
+        edit(adding ? `added ${m.name} as picture-in-picture` : 'changed an overlay', () => next, { selection: { kind: 'overlay', id } });
+        engine.seek(playhead.get().time);
+        return ok({ overlay_id: id, ...clipInfo(id), project_end_s: sec(layoutSequence(store.get().project).duration) });
+      }
+      case 'remove_overlay': {
+        if (!findOverlay(p, args.overlay_id)) throw new ToolError(`No overlay with id ${args.overlay_id}.`);
+        edit('removed an overlay', (q) => deleteOverlay(q, args.overlay_id), { selection: null });
+        return ok('removed');
       }
       case 'remove_title': {
         if (!findTitle(p, args.title_id)) throw new ToolError(`No title with id ${args.title_id}.`);
@@ -417,7 +476,7 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         const outT = args.source_out !== undefined ? T(args.source_out) : c.sourceOut;
         if (!(outT > inT)) throw new ToolError('source_out must be greater than source_in.');
         edit('trimmed a clip', (pr) => ops.setClipRange(pr, c.id, inT, outT, args.source_in !== undefined && args.source_out === undefined ? 'out' : 'in'));
-        return ok(projectSummary(store.get().project).timeline.find((x) => x.id === c.id));
+        return ok(clipInfo(c.id));
       }
       case 'split_at': {
         const r = ops.splitAt(p, T(args.time));
@@ -466,6 +525,7 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
       }
       case 'set_transition': {
         const c = clipOrThrow(p, args.clip_id);
+        if (findOverlay(p, c.id)) throw new ToolError('Transitions are between clips on the main track; fade an overlay with set_animation instead.');
         const kind = args.kind === 'none' ? null : args.kind;
         edit(kind ? `added a ${kind} transition` : 'removed a transition', (pr) => ops.setTransition(pr, c.id, kind, args.duration !== undefined ? T(args.duration) : undefined));
         const info = transitionInfo(store.get().project, c.id);
@@ -482,7 +542,7 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         if (!Number.isFinite(args.speed)) throw new ToolError('speed must be a number between 0.25 and 4.');
         edit(`set speed to ${args.speed}×`, (pr) => ops.setSpeed(pr, c.id, Number(args.speed)));
         const n = clipOrThrow(store.get().project, c.id);
-        const l = layoutSequence(store.get().project).items.find((x) => x.item.id === c.id)!;
+        const l = clipLayout(store.get().project, c.id)!;
         return ok({ speed: n.speed ?? 1, start_s: sec(l.start), end_s: sec(l.end), project_duration_s: sec(layoutSequence(store.get().project).duration) });
       }
 
@@ -497,19 +557,19 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
             motion: args.motion === undefined ? a.motion : args.motion === null ? undefined : { preset: args.motion.preset as MotionPreset, amount: Math.min(1, Math.max(0, args.motion.amount ?? 0.5)) },
           })),
         );
-        return ok(projectSummary(store.get().project).timeline.find((x) => x.id === c.id));
+        return ok(clipInfo(c.id));
       }
       case 'set_keyframe': {
         const c = clipOrThrow(p, args.clip_id);
-        const l = layoutSequence(p).items.find((x) => x.item.id === c.id)!;
+        const l = clipLayout(p, c.id)!;
         const t = T(args.time);
         if (t < l.start || t > l.end) throw new ToolError(`time must be within the clip (${sec(l.start)}–${sec(l.end)} s).`);
         edit(`keyframed ${args.property}`, (pr) => ops.setKeyframe(pr, c.id, args.property, sourceAt(c, l.start, t), Number(args.value), args.easing));
-        return ok(projectSummary(store.get().project).timeline.find((x) => x.id === c.id));
+        return ok(clipInfo(c.id));
       }
       case 'remove_keyframes': {
         const c = clipOrThrow(p, args.clip_id);
-        const l = layoutSequence(p).items.find((x) => x.item.id === c.id)!;
+        const l = clipLayout(p, c.id)!;
         edit('removed keyframes', (pr) =>
           ops.setAnimation(pr, c.id, (a) => {
             if (!args.property) return { ...a, keyframes: undefined };
@@ -519,7 +579,7 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
             return { ...a, keyframes: { ...a.keyframes, [args.property]: at === null ? [] : keys.filter((k) => Math.abs(k.at - at) > half) } };
           }),
         );
-        return ok(projectSummary(store.get().project).timeline.find((x) => x.id === c.id));
+        return ok(clipInfo(c.id));
       }
 
       // ---- project ----

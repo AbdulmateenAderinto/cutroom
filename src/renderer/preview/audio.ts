@@ -34,6 +34,12 @@ export function attachVideoElement(el: HTMLMediaElement) {
   videoGains.set(el, gain);
 }
 
+/** Undo attachVideoElement for an element that is being thrown away (overlay clips). */
+export function detachVideoElement(el: HTMLMediaElement) {
+  videoGains.get(el)?.disconnect();
+  videoGains.delete(el);
+}
+
 export function setVideoGain(el: HTMLMediaElement, value: number) {
   const g = videoGains.get(el);
   if (g) g.gain.value = value;

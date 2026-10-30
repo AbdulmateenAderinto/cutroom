@@ -13,7 +13,8 @@ import {
   OUT_PRESETS,
   keyframeValue,
 } from '../../shared/animation';
-import { type ClipItem, type Project, findMedia, layoutSequence, sourceAt, timelineAt } from '../../shared/model';
+import { type ClipItem, type Project, findMedia, sourceAt, timelineAt } from '../../shared/model';
+import { clipLayout } from '../../shared/overlays';
 import * as ops from '../../shared/ops';
 import { TICKS_PER_SECOND, formatTimecode, snapToFrame } from '../../shared/time';
 import { engine } from '../preview/engine';
@@ -30,7 +31,7 @@ const LABELS: Record<AnimProperty, { label: string; unit: string; hint: string }
 
 export function AnimationSection({ clip, project }: { clip: ClipItem; project: Project }) {
   const time = usePlayhead((p) => p.time);
-  const lay = layoutSequence(project).items.find((l) => l.item.id === clip.id)!;
+  const lay = clipLayout(project, clip.id)!;
   const media = findMedia(project, clip.mediaId)!;
   const { width: cw, height: ch } = project.canvas;
   const anim = clip.animation ?? {};

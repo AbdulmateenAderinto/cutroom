@@ -30,6 +30,7 @@ import {
 import { type AnimProperty, type ClipAnimation, type Easing, clampAnimValue, removeKeyframeAt, upsertKeyframe } from './animation';
 import { type CaptionSettings, DEFAULT_CAPTIONS } from './captions';
 import { type ColorAdjust, NEUTRAL, isNeutral, legalColor } from './color';
+import { asClip, fromClip, updateOverlay } from './overlays';
 import { type Rational, type Ticks, frameDuration, snapToFrame } from './time';
 
 function withItems(project: Project, items: TrackItem[]): Project {
@@ -150,6 +151,7 @@ export function removeMedia(project: Project, mediaId: string): Project {
     ...project,
     media: project.media.filter((m) => m.id !== mediaId),
     ...(project.audioTracks ? { audioTracks: project.audioTracks.map((t) => ({ ...t, clips: t.clips.filter((c) => c.mediaId !== mediaId) })) } : {}),
+    ...(project.overlays ? { overlays: project.overlays.filter((o) => o.mediaId !== mediaId) } : {}),
   };
   return withItems(p, project.sequence.items.filter((i) => !(i.kind === 'clip' && i.mediaId === mediaId)));
 }
@@ -220,6 +222,8 @@ export function splitAt(project: Project, t: Ticks): { project: Project; leftId:
 }
 
 export function updateClip(project: Project, clipId: string, fn: (c: ClipItem) => ClipItem): Project {
+  // Overlay clips have every clip property: the same edits apply to them (see overlays.ts).
+  if (project.overlays?.some((o) => o.id === clipId)) return updateOverlay(project, clipId, (o) => fromClip(o, fn(asClip(o))));
   return {
     ...project,
     sequence: {

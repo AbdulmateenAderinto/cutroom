@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createProject } from '../../src/shared/model';
+import { PROJECT_VERSION, createProject } from '../../src/shared/model';
 import { parseProject, serializeProject } from '../../src/shared/serialize';
 import {
   TITLE_DEFAULT_DURATION, addTitle, deleteTitle, duplicateTitle, findTitle, isAnimating, moveTitle, setTitleStyle, splitTitle,
@@ -106,7 +106,7 @@ describe('titles', () => {
     const v4 = { ...p0(), version: 4 } as any;
     delete v4.titles;
     const back = parseProject(JSON.stringify(v4));
-    expect(back.version).toBe(5);
+    expect(back.version).toBe(PROJECT_VERSION);
     expect(back.titles ?? []).toEqual([]);
   });
 

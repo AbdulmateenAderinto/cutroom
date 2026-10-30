@@ -3,6 +3,7 @@ import {
   type FramingMode,
   type GapItem,
   type MediaRef,
+  type OverlayClip,
   type Project,
   type TransitionKind,
   fillScale,
@@ -17,6 +18,7 @@ import {
   itemDuration,
 } from '../../shared/model';
 import * as ops from '../../shared/ops';
+import { PIP_POSITIONS, asClip, clipLayout, findOverlay, moveOverlay, pipFraming } from '../../shared/overlays';
 import { COMMON_FRAME_RATES, TICKS_PER_SECOND, formatDuration, formatTimecode, frameDuration, rateLabel, sameRate } from '../../shared/time';
 import { TRANSITION_KINDS, transitionInfo } from '../../shared/transitions';
 import * as A from '../state/actions';
@@ -136,12 +138,12 @@ function TransitionSection({ clip, project }: { clip: ClipItem; project: Project
   );
 }
 
-function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) {
+function ClipInspector({ clip, project, overlay }: { clip: ClipItem; project: Project; overlay?: OverlayClip }) {
   const media = findMedia(project, clip.mediaId)!;
   const missing = useStore((s) => !!s.missing[clip.mediaId]);
   const rate = project.frameRate;
   const pf = frameDuration(rate);
-  const lay = layoutSequence(project).items.find((l) => l.item.id === clip.id)!;
+  const lay = clipLayout(project, clip.id)!;
   const { width: cw, height: ch } = project.canvas;
   const { displayWidth: sw, displayHeight: sh } = media.info;
   const id = clip.id;
@@ -164,9 +166,39 @@ function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) 
           </div>
         )}
         <div className="muted small">
-          Timeline {formatTimecode(lay.start, rate)} → {formatTimecode(lay.end, rate)}
+          {overlay ? `Overlay track V${overlay.row + 2} · ` : ''}Timeline {formatTimecode(lay.start, rate)} → {formatTimecode(lay.end, rate)}
         </div>
+        {overlay && (
+          <TimecodeField
+            label="Starts at"
+            value={overlay.start}
+            rate={rate}
+            frameStep={pf}
+            onCommit={(t) => commit((p) => moveOverlay(p, id, t))}
+            hint="Where the overlay starts on the timeline (lands in the nearest free space on its track)."
+          />
+        )}
       </Section>
+
+      {overlay && (
+        <Section title="Picture-in-picture">
+          <p className="muted small">Drawn over the main track{overlay.row > 0 ? ' and lower overlay tracks' : ''}. Drag it in the preview to move it; the corner handle resizes it.</p>
+          <div className="row gap wrap" role="group" aria-label="Picture-in-picture position">
+            {PIP_POSITIONS.map((pos) => (
+              <button
+                key={pos.id}
+                className="btn tiny"
+                onClick={() => {
+                  const size = clip.framing.mode === 'manual' ? Math.min(1, clip.framing.scale) : 0.35;
+                  commit((p) => ops.setFraming(p, id, pipFraming(sw, sh, cw, ch, pos.id, size)));
+                }}
+              >
+                {pos.label}
+              </button>
+            ))}
+          </div>
+        </Section>
+      )}
 
       <Section title="Trim">
         <p className="muted small">Source time = position inside the original file. Drag clip edges on the timeline, or type exact values.</p>
@@ -199,7 +231,7 @@ function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) 
 
       <ColorSection clip={clip} />
 
-      <TransitionSection clip={clip} project={project} />
+      {!overlay && <TransitionSection clip={clip} project={project} />}
 
       {media.info.kind !== 'image' && (
         <Section title="Speed">
@@ -295,7 +327,7 @@ function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) 
 
       <AnimationSection clip={clip} project={project} />
 
-      <SmartTools clip={clip} project={project} />
+      {!overlay && <SmartTools clip={clip} project={project} />}
 
       <Section title="Audio">
         {media.info.hasAudio ? (
@@ -446,9 +478,10 @@ export function Inspector() {
   const audioClip = selection?.kind === 'audio' ? findAudioClip(project, selection.id) : null;
   const audioTrack = selection?.kind === 'audioTrack' ? project.audioTracks?.find((t) => t.id === selection.id) : undefined;
   const titleClip = selection?.kind === 'title' ? project.titles?.find((t) => t.id === selection.id) : undefined;
+  const overlay = selection?.kind === 'overlay' ? findOverlay(project, selection.id) : undefined;
   const title = item?.kind === 'clip' ? 'Clip properties' : item?.kind === 'gap' ? 'Gap' : media ? 'Media'
-    : audioClip ? 'Audio clip' : audioTrack ? 'Audio track' : titleClip ? 'Title' : 'Project settings';
-  const anything = item || media || audioClip || audioTrack || titleClip;
+    : audioClip ? 'Audio clip' : audioTrack ? 'Audio track' : titleClip ? 'Title' : overlay ? 'Overlay clip' : 'Project settings';
+  const anything = item || media || audioClip || audioTrack || titleClip || overlay;
   return (
     <aside className="panel inspector">
       <header className="panel-head">
@@ -466,6 +499,7 @@ export function Inspector() {
         {audioClip && <AudioClipInspector clipId={audioClip.clip.id} project={project} />}
         {audioTrack && <TrackSettings track={audioTrack} />}
         {titleClip && <TitleInspector id={titleClip.id} project={project} />}
+        {overlay && <ClipInspector key={overlay.id} clip={asClip(overlay)} project={project} overlay={overlay} />}
         {!anything && <ProjectSettings project={project} />}
       </div>
     </aside>

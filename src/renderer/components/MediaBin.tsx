@@ -67,6 +67,15 @@ function MediaItem({ m }: { m: MediaRef }) {
               + Add to timeline
             </button>
           )}
+          {!missing && i.kind !== 'audio' && (
+            <button
+              className="btn tiny"
+              title="Add over the main track at the playhead, as picture-in-picture (an overlay track: V2, V3, …)"
+              onClick={(e) => { e.stopPropagation(); A.addOverlayAction(m.id); }}
+            >
+              ⧉ PiP
+            </button>
+          )}
         </div>
       </div>
     </div>

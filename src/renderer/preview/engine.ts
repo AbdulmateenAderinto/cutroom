@@ -10,6 +10,8 @@
  *  - Gaps use the wall clock and show the background colour.
  *  - Each clip is positioned with the same computeClipRect() the exporter uses, as percentages of
  *    the canvas box, so framing matches the export.
+ *  - Overlay-track clips (picture-in-picture) get their own <video>/<img> in a layer above the main
+ *    track, created shortly before they start, following the timeline clock like music does.
  *
  * Preview vs export quality: the browser decodes at full resolution but draws at the preview size;
  * export always renders from the original files at the chosen output size.
@@ -32,6 +34,7 @@ import { type Ticks, TICKS_PER_SECOND, frameDuration, secondsToTicks, snapToFram
 import { evalAnimation } from '../../shared/animation';
 import { clipColor, svgMatrix } from '../../shared/color';
 import { previewUrl } from './mediaUrl';
+import { overlayEnd, overlayLayout, overlays } from '../../shared/overlays';
 
 /** Which preview copies are ready (changes when one finishes, so the preview can show it). */
 function readyProxies(): string {
@@ -39,7 +42,7 @@ function readyProxies(): string {
 }
 import { type ResolvedTransition, dipColour, resolveTransitions, transitionMix } from '../../shared/transitions';
 import { playhead } from '../state/playhead';
-import { attachVideoElement, setVideoGain, stopMusic, syncMusic } from './audio';
+import { attachVideoElement, detachVideoElement, setVideoGain, stopMusic, syncMusic } from './audio';
 import { store } from '../state/store';
 
 interface Seq {
@@ -77,9 +80,18 @@ class PreviewEngine {
   private timgMedia: string | null = null;
   private transitions: ResolvedTransition[] = [];
   private inTransition = false;
+  // Overlay tracks: one element per overlay clip that is on screen (or about to be).
+  private ovLayer: HTMLDivElement | null = null;
+  private ovEls = new Map<string, { el: HTMLVideoElement | HTMLImageElement; mediaId: string }>();
 
-  attach(a: HTMLVideoElement, b: HTMLVideoElement, img?: HTMLImageElement, layers?: { tv: HTMLVideoElement; timg: HTMLImageElement; dip: HTMLDivElement }) {
+  attach(
+    a: HTMLVideoElement,
+    b: HTMLVideoElement,
+    img?: HTMLImageElement,
+    layers?: { tv: HTMLVideoElement; timg: HTMLImageElement; dip: HTMLDivElement; overlays?: HTMLDivElement },
+  ) {
     this.els = [a, b];
+    this.ovLayer = layers?.overlays ?? null;
     this.img = img ?? null;
     if (this.img) this.img.style.display = 'none';
     if (layers) {
@@ -119,6 +131,8 @@ class PreviewEngine {
     this.pause();
     this.unsub?.();
     this.els = [];
+    for (const id of [...this.ovEls.keys()]) this.dropOverlay(id);
+    this.ovLayer = null;
   }
 
   /** The sequence being previewed: the timeline, or a single source file shown whole. */
@@ -139,6 +153,7 @@ class PreviewEngine {
           frameRate: m.info.frameRate,
           sequence: { items: [clip] },
           audioTracks: [], // source preview: just the file
+          overlays: [],
         };
         const lay = layoutSequence(vp);
         return { project: vp, items: lay.items, duration: lay.duration };
@@ -294,7 +309,105 @@ class PreviewEngine {
   private render(t: Ticks, forPlay: boolean): HTMLVideoElement | null {
     const el = this.renderItem(t, forPlay);
     this.applyTransition(t, forPlay);
+    this.syncOverlays(t, forPlay);
     return el;
+  }
+
+  /**
+   * Overlay tracks at timeline time t: each visible overlay clip is drawn by its own element,
+   * positioned with applyStyle() (the export's computeClipRect + evalAnimation), higher rows on
+   * top. While playing, videos play at clip speed × shuttle and are re-synced if they drift; when
+   * paused they are seeked to the exact frame (a quarter frame in, as for main clips).
+   */
+  private syncOverlays(t: Ticks, playing: boolean) {
+    const layer = this.ovLayer;
+    if (!layer) return;
+    const p = this.seq.project;
+    const missing = store.get().missing;
+    const live = new Set<string>();
+    for (const o of overlays(p)) {
+      const end = overlayEnd(o);
+      const active = t >= o.start && t < end;
+      const soon = playing && t >= o.start - PRELOAD_AHEAD && t < end;
+      if (!active && !soon) continue;
+      const m = findMedia(p, o.mediaId);
+      const url = m && !missing[m.id] ? previewUrl(m) : null;
+      if (!m || !url) continue; // offline, or its preview copy is not ready yet
+      let e = this.ovEls.get(o.id);
+      if (e && e.mediaId !== o.mediaId) {
+        this.dropOverlay(o.id);
+        e = undefined;
+      }
+      if (!e) {
+        const el = m.info.kind === 'image' ? document.createElement('img') : document.createElement('video');
+        el.className = 'overlay-media';
+        el.style.display = 'none';
+        if (el instanceof HTMLVideoElement) {
+          el.preload = 'auto';
+          el.playsInline = true;
+          attachVideoElement(el);
+          el.preservesPitch = true;
+        }
+        el.src = url;
+        layer.appendChild(el);
+        e = { el, mediaId: o.mediaId };
+        this.ovEls.set(o.id, e);
+      }
+      live.add(o.id);
+      const el = e.el;
+      el.dataset.overlayId = o.id;
+      el.style.zIndex = String(o.row + 1);
+      const l = overlayLayout(o);
+      const clip = l.item as ClipItem;
+      const displayT = Math.min(Math.max(t, l.start), l.end - this.frame());
+      if (el instanceof HTMLVideoElement) {
+        const target = this.sourceSeconds(clip, l, displayT);
+        const rate = clipSpeed(clip) * this.shuttle;
+        if (el.playbackRate !== rate) el.playbackRate = rate;
+        if (!active || !playing) {
+          if (!el.paused) el.pause();
+          if (Math.abs(el.currentTime - target) > 0.002 && !(el.seeking && !active)) el.currentTime = target;
+        } else if (el.paused) {
+          if (Math.abs(el.currentTime - target) > 0.03) el.currentTime = target;
+          void el.play().catch(() => {});
+        } else if (!el.seeking && el.readyState >= 3 && Math.abs(el.currentTime - target) > 0.1 * rate) {
+          el.currentTime = target; // real drift only (see syncMusic)
+        }
+      }
+      if (!active) {
+        el.style.display = 'none';
+        continue;
+      }
+      this.applyStyle(el, l, displayT);
+      el.style.display = 'block';
+    }
+    for (const id of [...this.ovEls.keys()]) if (!live.has(id)) this.dropOverlay(id);
+  }
+
+  private dropOverlay(id: string) {
+    const e = this.ovEls.get(id);
+    if (!e) return;
+    if (e.el instanceof HTMLVideoElement) {
+      e.el.pause();
+      detachVideoElement(e.el);
+      e.el.removeAttribute('src');
+      e.el.load();
+    }
+    const fe = this.filters.get(e.el);
+    if (fe) {
+      fe.parentElement?.remove();
+      this.filters.delete(e.el);
+    }
+    e.el.remove();
+    this.ovEls.delete(id);
+  }
+
+  /** For tests: the overlay elements on screen. */
+  get overlayDebug() {
+    return [...this.ovEls.entries()].map(([id, e]) => ({
+      id, shown: e.el.style.display === 'block', time: e.el instanceof HTMLVideoElement ? e.el.currentTime : null,
+      playing: e.el instanceof HTMLVideoElement ? !e.el.paused : false,
+    }));
   }
 
   /**
@@ -487,6 +600,7 @@ class PreviewEngine {
   private stopLoop() {
     stopMusic();
     this.tv?.pause();
+    for (const e of this.ovEls.values()) if (e.el instanceof HTMLVideoElement) e.el.pause();
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.reverse = false;
@@ -578,6 +692,7 @@ class PreviewEngine {
     playhead.set({ time: t });
     syncMusic(this.seq.project, t, true, store.get().missing, this.shuttle);
     this.applyTransition(t, true);
+    this.syncOverlays(t, true);
     if (l.item.kind === 'clip' && l.item.animation && !this.inTransition) {
       if (this.img && this.img.style.display === 'block') this.applyStyle(this.img, l, t);
       else if (this.active >= 0) this.applyStyle(this.active, l, t);

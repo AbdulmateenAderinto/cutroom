@@ -1,7 +1,7 @@
 /**
  * User-level actions shared by buttons, menus and keyboard shortcuts.
  */
-import type { AudioClip, MediaRef, Project, TitleClip, TrackItem } from '../../shared/model';
+import type { AudioClip, MediaRef, OverlayClip, Project, TitleClip, TrackItem } from '../../shared/model';
 import { createProject, evenDim, findMedia, layoutSequence, newId } from '../../shared/model';
 import * as ops from '../../shared/ops';
 import {
@@ -9,6 +9,9 @@ import {
   removeAudioTrack, setSpeech, soundFromSilence, splitAudioClip, updateAudioClip,
 } from '../../shared/audio';
 import { type TitlePreset, addTitle, deleteTitle, duplicateTitle, findTitle, moveTitle, splitTitle, updateTitle } from '../../shared/titles';
+import {
+  type PipCorner, addOverlay, deleteOverlay, duplicateOverlay, findOverlay, moveOverlay, overlayEnd, pasteOverlay, splitOverlay, trimOverlay,
+} from '../../shared/overlays';
 import { TICKS_PER_SECOND, type Ticks, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
 import { playhead } from './playhead';
@@ -123,6 +126,13 @@ export function proxyProgress(path: string, fraction: number) {
 /** Q / W: trim the start / end of the clip under the playhead to the playhead (ripple). */
 export function trimToPlayhead(edge: 'start' | 'end') {
   const t = playhead.get().time;
+  const sel = store.get().selection;
+  const ov = sel?.kind === 'overlay' ? findOverlay(store.get().project, sel.id) : undefined;
+  if (ov && t > ov.start && t < overlayEnd(ov)) {
+    // A selected overlay clip is trimmed in place (its other edge stays put).
+    commit((p) => trimOverlay(p, ov.id, edge, edge === 'start' ? t - ov.start : t - overlayEnd(ov)));
+    return;
+  }
   const lay = layoutSequence(store.get().project);
   const l = lay.items.find((x) => t > x.start && t < x.end) ?? lay.items.find((x) => t === x.start && edge === 'end');
   if (!l || l.item.kind !== 'clip') return toast('Put the playhead inside a clip first.');
@@ -143,6 +153,7 @@ export function jumpToEdit(dir: -1 | 1) {
   for (const l of lay.items) pts.add(l.start).add(l.end);
   for (const tr of p.audioTracks ?? []) for (const c of tr.clips) pts.add(c.start).add(audioClipEnd(c));
   for (const ti of p.titles ?? []) pts.add(ti.start).add(ti.start + ti.duration);
+  for (const o of p.overlays ?? []) pts.add(o.start).add(overlayEnd(o));
   const t = playhead.get().time;
   const sorted = [...pts].filter((x) => x <= lay.duration).sort((a, b) => a - b);
   const target = dir > 0 ? sorted.find((x) => x > t) : [...sorted].reverse().find((x) => x < t);
@@ -172,10 +183,17 @@ export function moveSelected(dir: -1 | 1) {
   } else if (sel?.kind === 'audio') {
     const hit = findAudioClip(p, sel.id);
     if (hit) commit((q) => moveAudioClip(q, sel.id, Math.max(0, hit.clip.start + dir * f)));
+  } else if (sel?.kind === 'overlay') {
+    const o = findOverlay(p, sel.id);
+    if (o) commit((q) => moveOverlay(q, sel.id, Math.max(0, o.start + dir * f)));
   }
 }
 
-type Clip = { kind: 'items'; items: TrackItem[] } | { kind: 'title'; title: TitleClip } | { kind: 'audio'; clip: AudioClip; trackId: string };
+type Clip =
+  | { kind: 'items'; items: TrackItem[] }
+  | { kind: 'title'; title: TitleClip }
+  | { kind: 'audio'; clip: AudioClip; trackId: string }
+  | { kind: 'overlay'; clip: OverlayClip };
 let clipboard: Clip | null = null;
 
 /** ⌘C: copy the selected clip, title or audio clip (Cutroom's own clipboard). */
@@ -191,6 +209,9 @@ export function copySelection(): boolean {
   } else if (sel?.kind === 'audio') {
     const hit = findAudioClip(p, sel.id);
     if (hit) clipboard = { kind: 'audio', clip: structuredClone(hit.clip), trackId: hit.track.id };
+  } else if (sel?.kind === 'overlay') {
+    const o = findOverlay(p, sel.id);
+    if (o) clipboard = { kind: 'overlay', clip: structuredClone(o) };
   } else return false;
   return true;
 }
@@ -216,6 +237,13 @@ export function pasteAtPlayhead(): boolean {
   } else if (c.kind === 'title') {
     const r = addTitle(p, t, { text: c.title.text, duration: c.title.duration, style: c.title.style });
     commit(() => updateTitle(r.project, r.id, (x) => ({ ...x, animIn: c.title.animIn, animOut: c.title.animOut, animLength: c.title.animLength })), { selection: { kind: 'title', id: r.id } });
+  } else if (c.kind === 'overlay') {
+    const r = pasteOverlay(p, c.clip, t);
+    if (!r) {
+      toast('The copied clip’s media is not in this project.');
+      return true;
+    }
+    commit(() => r.project, { selection: { kind: 'overlay', id: r.id } });
   } else {
     const r = addAudioClip(p, c.clip.mediaId, t, (p.audioTracks ?? []).some((x) => x.id === c.trackId) ? c.trackId : undefined);
     if (!r) {
@@ -257,6 +285,16 @@ export function markedRange(): { start: Ticks; end: Ticks } | null {
 export function addTitleAction(preset: TitlePreset = 'title') {
   const r = addTitle(store.get().project, playhead.get().time, { preset });
   commit(() => r.project, { selection: { kind: 'title', id: r.id } });
+}
+
+/** Add a video or photo on an overlay track at `at` (default: the playhead), as picture-in-picture. */
+export function addOverlayAction(mediaId: string, at?: Ticks, opts: { row?: number; corner?: PipCorner } = {}) {
+  const m = findMedia(store.get().project, mediaId);
+  if (m?.info.kind === 'audio') return toast('Sound files go on an audio track; overlays are for video and photos.', 'warn');
+  const r = addOverlay(store.get().project, mediaId, at ?? playhead.get().time, opts);
+  if (!r) return toast('This file is too short to add (less than one frame).', 'warn');
+  commit(() => r.project, { selection: { kind: 'overlay', id: r.id }, previewMediaId: null });
+  engine.seek(playhead.get().time);
 }
 
 export function addAudioTrackAction() {
@@ -322,7 +360,8 @@ export function addMediaToTimeline(mediaId: string, index?: number) {
 export function removeMedia(mediaId: string) {
   const s = store.get();
   const m = findMedia(s.project, mediaId);
-  const uses = s.project.sequence.items.filter((i) => i.kind === 'clip' && i.mediaId === mediaId).length;
+  const uses = s.project.sequence.items.filter((i) => i.kind === 'clip' && i.mediaId === mediaId).length +
+    (s.project.overlays ?? []).filter((o) => o.mediaId === mediaId).length;
   if (uses && !confirm(`Remove “${m?.name}”? ${uses} clip${uses > 1 ? 's' : ''} on the timeline use it and will be removed too. (The file on disk is not touched.)`)) return;
   commit((p) => ops.removeMedia(p, mediaId), { selection: null, previewMediaId: s.previewMediaId === mediaId ? null : s.previewMediaId });
 }
@@ -357,6 +396,12 @@ export function splitAtPlayhead() {
     commit(() => rt.project, { selection: { kind: 'title', id: rt.rightId } });
     return;
   }
+  if (sel?.kind === 'overlay') {
+    const ro = splitOverlay(store.get().project, sel.id, playhead.get().time);
+    if (!ro) return toast('Move the playhead inside the selected overlay clip to split it.');
+    commit(() => ro.project, { selection: { kind: 'overlay', id: ro.rightId } });
+    return;
+  }
   if (sel?.kind === 'audio') {
     const ra = splitAudioClip(store.get().project, sel.id, playhead.get().time);
     if (!ra) return toast('Move the playhead inside the selected audio clip to split it.');
@@ -372,6 +417,7 @@ export function deleteSelected(mode: ops.DeleteMode) {
   const sel = store.get().selection;
   if (sel?.kind === 'audio') return void commit((p) => deleteAudioClip(p, sel.id), { selection: null });
   if (sel?.kind === 'title') return void commit((p) => deleteTitle(p, sel.id), { selection: null });
+  if (sel?.kind === 'overlay') return void commit((p) => deleteOverlay(p, sel.id), { selection: null });
   if (sel?.kind === 'audioTrack') {
     const t = store.get().project.audioTracks?.find((x) => x.id === sel.id);
     if (t && t.clips.length && !confirm(`Delete the track “${t.name}” and its ${t.clips.length} clip(s)?`)) return;
@@ -392,6 +438,11 @@ export function duplicateSelected() {
   if (sel?.kind === 'title') {
     const r = duplicateTitle(store.get().project, sel.id);
     if (r) commit(() => r.project, { selection: { kind: 'title', id: r.id } });
+    return;
+  }
+  if (sel?.kind === 'overlay') {
+    const r = duplicateOverlay(store.get().project, sel.id);
+    if (r) commit(() => r.project, { selection: { kind: 'overlay', id: r.id } });
     return;
   }
   if (sel?.kind === 'audio') {

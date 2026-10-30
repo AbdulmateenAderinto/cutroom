@@ -57,7 +57,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 42 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 45 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -110,6 +110,22 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Range export through a transition; transitions on both ends of a clip | ✅ | |
 | AI tool `set_transition` | ✅ | |
 
+## Overlay tracks (picture-in-picture)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Overlay video tracks V2, V3, … (up to 6) above the main track; clips placed freely, never overlapping on one track; higher tracks on top | ✅ | |
+| **⧉ PiP** in the Media panel: adds a video or photo at the playhead, 35% size in the bottom-right corner | ✅ | Or drop media onto an overlay row |
+| Position presets (corners, centre, full frame); drag and resize in the preview; Fit/Fill/Manual | ✅ | The preview's handles act on the selected overlay; clicking picks the topmost clip under the pointer |
+| Move (also between tracks), trim, split, duplicate, delete, copy/paste, ⌥←/→, Q/W; undo | ✅ | Snaps to cuts, titles, audio and other overlays |
+| Speed, colour, animation (fades change only the overlay's opacity), keyframes, volume/mute | ✅ | Same code as main-track clips |
+| Overlay sound mixed in | ✅ | Measured: on only while the overlay plays |
+| Export: right source frame inside the PiP rectangle on every frame; main track around it; range export | ✅ | Coded frame numbers checked frame by frame |
+| Preview matches the export | ✅ | Before, during and after the PiP: 2.1–3.2/255 vs 29–44 with/without the PiP |
+| AI tools: `add_overlay`, `set_overlay`, `remove_overlay` (clip tools take overlay ids) | ✅ | |
+| Overlays never extend the video: past the main track's end they are shaded and not exported | ✅ | Same rule as audio tracks |
+| Transitions between overlay clips, blend modes, masks/crop of an overlay | ❌ | Use fade in/out animations |
+
 ## Colour
 
 | Feature | Status | Notes |
@@ -129,11 +145,11 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Notarization / Developer ID signing, auto-update, bundled FFmpeg | ❌ | Needs an Apple Developer account; FFmpeg licensing decision |
 
 Not planned yet: generative tools, background removal, motion tracking, optical flow,
-plugins, complex compositing, proxies, wipes/slides and other transition shapes.
+plugins, blend modes, proxies, wipes/slides and other transition shapes.
 
 ## Verification
 
-**Automated (`npm test`, 86 tests, about 30 s):**
+**Automated (`npm test`, 197 tests, about 60 s):**
 - Timebase: exact frame and sample maths at 23.976–60 fps, no drift over 10 h, timecode round trips.
 - Editing operations: split, trim clamps, ripple, frame-grid snapping, delete modes, gap merging,
   reorder, duplicate, inputs never mutated (undo safety), frame-rate change.
@@ -160,6 +176,10 @@ plugins, complex compositing, proxies, wipes/slides and other transition shapes.
 - Speech: audio extraction to 16 kHz mono, whisper.cpp arguments and JSON parsing (punctuation
   merged, `[BLANK_AUDIO]` skipped), captions following trim/split/reorder, filler removal.
 - Captions in export: each caption image appears on exactly the right frames, at the right place, in the right colour.
+- Overlay tracks: inside the PiP rectangle every frame is the expected source frame while the overlay
+  is on the timeline and the main track otherwise; the main track shows around it; a higher track
+  covers a lower one; a fade changes only the overlay's opacity (luma within 6/255 of the shared
+  curve); its sound plays only while it is on; a range export starting inside it matches.
 - Colour: untagged SD/HD, tagged BT.601, tagged PAL and full-range sources export pure green as pure
   green for the Linux preview, and with SD primaries converted as the macOS preview shows them
   (SMPTE-C 63,251,0; EBU 0,255,28), both within 12/255. The size rules for untagged video were
@@ -219,6 +239,12 @@ undo and Reset, and preview vs export colours for four settings (max difference 
 effect checked (cuts, trims, select, move, copy/cut/paste + undo, shuttle rates, title, fit, the
 searchable list) and that typing in a text field doesn't trigger them.
 
+**Overlays UI run (twelfth script, 7 steps):** **⧉ PiP** adds the clip at the playhead on a V2 row
+and selects it; dragging and resizing it in the preview and the “Top left” preset (the main clip's
+framing untouched); dragging it on the timeline; during playback the overlay video stays within
+0.15 s of the timeline; preview vs export before, during and after the PiP (2.1–3.2/255 vs 29–44
+for a frame with/without the PiP); delete removes its element from the preview; undo.
+
 **MCP run (`npm run test:mcp`, 12 steps):** security checks (no token, wrong token, browser origin
 all refused), tool listing, import, contact sheet and frames, `build_timeline`, editing plus undo/redo,
 readable errors for bad input, timeline frame capture, export with polling, analysis tools, speech
@@ -233,7 +259,8 @@ progress/result screens, missing-media state and the gap rendering.
   Homebrew paths, the window-close prompt) hasn't been exercised. The macOS workflow
   (Actions → "macOS app (.dmg)") runs every automated test on a Mac runner when started.
 - The `.dmg` itself, and the VideoToolbox hardware encoder (both need a Mac).
-- Playback smoothness with real camera footage (4K, long GOP, high bitrate) and long timelines.
+- Playback smoothness with real camera footage (4K, long GOP, high bitrate) and long timelines,
+  and with picture-in-picture (two videos decoding at once).
 - Real phone footage (VFR, HDR, Dolby Vision, rotation variants), MOV files from cameras, 44.1 kHz or 5.1 audio.
 - Listening tests for audio quality, and volume levels in the export.
 - **Speech recognition quality.** whisper.cpp and its models couldn't be downloaded in this

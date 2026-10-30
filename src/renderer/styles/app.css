@@ -267,7 +267,10 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .review-zone { position: absolute; top: 0; bottom: 0; background: rgba(229, 83, 75, 0.55); border-left: 1px solid #ff8b84; border-right: 1px solid #ff8b84; pointer-events: none; z-index: 1; }
 .review-cut { position: absolute; top: 0; bottom: 0; width: 2px; background: #ffd23f; pointer-events: none; z-index: 1; }
 
-.caption-layer { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 4; }
+.caption-layer { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5; }
+/* Overlay tracks (picture-in-picture): above the main track and its dips, below titles/captions. */
+.stage-overlays { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.overlay-media { position: absolute; object-fit: fill; pointer-events: none; }
 .stage-dip { position: absolute; inset: 0; opacity: 0; pointer-events: none; z-index: 3; }
 .title-hit { position: absolute; cursor: move; border: 1px dashed transparent; border-radius: 3px; }
 .title-hit:hover { border-color: rgba(255, 255, 255, 0.5); }
@@ -324,3 +327,15 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .shortcuts kbd + kbd { margin-left: 4px; }
 .thumb-badge.proxy { left: auto; right: 4px; top: 4px; background: rgba(90, 160, 255, 0.85); }
 .thumb-badge.proxy.failed { background: rgba(220, 80, 80, 0.85); }
+
+/* Overlay video tracks (V2, V3, …) */
+.tl-ov { margin-top: 6px; }
+.tl-ov-row { position: relative; height: 40px; border-bottom: 1px solid var(--line); }
+.tl-ov-row.drop { background: var(--accent-soft); }
+.tl-ov-label { position: sticky; left: 0; z-index: 4; display: inline-block; padding: 2px 4px; font-size: 10px; color: var(--muted, #999); pointer-events: none; }
+.ovclip { position: absolute; top: 3px; height: 34px; border-radius: 5px; background: #2f5f7a center/auto 100% repeat-x; border: 1px solid rgba(255, 255, 255, 0.15); overflow: hidden; cursor: grab; }
+.ovclip::before { content: ''; position: absolute; inset: 0; background: rgba(20, 50, 70, 0.55); pointer-events: none; }
+.ovclip.selected { border: 2px solid var(--accent); }
+.ovclip.offline { background: #6b2a2a; }
+.ovclip-label { position: absolute; left: 8px; top: 9px; font-size: 11px; color: #e8f6ff; white-space: nowrap; pointer-events: none; }
+.ovclip:hover .trim-handle, .ovclip.selected .trim-handle { background: rgba(242, 160, 61, 0.55); }

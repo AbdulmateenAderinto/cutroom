@@ -302,7 +302,8 @@ await step('save project', async () => {
   await page.click('.topbar button:has-text("Save")');
   await page.waitForFunction(() => window.__cutroom.store.get().projectPath !== null);
   const saved = JSON.parse(readFileSync(projectFile, 'utf8'));
-  assert(saved.format === 'cutroom-project' && saved.version === 5, 'bad header');
+  const version = await page.evaluate(() => window.__cutroom.store.get().project.version);
+  assert(saved.format === 'cutroom-project' && saved.version === version && version >= 6, `bad header (version ${saved.version})`);
   assert(saved.sequence.items.length === 3 && saved.media.every((m) => m.relativePath), 'bad content');
   assert(!(await state()).dirty, 'still dirty after save');
 });
