@@ -40,7 +40,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | H.264 in QuickTime .mov (`avc1`) | ✅ | |
 | Apple ProRes 422 / 422 HQ in .mov with PCM sound (for Final Cut Pro) | ✅ | 10-bit 4:2:2, `apcn`/`apch`, every frame decoded. **Not yet opened in Final Cut Pro** |
 | Apple device presets: H.264 1080p, HEVC 1080p, HEVC 4K, Messages/AirDrop 720p, hardware HEVC, ProRes 422 / HQ | ✅ | |
-| Hardware encoding (VideoToolbox) | ☑️ | Offered only after a test encode succeeds. **Not tested on a Mac yet** (Linux: correctly shown as unavailable) |
+| Hardware encoding (VideoToolbox) | ☑️ | Offered only after a test encode succeeds. On an Apple Silicon Mac the test encode works and the option is offered; **a full export with it hasn't been checked yet** (Linux: correctly shown as unavailable) |
 | Explicit fit/crop when output aspect ≠ canvas | ✅ | Export is blocked until you choose |
 | Size estimate, progress, cancel, readable errors | ✅ | |
 | Safe export (`.partial` → verify → rename) | ✅ | |
@@ -244,7 +244,7 @@ plugins, blend modes, proxies, other transition shapes (circles, pushes with blu
 - Project files: save/load round trip, relative-path recovery, damaged/foreign/newer files rejected,
   a failed save leaves the old file intact.
 
-**Automated UI run (`npm run test:e2e`, 23 steps, real Electron app, Linux + Xvfb):** all milestone
+**Automated UI run (`npm run test:e2e`, 23 steps, real Electron app, Linux + Xvfb and macOS):** all milestone
 steps: import order, source preview playback, drag-trimming both edges, numeric trim, split,
 both delete modes, drag-reordering, undo/redo, duplicate, every canvas preset, Fit/Fill, dragging
 the image in the preview, playback across a cut (checks the video element's clock against the
@@ -327,8 +327,8 @@ progress/result screens, missing-media state and the gap rendering.
 270/270 unit + integration, all 16 end-to-end scripts, the MCP test and the packaged-app test
 (`npm run dist:dir` + `npm run test:packaged`). That run found and fixed FFmpeg 9 differences (output
 colour tags, ProRes sound rounding) and the move of zscale/vid.stab/rubberband to `ffmpeg-full`
-(commit `6212064`). The three MCP steps added after it (versions, export queue, proxy mode) have only
-run on Linux so far.
+(commit `6212064`). The MCP steps added after it (versions, export queue, proxy mode, media manager)
+also pass there: 22/22 at commit `1dd9b41`.
 
 **Not verified yet:**
 - macOS behaviour the automated tests don't reach: the native menus and their shortcuts, file
@@ -385,7 +385,7 @@ run on Linux so far.
   `FFMP` (the ProRes frame headers say `apl0`); Final Cut Pro and QuickTime don't require it.
   HEVC/ProRes 10-bit HDR output is not offered.
 - **Export:** the hardware encoder (VideoToolbox) uses an average bitrate only and needs more bits than
-  libx264 for the same quality; it has not been tried on a Mac yet. A range late in a long timeline still
+  libx264 for the same quality; on a Mac it passes the test encode, but a full export hasn't been checked yet. A range late in a long timeline still
   builds the timeline from the start (clips before the range are not decoded, but their length is
   rendered as background), so it is quick but not instant.
   Each clip opens its own decoder in one FFmpeg process, which is fine for dozens of clips; very
