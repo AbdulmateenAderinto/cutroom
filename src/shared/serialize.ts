@@ -84,13 +84,16 @@ function validate(p: Project) {
     check(typeof o.id === 'string' && mediaIds.has(o.mediaId), `overlay ${o.id} refers to unknown media`);
     check(isInt(o.start) && o.start >= 0 && isInt(o.row) && o.row >= 0, `overlay ${o.id} has bad placement`);
     check(isInt(o.sourceIn) && isInt(o.sourceOut) && o.sourceOut > o.sourceIn && o.sourceIn >= 0, `overlay ${o.id} has bad in/out points`);
-    check(['fit', 'fill', 'manual'].includes(o.framing?.mode), `overlay ${o.id} has bad framing`);
+    check(['fit', 'fill', 'manual'].includes(o.framing?.mode) && (o.framing.rotation === undefined || Number.isFinite(o.framing.rotation)), `overlay ${o.id} has bad framing`);
   }
   for (const t of p.titles ?? []) {
     check(typeof t.id === 'string' && typeof t.text === 'string' && t.style && typeof t.style === 'object', 'bad title');
     check(isInt(t.start) && t.start >= 0 && isInt(t.duration) && t.duration > 0 && isInt(t.row) && t.row >= 0, `title ${t.id} has bad timing`);
     check(isHexColor(t.style.color) && isHexColor(t.style.boxColor), `title ${t.id} has bad colours`);
     check(isInt(t.animLength) && t.animLength >= 0, `title ${t.id} has bad animation length`);
+    for (const keys of Object.values(t.keyframes ?? {})) {
+      check(Array.isArray(keys) && keys.every((k) => isInt(k.at) && Number.isFinite(k.value)), `title ${t.id} has bad keyframes`);
+    }
   }
   const ids = new Set<string>();
   for (const it of p.sequence.items) {
@@ -99,7 +102,7 @@ function validate(p: Project) {
     if (it.kind === 'clip') {
       check(mediaIds.has(it.mediaId), `clip ${it.id} refers to unknown media`);
       check(isInt(it.sourceIn) && isInt(it.sourceOut) && it.sourceOut > it.sourceIn && it.sourceIn >= 0, `clip ${it.id} has bad in/out points`);
-      check(['fit', 'fill', 'manual'].includes(it.framing?.mode), `clip ${it.id} has bad framing`);
+      check(['fit', 'fill', 'manual'].includes(it.framing?.mode) && (it.framing.rotation === undefined || Number.isFinite(it.framing.rotation)), `clip ${it.id} has bad framing`);
       if (it.animation !== undefined) {
         check(typeof it.animation === 'object' && it.animation !== null, `clip ${it.id} has bad animation`);
         for (const keys of Object.values(it.animation.keyframes ?? {})) {

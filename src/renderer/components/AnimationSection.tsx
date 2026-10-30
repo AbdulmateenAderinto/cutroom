@@ -27,6 +27,7 @@ const LABELS: Record<AnimProperty, { label: string; unit: string; hint: string }
   x: { label: 'Move X', unit: 'px', hint: 'Horizontal offset in canvas pixels, added to the framing' },
   y: { label: 'Move Y', unit: 'px', hint: 'Vertical offset in canvas pixels, added to the framing' },
   opacity: { label: 'Opacity', unit: '%', hint: '0% = invisible, 100% = fully visible' },
+  rotation: { label: 'Rotate', unit: '°', hint: 'Degrees clockwise, added to the framing rotation (360 = one full turn)' },
 };
 
 export function AnimationSection({ clip, project }: { clip: ClipItem; project: Project }) {
@@ -41,8 +42,8 @@ export function AnimationSection({ clip, project }: { clip: ClipItem; project: P
   const at = snapToFrame(sourceAt(clip, lay.start, time), media.info.frameRate, 'round');
   const keysAll = ANIM_PROPERTIES.flatMap((p) => anim.keyframes?.[p] ?? []).map((k) => k.at);
   const uniq = [...new Set(keysAll)].sort((a, b) => a - b);
-  const toUnits = (p: AnimProperty, v: number) => (p === 'x' ? v * cw : p === 'y' ? v * ch : v * 100);
-  const fromUnits = (p: AnimProperty, v: number) => (p === 'x' ? v / cw : p === 'y' ? v / ch : v / 100);
+  const toUnits = (p: AnimProperty, v: number) => (p === 'x' ? v * cw : p === 'y' ? v * ch : p === 'rotation' ? v : v * 100);
+  const fromUnits = (p: AnimProperty, v: number) => (p === 'x' ? v / cw : p === 'y' ? v / ch : p === 'rotation' ? v : v / 100);
   const seekSource = (s: number) => engine.seek(timelineAt(clip, lay.start, s));
   const sec = (t: number) => Math.round((t / TICKS_PER_SECOND) * 10) / 10;
 

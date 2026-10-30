@@ -75,6 +75,7 @@ export const PIP_POSITIONS: { id: PipCorner; label: string }[] = [
  */
 export function pipFraming(srcW: number, srcH: number, cw: number, ch: number, corner: PipCorner, size = 0.35): Framing {
   if (corner === 'full') return { mode: 'fit', scale: 1, x: 0, y: 0 };
+  // (Rotation, if any, is kept by the callers that change position only.)
   const r = computeClipRect(srcW, srcH, cw, ch, { mode: 'manual', scale: size, x: 0, y: 0 });
   const m = 0.04 * Math.min(cw, ch);
   const dx = (cw / 2 - m - r.w / 2) / cw;

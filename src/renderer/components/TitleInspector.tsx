@@ -2,9 +2,11 @@
  * Inspector panel for a title: text, style presets, font and look, position, timing and animation.
  */
 import { useEffect, useState } from 'react';
-import { type Project, type TitleAnim, type TitleStyle, isHexColor } from '../../shared/model';
-import { FONTS, TITLE_ANIMS, TITLE_PRESETS, findTitle, setTitleStyle, updateTitle } from '../../shared/titles';
-import { TICKS_PER_SECOND as S, formatTimecode, frameDuration, secondsToTicks } from '../../shared/time';
+import { EASINGS, type Easing, keyframeValue } from '../../shared/animation';
+import { TITLE_KEY_PROPS, type Project, type TitleAnim, type TitleKeyProp, type TitleStyle, isHexColor } from '../../shared/model';
+import { FONTS, TITLE_ANIMS, TITLE_PRESETS, findTitle, removeTitleKeyframe, setTitleKeyframe, setTitleStyle, updateTitle } from '../../shared/titles';
+import { TICKS_PER_SECOND as S, formatTimecode, frameDuration, secondsToTicks, snapToFrame } from '../../shared/time';
+import { usePlayhead } from '../state/playhead';
 import { engine } from '../preview/engine';
 import * as A from '../state/actions';
 import { commit } from '../state/store';
@@ -155,6 +157,86 @@ export function TitleInspector({ id, project }: { id: string; project: Project }
             onCommit={(v) => commit((p) => updateTitle(p, id, (x) => ({ ...x, animLength: secondsToTicks(v) })))} />
         </div>
       </Section>
+      <TitleKeyframes id={id} project={project} />
     </>
+  );
+}
+
+const KEY_LABELS: Record<TitleKeyProp, { label: string; unit: string; toUnits: (v: number, w: number, h: number) => number; fromUnits: (v: number, w: number, h: number) => number }> = {
+  x: { label: 'Move X', unit: 'px', toUnits: (v, w) => v * w, fromUnits: (v, w) => v / w },
+  y: { label: 'Move Y', unit: 'px', toUnits: (v, _w, h) => v * h, fromUnits: (v, _w, h) => v / h },
+  scale: { label: 'Zoom', unit: '%', toUnits: (v) => v * 100, fromUnits: (v) => v / 100 },
+  opacity: { label: 'Opacity', unit: '%', toUnits: (v) => v * 100, fromUnits: (v) => v / 100 },
+  rotation: { label: 'Rotate', unit: '°', toUnits: (v) => v, fromUnits: (v) => v },
+};
+
+/** Keyframed motion for a title (move, zoom, opacity, rotate), at the playhead. */
+function TitleKeyframes({ id, project }: { id: string; project: Project }) {
+  const time = usePlayhead((p) => p.time);
+  const t = findTitle(project, id);
+  if (!t) return null;
+  const { width: w, height: h } = project.canvas;
+  const rel = snapToFrame(time - t.start, project.frameRate, 'round');
+  const inside = time >= t.start && time < t.start + t.duration;
+  const all = [...new Set(TITLE_KEY_PROPS.flatMap((p) => t.keyframes?.[p] ?? []).map((k) => k.at))].sort((a, b) => a - b);
+  return (
+    <Section title="Motion (keyframes)">
+      <div className="row gap center">
+        <button className="btn tiny" disabled={!all.some((k) => k < rel)} title="Previous keyframe" onClick={() => engine.seek(t.start + [...all].reverse().find((k) => k < rel)!)}>◀ ◆</button>
+        <button className="btn tiny" disabled={!all.some((k) => k > rel)} title="Next keyframe" onClick={() => engine.seek(t.start + all.find((k) => k > rel)!)}>◆ ▶</button>
+      </div>
+      {!inside ? (
+        <p className="muted small">
+          Move the playhead over this title to add keyframes. <button className="btn tiny" onClick={() => engine.seek(t.start)}>Go to title</button>
+        </p>
+      ) : (
+        <>
+          <p className="muted small">At {formatTimecode(time, project.frameRate)}. Changing a value adds a keyframe (◆) here; values in between are interpolated. Added to the style and the in/out animation.</p>
+          {TITLE_KEY_PROPS.map((prop) => {
+            const keys = t.keyframes?.[prop] ?? [];
+            const here = keys.find((k) => k.at === rel);
+            const meta = KEY_LABELS[prop];
+            const def = prop === 'scale' || prop === 'opacity' ? 1 : 0;
+            const shown = Math.round(meta.toUnits(keys.length ? keyframeValue(keys, rel, prop === 'y' ? 'x' : prop) : def, w, h) * 10) / 10;
+            return (
+              <div key={prop} className="kf-row">
+                <button
+                  className={`kf-diamond${here ? ' on' : ''}`}
+                  aria-label={`${here ? 'Remove' : 'Add'} title ${meta.label} keyframe`}
+                  title={here ? `Remove the ${meta.label} keyframe here` : `Add a ${meta.label} keyframe here with the current value`}
+                  onClick={() => commit((p) => (here ? removeTitleKeyframe(p, id, prop, rel) : setTitleKeyframe(p, id, prop, rel, meta.fromUnits(shown, w, h))))}
+                >
+                  ◆
+                </button>
+                <NumberField
+                  label={meta.label}
+                  value={shown}
+                  suffix={meta.unit}
+                  step={prop === 'x' || prop === 'y' ? 10 : 5}
+                  decimals={prop === 'x' || prop === 'y' ? 0 : 1}
+                  onCommit={(v) => commit((p) => setTitleKeyframe(p, id, prop, rel, meta.fromUnits(v, w, h)))}
+                />
+                {here && (
+                  <select
+                    className="input kf-ease"
+                    aria-label={`Title ${meta.label} easing to the next keyframe`}
+                    value={here.easing}
+                    onChange={(e) => commit((p) => setTitleKeyframe(p, id, prop, rel, here.value, e.target.value as Easing))}
+                  >
+                    {EASINGS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  </select>
+                )}
+                {keys.length > 0 && <span className="muted small">{keys.length}◆</span>}
+              </div>
+            );
+          })}
+          {all.length > 0 && (
+            <button className="btn tiny" onClick={() => commit((p) => updateTitle(p, id, (x) => { const { keyframes: _k, ...rest } = x; return rest; }))}>
+              Clear all keyframes
+            </button>
+          )}
+        </>
+      )}
+    </Section>
   );
 }

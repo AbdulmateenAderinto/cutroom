@@ -23,6 +23,7 @@ import {
   type Project,
   type Rect,
   animateRect,
+  clipAngle,
   clipSpeed,
   computeClipRect,
   evenDim,
@@ -275,6 +276,11 @@ function tempoFilter(speed: number, kind: 'rubberband' | 'atempo'): string {
   return 'apad=pad_dur=0.25,' + stages.map((x) => `atempo=${Math.round(x * 1e6) / 1e6},`).join('');
 }
 
+/** A clip that is rotated at some point (framing rotation or rotation keyframes). */
+function rotates(c: ClipItem): boolean {
+  return (c.framing.rotation ?? 0) % 360 !== 0 || (c.animation?.keyframes?.rotation ?? []).some((k) => k.value % 360 !== 0);
+}
+
 export function buildExportPlan(project: Project, s: ExportSettings, outputFile: string, mediaPath: (m: MediaRef) => string, extras: ExportExtras = {}): ExportPlan {
   const rate = s.frameRate;
   const sr = project.audio.sampleRate;
@@ -396,41 +402,63 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const r0 = computeClipRect(info.displayWidth, info.displayHeight, cw, ch, item.framing);
     const R = { x: r0.x * k, y: r0.y * k, w: r0.w * k, h: r0.h * k };
     const V = intersect(R, bw, bh);
-    if (hasAnimation(item.animation)) {
-      // Animated clip: evaluate the animation at every output frame (same function as the preview)
-      // and drive FFmpeg with per-frame commands for size, position and opacity.
+    if (hasAnimation(item.animation) || rotates(item)) {
+      // Animated (or rotated) clip: evaluate the animation at every output frame (same function as
+      // the preview) and drive FFmpeg with per-frame commands for size, position, angle and opacity.
       const dur = l.end - l.start;
       const quarter = 0.25 / (rate.num / rate.den);
+      const states = Array.from({ length: frames }, (_, j) => {
+        const rel = Math.max(0, frameToTicks(f0 + j, rate) - l.start);
+        const st = evalAnimation(item.animation, Math.min(rel, dur), dur, item.sourceIn, clipSpeed(item));
+        return { r: animateRect(r0, st, cw, ch), st, angle: clipAngle(item.framing, st.rotation) };
+      });
+      const rotating = states.some((s) => s.angle % 360 !== 0);
+      // Rotation: the picture is scaled once to its largest size, rotated into a transparent square
+      // that fits any angle (side D = its diagonal), and that square is then resized per frame —
+      // uniform scaling and rotation commute, so this equals rotating the resized picture.
+      const bw0 = Math.min(MAX_ANIMATED_DIM, Math.max(2, Math.round(Math.max(...states.map((s) => s.r.w)) * k)));
+      const bh0 = Math.min(MAX_ANIMATED_DIM, Math.max(2, Math.round(Math.max(...states.map((s) => s.r.h)) * k)));
+      const D = 2 * Math.ceil(Math.hypot(bw0, bh0) / 2) + 2;
       const sizeCmds: string[] = [];
       const posCmds: string[] = [];
       const opCmds: string[] = [];
-      let prev = { w: -1, h: -1, x: NaN, y: NaN, o: -1 };
+      const rotCmds: string[] = [];
+      let prev = { w: -1, h: -1, x: NaN, y: NaN, o: -1, a: NaN };
       let first = prev;
-      for (let j = 0; j < frames; j++) {
-        const rel = Math.max(0, frameToTicks(f0 + j, rate) - l.start);
-        const st = evalAnimation(item.animation, Math.min(rel, dur), dur, item.sourceIn, clipSpeed(item));
-        const r = animateRect(r0, st, cw, ch);
-        const cur = {
-          w: Math.min(MAX_ANIMATED_DIM, Math.max(2, Math.round(r.w * k))),
-          h: Math.min(MAX_ANIMATED_DIM, Math.max(2, Math.round(r.h * k))),
-          x: Math.round(r.x * k),
-          y: Math.round(r.y * k),
-          o: Math.round(st.opacity * 1000) / 1000,
-        };
+      states.forEach(({ r, st, angle }, j) => {
+        let w = Math.min(MAX_ANIMATED_DIM, Math.max(2, Math.round(r.w * k)));
+        let h = Math.min(MAX_ANIMATED_DIM, Math.max(2, Math.round(r.h * k)));
+        let x = Math.round(r.x * k);
+        let y = Math.round(r.y * k);
+        if (rotating) {
+          // The rotated square, centred where the picture's centre is.
+          const side = Math.min(MAX_ANIMATED_DIM, Math.max(2, 2 * Math.round((D * (r.w * k)) / bw0 / 2)));
+          x = Math.round((r.x + r.w / 2) * k - side / 2);
+          y = Math.round((r.y + r.h / 2) * k - side / 2);
+          w = side;
+          h = side;
+        }
+        const cur = { w, h, x, y, o: Math.round(st.opacity * 1000) / 1000, a: Math.round(((angle * Math.PI) / 180) * 1e6) / 1e6 };
         if (j === 0) first = cur;
         // Commands fire a quarter frame early so they are in place before frame j is processed.
         const at = Math.max(0, j / (rate.num / rate.den) - quarter).toFixed(6);
         if (j > 0 && (cur.w !== prev.w || cur.h !== prev.h)) sizeCmds.push(`${at} scale@s${n} w ${cur.w}, scale@s${n} h ${cur.h}`);
         if (j > 0 && (cur.x !== prev.x || cur.y !== prev.y)) posCmds.push(`${at} overlay@o${n} x ${cur.x}, overlay@o${n} y ${cur.y}`);
         if (j > 0 && cur.o !== prev.o) opCmds.push(`${at} ${(layer ? ['c3'] : ['c0', 'c1', 'c2']).map((c) => `blend@b${n} ${c}_opacity ${cur.o}`).join(', ')}`);
+        if (j > 0 && cur.a !== prev.a) rotCmds.push(`${at} rotate@r${n} a ${cur.a}`);
         prev = cur;
-      }
+      });
       const sendcmd = (cmds: string[]) => (cmds.length ? `sendcmd=c='${cmds.join(';')}',` : '');
       const fade = animatesOpacity(item.animation);
+      const rot = rotating
+        ? `scale=w=${bw0}:h=${bh0}:flags=bicubic${rgbPath ? '' : colour},setsar=1,format=yuva420p,` +
+          `${sendcmd(rotCmds)}rotate@r${n}=a=${first.a}:ow=${D}:oh=${D}:c=black@0:bilinear=1,`
+        : '';
       filters.push(
         // Pixel format is converted BEFORE the resizing scale: a format filter after it would
         // stop size changes from reaching the overlay (verified with FFmpeg 6.1).
-        `[${i}:v:0]${pts},${decode}${rgbPath ? `scale=${colour.slice(1)},` : ''}format=${fgFormat},${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic${rgbPath ? '' : colour},setsar=1[fg${n}]`,
+        `[${i}:v:0]${pts},${decode}${rgbPath ? `scale=${colour.slice(1)},` : ''}format=${rotating ? 'yuva420p' : fgFormat},${rot}` +
+          `${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic${rgbPath || rotating ? '' : colour},setsar=1[fg${n}]`,
       );
       if (fade) filters.push(`[bg${n}]split[bga${n}][bgb${n}]`);
       const base = fade ? `bga${n}` : `bg${n}`;

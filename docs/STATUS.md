@@ -50,14 +50,15 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Feature | Status | Notes |
 |---|---|---|
 | In/out presets: fade, zoom, pop, slide ×4; motion: slow zoom in/out, pan | ✅ | Opacity curve and position measured per exported frame |
-| Keyframes: zoom, X/Y, opacity; easing; on the timeline; follow trims/splits | ✅ | Preview vs export compared at animated frames |
+| Keyframes: zoom, X/Y, opacity, rotation; easing; on the timeline; follow trims/splits | ✅ | Preview vs export compared at animated frames |
+| Rotation: any angle per clip (field, ↺/↻ 90° buttons), plus rotation keyframes; main track and overlays | ✅ | Export geometry checked against the shared maths at 30°, 90°, −135°, a 0→90° keyframed turn (every 5th frame) and a rotated PiP; preview (CSS) vs export 2.1–3.0/255 |
 | Remove pauses (silence detection) with review | ✅ | |
 | Split at scene changes with review | ✅ | Brightness-based; see limitations |
 | Transcribe (whisper.cpp, local) | ☑️ | Pipeline tested with a stand-in; **real recognition not tested here** |
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 52 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 53 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -85,6 +86,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Multi-line text, wrapping width, left/centre/right alignment | ✅ | |
 | Drag the text in the preview (centre snapping), or type X/Y | ✅ | |
 | In/out animations: fade, rise, pop, typewriter | ✅ | Preview vs export matched frame by frame mid-animation |
+| Title keyframes: move X/Y, zoom, opacity, rotate (on top of the style and in/out animation); move with the title, kept when trimming/splitting | ✅ | Preview vs export compared while moving and rotating |
 | Move, trim, split, duplicate, delete, undo; save/reopen | ✅ | |
 | AI tools: `add_title`, `set_title`, `remove_title` | ✅ | |
 
@@ -261,6 +263,10 @@ and an L-cut (picture trimmed with W while its sound keeps running); a speed ram
 video element's rate changes during playback, preview vs export at three moments: 2.0–4.4/255 vs
 11.7–53 for a frame 45 earlier); a freeze frame with ⇧F and a reversed clip, each compared with the
 export (2.3–5.5/255 vs 16–21 for another moment), and “Play forwards again”.
+
+**Motion UI run (fourteenth script, 4 steps):** rotation by field and ↺/↻, a rotation keyframe pair,
+a title with position and rotation keyframes, and preview vs export at four moments (2.1–3.0/255 vs
+23–53 for a moment with a different angle or position).
 
 **Overlays UI run (twelfth script, 7 steps):** **⧉ PiP** adds the clip at the playhead on a V2 row
 and selects it; dragging and resizing it in the preview and the “Top left” preset (the main clip's

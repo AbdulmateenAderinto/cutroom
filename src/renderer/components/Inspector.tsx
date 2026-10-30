@@ -1,5 +1,6 @@
 import {
   type ClipItem,
+  type Framing,
   type FramingMode,
   type GapItem,
   type MediaRef,
@@ -293,6 +294,21 @@ function ClipInspector({ clip, project, overlay }: { clip: ClipItem; project: Pr
           {clip.framing.mode === 'fill' && 'Canvas fully covered; overflow is cropped. Proportions are kept.'}
           {clip.framing.mode === 'manual' && 'Drag the image in the preview, or type values. 100% = Fit size.'}
         </p>
+        <div className="row gap center">
+          <NumberField
+            label="Rotation"
+            value={clip.framing.rotation ?? 0}
+            suffix="°"
+            min={-360}
+            max={360}
+            step={1}
+            decimals={1}
+            hint="Degrees clockwise around the picture's centre. Corners that leave the canvas are cut off."
+            onCommit={(v) => commit((p) => ops.setFraming(p, id, withRotation(clip.framing, v)))}
+          />
+          <button className="btn tiny" title="Rotate 90° anticlockwise" aria-label="Rotate left" onClick={() => commit((p) => ops.setFraming(p, id, withRotation(clip.framing, (clip.framing.rotation ?? 0) - 90)))}>↺ 90°</button>
+          <button className="btn tiny" title="Rotate 90° clockwise" aria-label="Rotate right" onClick={() => commit((p) => ops.setFraming(p, id, withRotation(clip.framing, (clip.framing.rotation ?? 0) + 90)))}>↻ 90°</button>
+        </div>
         {manual && (
           <>
             <div className="row gap">
@@ -507,6 +523,13 @@ function ProjectSettings({ project }: { project: Project }) {
       <p className="muted small hint">Select a clip on the timeline to edit its trim, framing and volume.</p>
     </>
   );
+}
+
+/** Framing with a rotation in degrees, kept within ±360 (0 is stored as no rotation). */
+function withRotation(f: Framing, deg: number): Framing {
+  const d = Math.round((((deg % 360) + 540) % 360 - 180) * 10) / 10; // −180..180
+  const { rotation: _r, ...rest } = f;
+  return d === 0 ? rest : { ...rest, rotation: d === -180 ? 180 : d };
 }
 
 const RAMPS = [

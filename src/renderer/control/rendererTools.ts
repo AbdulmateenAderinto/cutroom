@@ -26,13 +26,13 @@ import {
   addAudioClip, deleteAudioClip, detachAudio, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip, setAudioClip, setAudioTrack, setSpeech, trimAudioClip,
 } from '../../shared/audio';
 import { buildCues, fillerRanges } from '../../shared/captions';
-import { addTitle, deleteTitle, findTitle, moveTitle, updateTitle } from '../../shared/titles';
+import { addTitle, deleteTitle, findTitle, moveTitle, removeTitleKeyframe, setTitleKeyframe, updateTitle } from '../../shared/titles';
 import { addMarker, deleteMarker, findMarker, updateMarker } from '../../shared/markers';
 import { addOverlay, asClip, clipLayout, deleteOverlay, findOverlay, moveOverlay, overlayLayout, pipFraming, updateOverlay } from '../../shared/overlays';
 import { transitionInfo } from '../../shared/transitions';
 import { NEUTRAL } from '../../shared/color';
 import * as ops from '../../shared/ops';
-import { COMMON_FRAME_RATES, type Rational, frameDuration, rateLabel, secondsToTicks, ticksToSeconds } from '../../shared/time';
+import { COMMON_FRAME_RATES, type Rational, frameDuration, rateLabel, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { renderOverlayTrack } from '../captions/draw';
 import { engine } from '../preview/engine';
 import * as A from '../state/actions';
@@ -71,6 +71,9 @@ function framingFrom(f: Args | undefined, current: Framing = DEFAULT_FRAMING): F
     scale: Math.min(20, Math.max(0.05, Number(f.scale ?? current.scale ?? 1))),
     x: Math.min(5, Math.max(-5, Number(f.x ?? 0))),
     y: Math.min(5, Math.max(-5, Number(f.y ?? 0))),
+    ...(Number.isFinite(f.rotation ?? current.rotation) && (f.rotation ?? current.rotation) % 360 !== 0
+      ? { rotation: Math.min(360, Math.max(-360, Number(f.rotation ?? current.rotation))) }
+      : {}),
   };
 }
 
@@ -383,6 +386,20 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         if (!findMarker(p, args.marker_id)) throw new ToolError(`No marker with id ${args.marker_id}.`);
         edit('removed a marker', (q) => deleteMarker(q, args.marker_id), { selection: null });
         return ok('removed');
+      }
+      case 'set_title_keyframe': {
+        const t = findTitle(p, args.title_id);
+        if (!t) throw new ToolError(`No title with id ${args.title_id}.`);
+        const rel = T(args.time) - t.start;
+        if (rel < 0 || rel >= t.duration) throw new ToolError(`time must be inside the title (${sec(t.start)}–${sec(t.start + t.duration)} s).`);
+        const at = snapToFrame(rel, p.frameRate, 'round');
+        if (args.remove) edit('removed a title keyframe', (q) => removeTitleKeyframe(q, t.id, args.property, at));
+        else {
+          if (!Number.isFinite(args.value)) throw new ToolError('value must be a number.');
+          edit(`keyframed a title's ${args.property}`, (q) => setTitleKeyframe(q, t.id, args.property, at, Number(args.value), args.easing));
+        }
+        const n = findTitle(store.get().project, t.id)!;
+        return ok({ title_id: n.id, keyframes: Object.fromEntries(Object.entries(n.keyframes ?? {}).map(([k, ks]) => [k, ks!.map((x) => ({ time_s: sec(n.start + x.at), value: x.value, easing: x.easing }))])) });
       }
       case 'remove_title': {
         if (!findTitle(p, args.title_id)) throw new ToolError(`No title with id ${args.title_id}.`);

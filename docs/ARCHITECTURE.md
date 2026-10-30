@@ -92,6 +92,13 @@ gap:   background colour × N frames + silence × M samples
 then:  concat → (pad or crop if the output aspect differs, chosen explicitly) → libx264 + AAC → MP4
 ```
 
+**Rotation** (`Framing.rotation` + the `rotation` keyframe): the clip goes through the animated path.
+The picture is scaled once to its largest size, rotated (`rotate`, transparent fill) into a square
+whose side is its diagonal, and the square is resized per frame with `scale` commands — uniform
+scaling commutes with rotation, so this equals rotating the resized picture, and the per-frame size
+change stays directly in front of `overlay` (where FFmpeg handles it). The preview uses CSS
+`rotate()` around the element's centre; both rotate clockwise.
+
 **Overlay tracks** (picture-in-picture): after the concat, each overlay clip goes through the same
 `renderClip()` as a main clip, but on a transparent canvas (`layer` mode: `color=black@0`, `yuva420p`;
 fades scale the alpha with `blend` `c3_opacity` instead of mixing with the background colour), for

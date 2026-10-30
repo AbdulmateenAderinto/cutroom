@@ -9,7 +9,7 @@
  *   - source time:   a position inside a media file (ClipItem.sourceIn / sourceOut)
  *   - timeline time: a position in the edited sequence (derived by layoutSequence)
  */
-import { type AnimState, type ClipAnimation } from './animation';
+import { type AnimState, type ClipAnimation, type Keyframe } from './animation';
 import type { CaptionSettings } from './captions';
 import type { Rational, Ticks } from './time';
 
@@ -98,6 +98,13 @@ export interface Framing {
   /** Manual only: offset of the image centre from the canvas centre, as a fraction of canvas width/height. */
   x: number;
   y: number;
+  /** Any mode: degrees clockwise around the image centre (absent = 0). Corners outside the canvas are cut off. */
+  rotation?: number;
+}
+
+/** Total rotation of a clip at an animation state (framing + animated), in degrees clockwise. */
+export function clipAngle(framing: Framing, animated = 0): number {
+  return (framing.rotation ?? 0) + animated;
 }
 
 export type TransitionKind = 'crossfade' | 'dipBlack' | 'dipWhite';
@@ -197,7 +204,16 @@ export interface TitleClip {
   animIn: TitleAnim;
   animOut: TitleAnim;
   animLength: Ticks; // length of each of the in/out animations
+  /**
+   * Keyframed motion, on top of the style and in/out animations. Times are relative to the
+   * title's start (keys stay put when the title is moved). x/y: offset as a fraction of canvas
+   * width/height; scale: multiplier; opacity: 0..1; rotation: degrees clockwise.
+   */
+  keyframes?: Partial<Record<TitleKeyProp, Keyframe[]>>;
 }
+
+export type TitleKeyProp = 'x' | 'y' | 'scale' | 'opacity' | 'rotation';
+export const TITLE_KEY_PROPS: TitleKeyProp[] = ['x', 'y', 'scale', 'opacity', 'rotation'];
 
 export interface Project {
   format: typeof PROJECT_FORMAT;
@@ -362,7 +378,7 @@ export function toManualFraming(srcW: number, srcH: number, canvasW: number, can
   if (framing.mode === 'manual') return framing;
   const fit = fitScale(srcW, srcH, canvasW, canvasH);
   const scale = framing.mode === 'fit' ? 1 : fillScale(srcW, srcH, canvasW, canvasH) / fit;
-  return { mode: 'manual', scale, x: 0, y: 0 };
+  return { mode: 'manual', scale, x: 0, y: 0, ...(framing.rotation ? { rotation: framing.rotation } : {}) };
 }
 
 // ---------------------------------------------------------------------------------------------

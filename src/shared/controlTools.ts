@@ -53,6 +53,7 @@ const framingSchema = obj({
   scale: num('manual only: size relative to Fit (1 = same as fit)'),
   x: num('manual only: horizontal offset of the image centre as a fraction of canvas width (-0.5..0.5 keeps it mostly on screen)'),
   y: num('manual only: vertical offset as a fraction of canvas height'),
+  rotation: num('any mode: degrees clockwise around the image centre (default 0)'),
 }, ['mode']);
 
 const presetSchema = (list: string[]) => ({
@@ -201,10 +202,10 @@ export const CONTROL_TOOLS: ToolDef[] = [
     name: 'set_keyframe',
     runs: 'renderer',
     description:
-      'Add or update a keyframe on a clip at a TIMELINE time. property: scale (1 = as framed), x / y (offset as a fraction of canvas width/height), opacity (0..1). Values between keyframes are interpolated with the easing of the earlier keyframe. Keyframes stay attached to the footage when the clip is trimmed.',
+      'Add or update a keyframe on a clip at a TIMELINE time. property: scale (1 = as framed), x / y (offset as a fraction of canvas width/height), opacity (0..1), rotation (degrees clockwise, added to the framing rotation). Values between keyframes are interpolated with the easing of the earlier keyframe. Keyframes stay attached to the footage when the clip is trimmed.',
     inputSchema: obj({
       clip_id: str('clip id'),
-      property: str('animated property', { enum: ['scale', 'x', 'y', 'opacity'] }),
+      property: str('animated property', { enum: ['scale', 'x', 'y', 'opacity', 'rotation'] }),
       time: num('timeline seconds (must be within the clip)'),
       value: num('value'),
       easing: str('easing to the next keyframe', { enum: EASINGS }),
@@ -214,7 +215,7 @@ export const CONTROL_TOOLS: ToolDef[] = [
     name: 'remove_keyframes',
     runs: 'renderer',
     description: 'Remove keyframes from a clip: one at `time`, or all of a property (omit time), or all (omit property and time).',
-    inputSchema: obj({ clip_id: str('clip id'), property: str('property', { enum: ['scale', 'x', 'y', 'opacity'] }), time: num('timeline seconds') }, ['clip_id']),
+    inputSchema: obj({ clip_id: str('clip id'), property: str('property', { enum: ['scale', 'x', 'y', 'opacity', 'rotation'] }), time: num('timeline seconds') }, ['clip_id']),
   },
 
   // ---- Titles / text ----
@@ -229,6 +230,19 @@ export const CONTROL_TOOLS: ToolDef[] = [
     runs: 'renderer',
     description: 'Change a title: text, timing (start, duration, row), style or animation. Only the given fields change.',
     inputSchema: obj({ title_id: str('title id'), ...titleProps }, ['title_id']),
+  },
+  {
+    name: 'set_title_keyframe',
+    runs: 'renderer',
+    description: 'Add, change or remove (remove=true) a keyframe on a title at a TIMELINE time inside it. property: x / y (offset as a fraction of canvas width/height), scale (1 = as styled), opacity (0..1), rotation (degrees clockwise). Values in between are interpolated with the earlier keyframe\'s easing; they combine with the style and the in/out animation. Keyframes move with the title.',
+    inputSchema: obj({
+      title_id: str('title id'),
+      property: str('property', { enum: ['x', 'y', 'scale', 'opacity', 'rotation'] }),
+      time: num('timeline seconds'),
+      value: num('value (ignored with remove)'),
+      easing: str('easing to the next keyframe', { enum: EASINGS }),
+      remove: bool('remove the keyframe at this time'),
+    }, ['title_id', 'property', 'time']),
   },
   {
     name: 'remove_title',

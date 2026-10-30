@@ -22,6 +22,7 @@ import {
   type Project,
   DEFAULT_FRAMING,
   animateRect,
+  clipAngle,
   computeClipRect,
   createProject,
   findMedia,
@@ -242,6 +243,10 @@ class PreviewEngine {
     el.style.top = `${(r.y / ch) * 100}%`;
     el.style.width = `${(r.w / cw) * 100}%`;
     el.style.height = `${(r.h / ch) * 100}%`;
+    // Rotation around the picture's centre (CSS rotates clockwise, like FFmpeg's rotate).
+    const angle = clipAngle(clip.framing, st.rotation);
+    const transform = angle % 360 !== 0 ? `rotate(${angle}deg)` : '';
+    if (el.style.transform !== transform) el.style.transform = transform;
     if (el instanceof HTMLVideoElement) setVideoGain(el, clip.muted ? 0 : clip.volume * mix);
     this.colorFilter(el, clip);
   }

@@ -3,7 +3,7 @@ import { PROJECT_VERSION, createProject } from '../../src/shared/model';
 import { parseProject, serializeProject } from '../../src/shared/serialize';
 import {
   TITLE_DEFAULT_DURATION, addTitle, deleteTitle, duplicateTitle, findTitle, isAnimating, moveTitle, setTitleStyle, splitTitle,
-  titleStateAt, titlesAt, trimTitle, updateTitle,
+  removeTitleKeyframe, setTitleKeyframe, titleStateAt, titlesAt, trimTitle, updateTitle,
 } from '../../src/shared/titles';
 import { TICKS_PER_SECOND as S, frameDuration } from '../../src/shared/time';
 
@@ -115,5 +115,52 @@ describe('titles', () => {
     const bad = JSON.parse(serializeProject(p));
     bad.titles[0].duration = -1;
     expect(() => parseProject(JSON.stringify(bad))).toThrow(/bad timing/);
+  });
+});
+
+describe('title keyframes', () => {
+  const S2 = 705_600_000;
+  const mk = () => {
+    const r = addTitle(createProject(), 1 * S2, { duration: 4 * S2 });
+    let p = updateTitle(r.project, r.id, (t) => ({ ...t, animIn: 'none', animOut: 'none' }));
+    p = setTitleKeyframe(p, r.id, 'x', 0, 0, 'linear');
+    p = setTitleKeyframe(p, r.id, 'x', 2 * S2, 0.2, 'linear');
+    p = setTitleKeyframe(p, r.id, 'rotation', 1 * S2, 90, 'hold');
+    return { p, id: r.id };
+  };
+
+  it('interpolate on top of the style; times are relative to the title start', () => {
+    const { p, id } = mk();
+    const t = findTitle(p, id)!;
+    expect(titleStateAt(t, 2 * S2)!.dx).toBeCloseTo(0.1, 6); // 1 s into the title
+    expect(titleStateAt(t, 3 * S2)!.dx).toBeCloseTo(0.2, 6);
+    expect(titleStateAt(t, 4 * S2)!.rotation).toBe(90);
+    expect(titleStateAt(t, 1 * S2)!.opacity).toBe(1);
+    // Every frame between the first and last moving keyframe is rendered in export.
+    expect(isAnimating(t, 2 * S2)).toBe(true);
+    expect(isAnimating(t, 4.5 * S2)).toBe(false);
+  });
+
+  it('moving the title moves its keyframes; trimming the start and splitting keep them in place', () => {
+    const { p, id } = mk();
+    const moved = findTitle(moveTitle(p, id, 3 * S2), id)!;
+    expect(titleStateAt(moved, 4 * S2)!.dx).toBeCloseTo(0.1, 6);
+    const trimmed = findTitle(trimTitle(p, id, 'start', 1 * S2), id)!;
+    expect(trimmed.start).toBe(2 * S2);
+    expect(titleStateAt(trimmed, 2 * S2)!.dx).toBeCloseTo(0.1, 6);
+    const sp = splitTitle(p, id, 2 * S2)!;
+    const right = findTitle(sp.project, sp.rightId)!;
+    expect(titleStateAt(right, 2.5 * S2)!.dx).toBeCloseTo(0.15, 6);
+    expect(titleStateAt(right, 2.5 * S2)!.rotation).toBe(90);
+  });
+
+  it('remove, clamp, and survive save/load', () => {
+    let { p, id } = mk();
+    p = setTitleKeyframe(p, id, 'opacity', 0, 5);
+    expect(findTitle(p, id)!.keyframes!.opacity![0].value).toBe(1);
+    p = removeTitleKeyframe(p, id, 'opacity', 0);
+    expect(findTitle(p, id)!.keyframes!.opacity).toBeUndefined();
+    const back = parseProject(serializeProject(p));
+    expect(findTitle(back, id)!.keyframes).toEqual(findTitle(p, id)!.keyframes);
   });
 });

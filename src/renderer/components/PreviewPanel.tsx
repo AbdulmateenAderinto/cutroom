@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { evalAnimation } from '../../shared/animation';
-import { type ClipItem, type LaidOutItem, animateRect, clipSpeed, computeClipRect, findMedia, layoutSequence, toManualFraming } from '../../shared/model';
+import { type ClipItem, type LaidOutItem, animateRect, clipAngle, clipSpeed, computeClipRect, findMedia, layoutSequence, toManualFraming } from '../../shared/model';
 import { asClip, overlayLayout, overlaysAt } from '../../shared/overlays';
 import { setFraming } from '../../shared/ops';
 import { formatTimecode } from '../../shared/time';
@@ -99,7 +99,8 @@ export function PreviewPanel() {
     if (!m) return null;
     const base = computeClipRect(m.info.displayWidth, m.info.displayHeight, canvas.width, canvas.height, x.clip.framing);
     const d = x.lay.end - x.lay.start;
-    return animateRect(base, evalAnimation(x.clip.animation, Math.min(Math.max(0, time - x.lay.start), d), d, x.clip.sourceIn, clipSpeed(x.clip)), canvas.width, canvas.height);
+    const st = evalAnimation(x.clip.animation, Math.min(Math.max(0, time - x.lay.start), d), d, x.clip.sourceIn, clipSpeed(x.clip));
+    return { ...animateRect(base, st, canvas.width, canvas.height), angle: clipAngle(x.clip.framing, st.rotation) };
   };
   const rect = active ? rectOf(active) : null;
   const k = size.w / canvas.width; // canvas px → screen px
@@ -216,7 +217,7 @@ export function PreviewPanel() {
           {showOverlay && rect && (
             <div
               className="frame-overlay"
-              style={{ left: rect.x * k, top: rect.y * k, width: rect.w * k, height: rect.h * k }}
+              style={{ left: rect.x * k, top: rect.y * k, width: rect.w * k, height: rect.h * k, transform: rect.angle % 360 ? `rotate(${rect.angle}deg)` : undefined }}
               onPointerDown={(e) => startDrag(e, 'move')}
               title="Drag to reposition (switches framing to Manual). Alt disables centre snapping."
             >

@@ -141,7 +141,8 @@ export function drawTitle(ctx: CanvasRenderingContext2D, w: number, h: number, t
   ctx.globalAlpha = Math.min(1, state.opacity);
   const cx = L.left + L.blockW / 2;
   const cy = L.top + L.blockH / 2;
-  ctx.translate(cx, cy + state.dy * h);
+  ctx.translate(cx + state.dx * w, cy + state.dy * h);
+  if (state.rotation) ctx.rotate((state.rotation * Math.PI) / 180);
   ctx.scale(state.scale, state.scale);
   ctx.translate(-cx, -cy);
   if (st.look === 'box' && st.boxOpacity > 0) {

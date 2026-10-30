@@ -5,7 +5,8 @@
  * Titles are placed freely in time on text rows. Titles on one row never overlap; higher rows draw
  * on top. Like audio clips they keep their timeline position when the video track is edited.
  */
-import { type Project, type TitleAnim, type TitleClip, type TitleStyle, isHexColor, newId } from './model';
+import { type Keyframe, keyframeValue, removeKeyframeAt, upsertKeyframe } from './animation';
+import { TITLE_KEY_PROPS, type Project, type TitleAnim, type TitleClip, type TitleKeyProp, type TitleStyle, isHexColor, newId } from './model';
 import { type Ticks, TICKS_PER_SECOND, frameDuration, snapToFrame } from './time';
 
 const S = TICKS_PER_SECOND;
@@ -173,7 +174,8 @@ export function trimTitle(p: Project, id: string, edge: 'start' | 'end', delta: 
   let d = snapToFrame(delta, p.frameRate);
   if (edge === 'start') {
     d = Math.min(Math.max(d, prevEnd - t.start), t.duration - pf);
-    return updateTitle(p, id, (x) => ({ ...x, start: x.start + d, duration: x.duration - d }));
+    // Keyframes are relative to the start: shift them so they stay at the same timeline times.
+    return updateTitle(p, id, (x) => shiftKeys({ ...x, start: x.start + d, duration: x.duration - d }, -d));
   }
   d = Math.max(Math.min(d, nextStart - titleEnd(t)), pf - t.duration);
   return updateTitle(p, id, (x) => ({ ...x, duration: x.duration + d }));
@@ -202,7 +204,7 @@ export function splitTitle(p: Project, id: string, at: Ticks): { project: Projec
   const pf = frameDuration(p.frameRate);
   if (cut < t.start + pf || cut > titleEnd(t) - pf) return null;
   const left = legal({ ...t, duration: cut - t.start, animOut: 'none' }, p);
-  const right = legal({ ...t, id: newId('title'), start: cut, duration: titleEnd(t) - cut, animIn: 'none' }, p);
+  const right = legal(shiftKeys({ ...t, id: newId('title'), start: cut, duration: titleEnd(t) - cut, animIn: 'none' }, -(cut - t.start)), p);
   return { project: withTitles(p, titles(p).flatMap((x) => (x.id === id ? [left, right] : [x]))), rightId: right.id };
 }
 
@@ -211,11 +213,13 @@ export function splitTitle(p: Project, id: string, at: Ticks): { project: Projec
 
 export interface TitleState {
   opacity: number;
+  dx: number; // horizontal offset, fraction of canvas width
   dy: number; // vertical offset, fraction of canvas height
   scale: number;
+  rotation: number; // degrees clockwise around the text block's centre
   reveal: number; // 0..1 fraction of characters shown (typewriter)
 }
-const VISIBLE: TitleState = { opacity: 1, dy: 0, scale: 1, reveal: 1 };
+const VISIBLE: TitleState = { opacity: 1, dx: 0, dy: 0, scale: 1, rotation: 0, reveal: 1 };
 
 const easeOut = (p: number) => 1 - Math.pow(1 - p, 3);
 const easeOutBack = (p: number) => {
@@ -244,10 +248,52 @@ export function titleStateAt(t: TitleClip, time: Ticks): TitleState | null {
   if (time < t.start || time >= titleEnd(t)) return null;
   const rel = time - t.start;
   const len = Math.min(t.animLength, Math.floor(t.duration / 2));
-  if (len > 0 && t.animIn !== 'none' && rel < len) return animState(t.animIn, rel / len);
+  let st = VISIBLE;
+  if (len > 0 && t.animIn !== 'none' && rel < len) st = animState(t.animIn, rel / len);
   // The out animation ends on the title's last frame being nearly hidden (not on the frame after).
-  if (len > 0 && t.animOut !== 'none' && rel >= t.duration - len) return animState(t.animOut, (t.duration - rel) / len);
-  return VISIBLE;
+  else if (len > 0 && t.animOut !== 'none' && rel >= t.duration - len) st = animState(t.animOut, (t.duration - rel) / len);
+  if (!t.keyframes) return st;
+  const k = (prop: TitleKeyProp, def: number) => (t.keyframes?.[prop]?.length ? keyframeValue(t.keyframes[prop], rel, prop === 'x' || prop === 'y' ? 'x' : prop) : def);
+  return {
+    ...st,
+    dx: st.dx + k('x', 0),
+    dy: st.dy + k('y', 0),
+    scale: st.scale * Math.max(0, k('scale', 1)),
+    opacity: st.opacity * Math.min(1, Math.max(0, k('opacity', 1))),
+    rotation: st.rotation + k('rotation', 0),
+  };
+}
+
+/** Keyframes moved by `delta` (relative time), e.g. when the start edge moves. */
+function shiftKeys(t: TitleClip, delta: Ticks): TitleClip {
+  if (!t.keyframes || delta === 0) return t;
+  const keyframes: TitleClip['keyframes'] = {};
+  for (const prop of TITLE_KEY_PROPS) {
+    const keys = t.keyframes[prop];
+    if (keys?.length) keyframes[prop] = keys.map((x) => ({ ...x, at: x.at + delta }));
+  }
+  return { ...t, keyframes };
+}
+
+/** Add or change a keyframe at `rel` (time since the title's start, on the frame grid). */
+export function setTitleKeyframe(p: Project, id: string, prop: TitleKeyProp, rel: Ticks, value: number, easing?: Keyframe['easing']): Project {
+  const at = Math.max(0, snapToFrame(rel, p.frameRate));
+  const v = !Number.isFinite(value) ? 0
+    : prop === 'opacity' ? Math.min(1, Math.max(0, value))
+    : prop === 'scale' ? Math.min(20, Math.max(0, value))
+    : prop === 'rotation' ? Math.min(3600, Math.max(-3600, value))
+    : Math.min(2, Math.max(-2, value));
+  return updateTitle(p, id, (t) => ({ ...t, keyframes: { ...t.keyframes, [prop]: upsertKeyframe(t.keyframes?.[prop], at, v, easing) } }));
+}
+
+export function removeTitleKeyframe(p: Project, id: string, prop: TitleKeyProp, rel: Ticks): Project {
+  return updateTitle(p, id, (t) => {
+    const keys = removeKeyframeAt(t.keyframes?.[prop], rel);
+    const keyframes = { ...t.keyframes, [prop]: keys };
+    if (!keys.length) delete keyframes[prop];
+    const { keyframes: _old, ...rest } = t;
+    return Object.keys(keyframes).length ? { ...rest, keyframes } : rest;
+  });
 }
 
 /** Titles visible at `time`, in drawing order (lowest row first). */
@@ -263,7 +309,12 @@ export function titlesAt(p: Project, time: Ticks): { title: TitleClip; state: Ti
 /** Times inside the title's in/out animations (for rendering every animated frame in export). */
 export function isAnimating(t: TitleClip, time: Ticks): boolean {
   const len = Math.min(t.animLength, Math.floor(t.duration / 2));
-  if (len <= 0) return false;
   const rel = time - t.start;
+  // Between the first and last keyframe of a property whose value changes.
+  for (const prop of TITLE_KEY_PROPS) {
+    const keys = t.keyframes?.[prop];
+    if (keys && keys.length > 1 && rel > keys[0].at && rel <= keys[keys.length - 1].at && keys.some((x) => x.value !== keys[0].value)) return true;
+  }
+  if (len <= 0) return false;
   return (t.animIn !== 'none' && rel >= 0 && rel < len) || (t.animOut !== 'none' && rel >= t.duration - len && rel < t.duration);
 }

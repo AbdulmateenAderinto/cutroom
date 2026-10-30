@@ -5,6 +5,7 @@
  *   scale    multiplier of the framed size, around the image centre (1 = as framed)
  *   x, y     extra offset of the image centre, as a fraction of canvas width / height
  *   opacity  0..1
+ *   rotation degrees clockwise, around the image centre (added to the framing's rotation)
  *
  * Keyframes are anchored to SOURCE time (a moment in the media file), so they stay with the
  * content when the clip is trimmed or split. In/out presets are anchored to the clip's edges.
@@ -15,8 +16,8 @@
 import type { Ticks } from './time';
 
 export type Easing = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' | 'hold';
-export type AnimProperty = 'scale' | 'x' | 'y' | 'opacity';
-export const ANIM_PROPERTIES: AnimProperty[] = ['scale', 'x', 'y', 'opacity'];
+export type AnimProperty = 'scale' | 'x' | 'y' | 'opacity' | 'rotation';
+export const ANIM_PROPERTIES: AnimProperty[] = ['scale', 'x', 'y', 'opacity', 'rotation'];
 
 export interface Keyframe {
   at: Ticks; // source time
@@ -40,9 +41,10 @@ export interface AnimState {
   x: number;
   y: number;
   opacity: number;
+  rotation: number;
 }
 
-export const IDENTITY: AnimState = { scale: 1, x: 0, y: 0, opacity: 1 };
+export const IDENTITY: AnimState = { scale: 1, x: 0, y: 0, opacity: 1, rotation: 0 };
 
 export const IN_PRESETS: { id: InPreset; label: string }[] = [
   { id: 'fade', label: 'Fade' },
@@ -135,7 +137,7 @@ function motionState(m: NonNullable<ClipAnimation['motion']>, p: number): AnimSt
 }
 
 function combine(a: AnimState, b: AnimState): AnimState {
-  return { scale: a.scale * b.scale, x: a.x + b.x, y: a.y + b.y, opacity: a.opacity * b.opacity };
+  return { scale: a.scale * b.scale, x: a.x + b.x, y: a.y + b.y, opacity: a.opacity * b.opacity, rotation: a.rotation + b.rotation };
 }
 
 /**
@@ -152,6 +154,7 @@ export function evalAnimation(anim: ClipAnimation | undefined, rel: Ticks, durat
     x: keyframeValue(kf.x, s, 'x'),
     y: keyframeValue(kf.y, s, 'y'),
     opacity: keyframeValue(kf.opacity, s, 'opacity'),
+    rotation: keyframeValue(kf.rotation, s, 'rotation'),
   };
   if (anim.motion && duration > 0) st = combine(st, motionState(anim.motion, rel / duration));
   if (anim.in && anim.in.duration > 0 && rel < anim.in.duration) {
@@ -198,6 +201,7 @@ export function clampAnimValue(prop: AnimProperty, v: number): number {
   switch (prop) {
     case 'scale': return Math.min(20, Math.max(0, v));
     case 'opacity': return Math.min(1, Math.max(0, v));
+    case 'rotation': return Math.min(3600, Math.max(-3600, v));
     default: return Math.min(5, Math.max(-5, v));
   }
 }
