@@ -42,6 +42,8 @@ function migrate(data: any): Project {
   if (data.version === 4) data.version = 5;
   // v5 → v6: overlay video tracks were added as an optional field; nothing to convert.
   if (data.version === 5) data.version = 6;
+  // v6 → v7: markers (and other optional editing fields) were added; nothing to convert.
+  if (data.version === 6) data.version = 7;
   return data as Project;
 }
 
@@ -73,6 +75,10 @@ function validate(p: Project) {
       check(mediaIds.has(c.mediaId), `audio clip ${c.id} refers to unknown media`);
       check(isInt(c.start) && c.start >= 0 && isInt(c.sourceIn) && isInt(c.sourceOut) && c.sourceOut > c.sourceIn, `audio clip ${c.id} has bad timing`);
     }
+  }
+  for (const m of p.markers ?? []) {
+    check(typeof m.id === 'string' && isInt(m.time) && m.time >= 0 && typeof m.label === 'string', `marker ${m.id} is damaged`);
+    check(['yellow', 'red', 'green', 'blue', 'purple'].includes(m.color), `marker ${m.id} has an unknown colour`);
   }
   for (const o of p.overlays ?? []) {
     check(typeof o.id === 'string' && mediaIds.has(o.mediaId), `overlay ${o.id} refers to unknown media`);

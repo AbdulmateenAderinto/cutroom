@@ -17,6 +17,7 @@ export type Selection =
   | { kind: 'audioTrack'; id: string }
   | { kind: 'title'; id: string } // text / title overlay
   | { kind: 'overlay'; id: string } // clip on an overlay video track (V2+)
+  | { kind: 'marker'; id: string } // timeline marker
   | null;
 export type DialogName = 'export' | 'shortcuts' | 'ai' | 'speech' | null;
 
@@ -176,6 +177,7 @@ function validSelection(p: Project, sel: Selection): Selection {
   if (sel.kind === 'audioTrack') return (p.audioTracks ?? []).some((t) => t.id === sel.id) ? sel : null;
   if (sel.kind === 'title') return (p.titles ?? []).some((t) => t.id === sel.id) ? sel : null;
   if (sel.kind === 'overlay') return (p.overlays ?? []).some((o) => o.id === sel.id) ? sel : null;
+  if (sel.kind === 'marker') return (p.markers ?? []).some((m) => m.id === sel.id) ? sel : null;
   return p.media.some((m) => m.id === sel.id) ? sel : null;
 }
 

@@ -27,6 +27,7 @@ import {
 } from '../../shared/audio';
 import { buildCues, fillerRanges } from '../../shared/captions';
 import { addTitle, deleteTitle, findTitle, moveTitle, updateTitle } from '../../shared/titles';
+import { addMarker, deleteMarker, findMarker, updateMarker } from '../../shared/markers';
 import { addOverlay, asClip, clipLayout, deleteOverlay, findOverlay, moveOverlay, overlayLayout, pipFraming, updateOverlay } from '../../shared/overlays';
 import { transitionInfo } from '../../shared/transitions';
 import { NEUTRAL } from '../../shared/color';
@@ -144,6 +145,7 @@ export function projectSummary(p: Project) {
       if (l.item.kind === 'gap') return base;
       return { ...base, ...clipSummary(p, l.item, l) };
     }),
+    markers: (p.markers ?? []).map((m) => ({ id: m.id, time_s: sec(m.time), label: m.label, color: m.color })),
     overlays: (p.overlays ?? []).map((o) => {
       const l = overlayLayout(o);
       return { id: o.id, track: `V${o.row + 2}`, row: o.row, start_s: sec(l.start), end_s: sec(l.end), ...clipSummary(p, l.item as ClipItem, l) };
@@ -326,6 +328,31 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
       case 'remove_overlay': {
         if (!findOverlay(p, args.overlay_id)) throw new ToolError(`No overlay with id ${args.overlay_id}.`);
         edit('removed an overlay', (q) => deleteOverlay(q, args.overlay_id), { selection: null });
+        return ok('removed');
+      }
+      // ---- markers ----
+      case 'add_marker': {
+        if (!Number.isFinite(args.time) || args.time < 0) throw new ToolError('time must be a number of seconds ≥ 0.');
+        const r = addMarker(p, T(args.time), { label: args.label, color: args.color });
+        if (r.existed) {
+          if (args.label !== undefined || args.color !== undefined) edit('changed a marker', (q) => updateMarker(q, r.id, { label: args.label, color: args.color }));
+        } else edit(`added the marker “${findMarker(r.project, r.id)!.label}”`, () => r.project, { selection: { kind: 'marker', id: r.id } });
+        const m = findMarker(store.get().project, r.id)!;
+        return ok({ marker_id: m.id, time_s: sec(m.time), label: m.label, color: m.color, already_there: r.existed });
+      }
+      case 'set_marker': {
+        if (!findMarker(p, args.marker_id)) throw new ToolError(`No marker with id ${args.marker_id}.`);
+        const patch: Record<string, unknown> = {};
+        if (args.time !== undefined) patch.time = T(args.time);
+        if (args.label !== undefined) patch.label = String(args.label);
+        if (args.color !== undefined) patch.color = args.color;
+        edit('changed a marker', (q) => updateMarker(q, args.marker_id, patch));
+        const m = findMarker(store.get().project, args.marker_id)!;
+        return ok({ marker_id: m.id, time_s: sec(m.time), label: m.label, color: m.color });
+      }
+      case 'remove_marker': {
+        if (!findMarker(p, args.marker_id)) throw new ToolError(`No marker with id ${args.marker_id}.`);
+        edit('removed a marker', (q) => deleteMarker(q, args.marker_id), { selection: null });
         return ok('removed');
       }
       case 'remove_title': {

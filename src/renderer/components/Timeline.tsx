@@ -21,6 +21,7 @@ import { beginGesture, commit, endGesture, store, updateGesture, useStore } from
 import { AudioTracks } from './AudioTracks';
 import { TextRows } from './TextRows';
 import { OverlayRows } from './OverlayRows';
+import { MarkerFlags } from './MarkerFlags';
 import { overlayEnd } from '../../shared/overlays';
 import { TRANSITION_KINDS, resolveTransitions } from '../../shared/transitions';
 import { MEDIA_DRAG_TYPE } from './MediaBin';
@@ -97,8 +98,9 @@ export function Timeline() {
     (project.audioTracks ?? []).flatMap((tr) => tr.clips.filter((c) => c.id !== exclude).flatMap((c) => [c.start, audioClipEnd(c)]));
   const titleEdges = (exclude?: string) => (project.titles ?? []).filter((t) => t.id !== exclude).flatMap((t) => [t.start, t.start + t.duration]);
   const overlayEdges = (exclude?: string) => (project.overlays ?? []).filter((o) => o.id !== exclude).flatMap((o) => [o.start, overlayEnd(o)]);
+  const markerTimes = () => (project.markers ?? []).map((m) => m.time);
   const freeSnap = (t: Ticks, alt: boolean, exclude?: string) =>
-    snapTime(t, [...cutPoints(), playhead.get().time, ...audioEdges(exclude), ...titleEdges(exclude), ...overlayEdges(exclude)], alt);
+    snapTime(t, [...cutPoints(), playhead.get().time, ...audioEdges(exclude), ...titleEdges(exclude), ...overlayEdges(exclude), ...markerTimes()], alt);
 
   const insertionIndex = (t: Ticks) => lay.items.filter((l) => (l.start + l.end) / 2 < t).length;
 
@@ -226,7 +228,7 @@ export function Timeline() {
   const markerIndex = drag ? drag.index : dropIndex;
   const markerX = markerIndex === null ? null : tToX(markerIndex < lay.items.length ? lay.items[markerIndex].start : lay.duration);
   const selectedId = selection?.kind === 'item' ? selection.id : null;
-  const hasSelection = !!selectedId || selection?.kind === 'audio' || selection?.kind === 'title' || selection?.kind === 'overlay';
+  const hasSelection = !!selectedId || ['audio', 'title', 'overlay', 'marker'].includes(selection?.kind ?? '');
   const previewIdx = trimPreview ? lay.items.findIndex((l) => l.item.id === trimPreview.id) : -1;
 
   return (
@@ -238,6 +240,7 @@ export function Timeline() {
         <button className="btn small" onClick={() => A.deleteSelected('leave-gap')} disabled={!hasSelection} title="Delete but keep the space as a gap (Shift+Delete)">Delete, leave gap</button>
         <span className="sep" />
         <button className="btn small" onClick={() => A.addTitleAction()} title="Add a title at the playhead (T)">+ Text</button>
+        <button className="btn small" onClick={A.addMarkerAction} title="Add a marker at the playhead (M). Markers can become chapters in the export.">+ Marker</button>
         <span className="sep" />
         <label className="check" title="Snap edges and the playhead to cut points (N). Hold Alt while dragging to bypass.">
           <input type="checkbox" checked={snapping} onChange={(e) => store.set({ snapping: e.target.checked })} />
@@ -269,6 +272,7 @@ export function Timeline() {
       <div className="tl-scroll" ref={scrollRef}>
         <div className="tl-content" style={{ width: contentWidth }}>
           <Ruler pps={pps} scrollLeft={scroll.left} width={scroll.width} rate={rate} onPointerDown={onRulerDown} />
+          <MarkerFlags tToX={tToX} pps={pps} snap={freeSnap} />
           <TextRows pps={pps} tToX={tToX} xToT={xToT} contentX={contentX} duration={lay.duration} snap={freeSnap} />
           <OverlayRows pps={pps} tToX={tToX} xToT={xToT} contentX={contentX} duration={lay.duration} snap={freeSnap} />
           <div className="tl-track" onDragOver={onDragOver} onDragLeave={() => setDropIndex(null)} onDrop={onDrop}>

@@ -267,6 +267,25 @@ export const CONTROL_TOOLS: ToolDef[] = [
     description: 'Delete an overlay clip.',
     inputSchema: obj({ overlay_id: str('overlay id') }, ['overlay_id']),
   },
+  // ---- Markers ----
+  {
+    name: 'add_marker',
+    runs: 'renderer',
+    description: 'Add a named marker at a TIMELINE time (snapped to a frame). Markers stay put when clips are edited and become chapters in the export. Colours: yellow, red, green, blue, purple.',
+    inputSchema: obj({ time: num('timeline seconds'), label: str('name'), color: str('colour', { enum: ['yellow', 'red', 'green', 'blue', 'purple'] }) }, ['time']),
+  },
+  {
+    name: 'set_marker',
+    runs: 'renderer',
+    description: 'Rename, recolour or move a marker.',
+    inputSchema: obj({ marker_id: str('marker id'), time: num('timeline seconds'), label: str('name'), color: str('colour', { enum: ['yellow', 'red', 'green', 'blue', 'purple'] }) }, ['marker_id']),
+  },
+  {
+    name: 'remove_marker',
+    runs: 'renderer',
+    description: 'Delete a marker.',
+    inputSchema: obj({ marker_id: str('marker id') }, ['marker_id']),
+  },
   // ---- Audio tracks (music, voice-over) ----
   {
     name: 'add_audio',
@@ -420,6 +439,7 @@ export const CONTROL_TOOLS: ToolDef[] = [
       start: num('export only from this timeline time (seconds)'),
       end: num('export only up to this timeline time (seconds)'),
       fit: str('when the output shape differs from the canvas: fit (bars) or fill (crop)', { enum: ['fit', 'fill'] }),
+      chapters: bool('write the timeline markers as chapters (default: true when there are markers)'),
       overwrite: bool('replace an existing file'),
     }, ['path']),
   },

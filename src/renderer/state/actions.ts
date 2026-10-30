@@ -9,6 +9,7 @@ import {
   removeAudioTrack, setSpeech, soundFromSilence, splitAudioClip, updateAudioClip,
 } from '../../shared/audio';
 import { type TitlePreset, addTitle, deleteTitle, duplicateTitle, findTitle, moveTitle, splitTitle, updateTitle } from '../../shared/titles';
+import { addMarker, deleteMarker } from '../../shared/markers';
 import {
   type PipCorner, addOverlay, deleteOverlay, duplicateOverlay, findOverlay, moveOverlay, overlayEnd, pasteOverlay, splitOverlay, trimOverlay,
 } from '../../shared/overlays';
@@ -154,6 +155,7 @@ export function jumpToEdit(dir: -1 | 1) {
   for (const tr of p.audioTracks ?? []) for (const c of tr.clips) pts.add(c.start).add(audioClipEnd(c));
   for (const ti of p.titles ?? []) pts.add(ti.start).add(ti.start + ti.duration);
   for (const o of p.overlays ?? []) pts.add(o.start).add(overlayEnd(o));
+  for (const m of p.markers ?? []) pts.add(m.time);
   const t = playhead.get().time;
   const sorted = [...pts].filter((x) => x <= lay.duration).sort((a, b) => a - b);
   const target = dir > 0 ? sorted.find((x) => x > t) : [...sorted].reverse().find((x) => x < t);
@@ -287,6 +289,13 @@ export function addTitleAction(preset: TitlePreset = 'title') {
   commit(() => r.project, { selection: { kind: 'title', id: r.id } });
 }
 
+/** M: add a marker at the playhead (or select the one already there). */
+export function addMarkerAction() {
+  const r = addMarker(store.get().project, playhead.get().time);
+  if (r.existed) return void store.set({ selection: { kind: 'marker', id: r.id } });
+  commit(() => r.project, { selection: { kind: 'marker', id: r.id } });
+}
+
 /** Add a video or photo on an overlay track at `at` (default: the playhead), as picture-in-picture. */
 export function addOverlayAction(mediaId: string, at?: Ticks, opts: { row?: number; corner?: PipCorner } = {}) {
   const m = findMedia(store.get().project, mediaId);
@@ -418,6 +427,7 @@ export function deleteSelected(mode: ops.DeleteMode) {
   if (sel?.kind === 'audio') return void commit((p) => deleteAudioClip(p, sel.id), { selection: null });
   if (sel?.kind === 'title') return void commit((p) => deleteTitle(p, sel.id), { selection: null });
   if (sel?.kind === 'overlay') return void commit((p) => deleteOverlay(p, sel.id), { selection: null });
+  if (sel?.kind === 'marker') return void commit((p) => deleteMarker(p, sel.id), { selection: null });
   if (sel?.kind === 'audioTrack') {
     const t = store.get().project.audioTracks?.find((x) => x.id === sel.id);
     if (t && t.clips.length && !confirm(`Delete the track “${t.name}” and its ${t.clips.length} clip(s)?`)) return;

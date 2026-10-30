@@ -53,6 +53,7 @@ function runAction(action: MenuAction) {
     case 'moveEarlier': return A.moveSelected(-1);
     case 'moveLater': return A.moveSelected(1);
     case 'addTitle': return A.addTitleAction();
+    case 'addMarker': return A.addMarkerAction();
     case 'markIn': return A.markIn();
     case 'markOut': return A.markOut();
     case 'clearMarks': return A.clearMarks();

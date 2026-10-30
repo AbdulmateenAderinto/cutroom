@@ -14,8 +14,8 @@ import type { CaptionSettings } from './captions';
 import type { Rational, Ticks } from './time';
 
 export const PROJECT_FORMAT = 'cutroom-project';
-/** v2: clip animations. v3: transcripts and captions. v4: audio tracks and audio-only media. v5: titles. v6: overlay video tracks. */
-export const PROJECT_VERSION = 6;
+/** v2: clip animations. v3: transcripts and captions. v4: audio tracks and audio-only media. v5: titles. v6: overlay video tracks. v7: markers and more clip fields (Phase 1 editing). */
+export const PROJECT_VERSION = 7;
 export const PROJECT_EXTENSION = 'cutroom';
 
 export type MediaKind = 'video' | 'audio' | 'image';
@@ -217,6 +217,16 @@ export interface Project {
   overlays?: OverlayClip[];
   /** Titles and text overlays, drawn above the picture (and below captions). */
   titles?: TitleClip[];
+  /** Named points on the timeline (M); exported as chapters if asked. */
+  markers?: Marker[];
+}
+
+export type MarkerColor = 'yellow' | 'red' | 'green' | 'blue' | 'purple';
+export interface Marker {
+  id: string;
+  time: Ticks; // timeline time, on the frame grid
+  label: string;
+  color: MarkerColor;
 }
 
 export const DEFAULT_FRAMING: Framing = { mode: 'fit', scale: 1, x: 0, y: 0 };

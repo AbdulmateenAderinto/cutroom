@@ -11,6 +11,7 @@ import { accessSync, constants, existsSync, mkdtempSync, renameSync, rmSync, sta
 import os from 'node:os';
 import path from 'node:path';
 import type { MediaRef, PreviewPlatform, Project } from '../../shared/model';
+import { chapterMetadata } from '../../shared/markers';
 import { type CaptionTrack, type ExportSettings, buildExportPlan, canvasInOutput, validateExportSettings } from '../../shared/exportPlan';
 import { type Rational, parseRational, rateToFloat } from '../../shared/time';
 import { ffmpegPath, ffprobePath } from '../media/ffbin';
@@ -133,12 +134,23 @@ export async function runExport(project: Project, settings: ExportSettings, opts
   tryUnlink(partial);
   let captionDir: string | null = null;
   let captionTrack: string | undefined;
+  let chaptersFile: string | undefined;
+  const probePlan = () => buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path));
   if (opts.captions) {
     const { bw, bh } = canvasInOutput(project, settings);
     if (opts.captions.width !== bw || opts.captions.height !== bh) return fail('Internal error: caption images have the wrong size.');
     captionDir = mkdtempSync(path.join(os.tmpdir(), 'cutroom-captions-'));
-    const probePlan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path));
-    captionTrack = writeCaptionTrack(captionDir, opts.captions, probePlan.timelineFrames, settings.frameRate);
+    captionTrack = writeCaptionTrack(captionDir, opts.captions, probePlan().timelineFrames, settings.frameRate);
+  }
+  if (settings.chapters) {
+    // Markers inside the exported part become chapters (times relative to the output's start).
+    const { span } = probePlan();
+    const meta = chapterMetadata(project, span.start, span.end);
+    if (meta) {
+      captionDir ??= mkdtempSync(path.join(os.tmpdir(), 'cutroom-captions-'));
+      chaptersFile = path.join(captionDir, 'chapters.txt');
+      writeFileSync(chaptersFile, meta);
+    }
   }
   try {
     return await encode();
@@ -149,7 +161,7 @@ export async function runExport(project: Project, settings: ExportSettings, opts
   async function encode(): Promise<ExportResult> {
   const timeStretch = opts.timeStretch ?? (project.sequence.items.some((i) => i.kind === 'clip' && i.speed) ? await timeStretchFilter() : 'atempo');
   const previewPlatform = opts.previewPlatform ?? (process.platform === 'darwin' ? 'mac' : 'other');
-  const plan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path), { captionTrack, timeStretch, previewPlatform });
+  const plan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path), { captionTrack, timeStretch, previewPlatform, chaptersFile });
 
   let bin: string;
   try { bin = ffmpegPath(); } catch (e) { return fail((e as Error).message); }

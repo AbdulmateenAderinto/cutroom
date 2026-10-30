@@ -339,3 +339,12 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .ovclip.offline { background: #6b2a2a; }
 .ovclip-label { position: absolute; left: 8px; top: 9px; font-size: 11px; color: #e8f6ff; white-space: nowrap; pointer-events: none; }
 .ovclip:hover .trim-handle, .ovclip.selected .trim-handle { background: rgba(242, 160, 61, 0.55); }
+
+/* Timeline markers (on the ruler) */
+.tl-marker { position: absolute; top: 0; height: 26px; z-index: 7; cursor: pointer; transform: translateX(-5px); display: flex; align-items: flex-start; gap: 3px; }
+.tl-marker-flag { width: 10px; height: 12px; background: var(--marker); clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%); flex: none; }
+.tl-marker::after { content: ''; position: absolute; left: 4px; top: 12px; width: 2px; height: 14px; background: var(--marker); opacity: 0.8; }
+.tl-marker-label { font-size: 10px; color: var(--marker); white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.tl-marker.selected .tl-marker-flag { outline: 2px solid #fff; outline-offset: 1px; }
+.marker-swatch { width: 18px; height: 18px; border-radius: 4px; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.marker-swatch.on { border-color: #fff; }

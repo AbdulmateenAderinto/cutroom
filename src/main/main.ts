@@ -84,6 +84,7 @@ function buildMenu() {
         shown('Delete Clip (Leave Gap)', 'deleteLeaveGap', 'Shift+Backspace'),
         { type: 'separator' },
         shown('Add Title', 'addTitle', 'T'),
+        shown('Add Marker', 'addMarker', 'M'),
         shown('Mark Range Start', 'markIn', 'I'),
         shown('Mark Range End', 'markOut', 'O'),
         shown('Clear Range', 'clearMarks', 'Alt+X'),
@@ -97,8 +98,8 @@ function buildMenu() {
         shown('Pause', 'pause', 'K'),
         shown('Play Forward (Faster)', 'playForward', 'L'),
         { type: 'separator' },
-        shown('Previous Cut', 'prevEdit', 'Up'),
-        shown('Next Cut', 'nextEdit', 'Down'),
+        shown('Previous Cut or Marker', 'prevEdit', 'Up'),
+        shown('Next Cut or Marker', 'nextEdit', 'Down'),
       ],
     },
     {

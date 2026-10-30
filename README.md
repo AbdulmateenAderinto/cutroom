@@ -90,6 +90,9 @@ overlay track (V2) at the playhead, small in the bottom-right corner. Drag it in
 corner handle resizes it) or pick a corner in its panel; drag its block on the timeline to change when
 it shows. Overlapping overlays go on V3, V4…; higher tracks draw on top.
 
+**Markers:** press **M** (or **+ Marker**) to mark a moment; name and colour it in its panel. ↑/↓ stop at
+markers, and the export can write them as chapters.
+
 **Titles:** click **+ Text** above the timeline (or press T). Type in the **Text** box, pick a style,
 and drag the text in the preview to place it. Drag its block on the timeline to change when it shows.
 

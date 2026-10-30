@@ -27,6 +27,7 @@ import { findAudioClip } from '../../shared/audio';
 import { AnimationSection } from './AnimationSection';
 import { AudioClipInspector, TrackSettings } from './AudioInspector';
 import { TitleInspector } from './TitleInspector';
+import { MarkerInspector } from './MarkerInspector';
 import { CaptionsSection } from './CaptionsSection';
 import { ColorSection } from './ColorSection';
 import { SmartTools } from './SmartTools';
@@ -479,9 +480,10 @@ export function Inspector() {
   const audioTrack = selection?.kind === 'audioTrack' ? project.audioTracks?.find((t) => t.id === selection.id) : undefined;
   const titleClip = selection?.kind === 'title' ? project.titles?.find((t) => t.id === selection.id) : undefined;
   const overlay = selection?.kind === 'overlay' ? findOverlay(project, selection.id) : undefined;
+  const marker = selection?.kind === 'marker' ? project.markers?.find((m) => m.id === selection.id) : undefined;
   const title = item?.kind === 'clip' ? 'Clip properties' : item?.kind === 'gap' ? 'Gap' : media ? 'Media'
-    : audioClip ? 'Audio clip' : audioTrack ? 'Audio track' : titleClip ? 'Title' : overlay ? 'Overlay clip' : 'Project settings';
-  const anything = item || media || audioClip || audioTrack || titleClip || overlay;
+    : audioClip ? 'Audio clip' : audioTrack ? 'Audio track' : titleClip ? 'Title' : overlay ? 'Overlay clip' : marker ? 'Marker' : 'Project settings';
+  const anything = item || media || audioClip || audioTrack || titleClip || overlay || marker;
   return (
     <aside className="panel inspector">
       <header className="panel-head">
@@ -499,6 +501,7 @@ export function Inspector() {
         {audioClip && <AudioClipInspector clipId={audioClip.clip.id} project={project} />}
         {audioTrack && <TrackSettings track={audioTrack} />}
         {titleClip && <TitleInspector id={titleClip.id} project={project} />}
+        {marker && <MarkerInspector id={marker.id} project={project} />}
         {overlay && <ClipInspector key={overlay.id} clip={asClip(overlay)} project={project} overlay={overlay} />}
         {!anything && <ProjectSettings project={project} />}
       </div>

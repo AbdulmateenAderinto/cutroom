@@ -59,7 +59,7 @@ export type MenuAction =
   | 'undo' | 'redo' | 'split' | 'delete' | 'deleteLeaveGap' | 'duplicate'
   | 'playPause' | 'toggleSnapping' | 'zoomIn' | 'zoomOut' | 'zoomFit' | 'shortcuts'
   | 'playBackward' | 'pause' | 'playForward' | 'prevEdit' | 'nextEdit' | 'trimStart' | 'trimEnd'
-  | 'selectAtPlayhead' | 'moveEarlier' | 'moveLater' | 'addTitle' | 'markIn' | 'markOut' | 'clearMarks';
+  | 'selectAtPlayhead' | 'moveEarlier' | 'moveLater' | 'addTitle' | 'addMarker' | 'markIn' | 'markOut' | 'clearMarks';
 
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 export interface ToolResult {

@@ -75,6 +75,8 @@ export function ExportDialog() {
   const [hw, setHw] = useState<{ videotoolbox: boolean; reason?: string } | null>(null);
   const range = useMemo(() => markedRange(), []);
   const [useRange, setUseRange] = useState(!!range);
+  const markerCount = project.markers?.length ?? 0;
+  const [chapters, setChapters] = useState(markerCount > 0);
   const [presetId, setPresetId] = useState(remembered.presetId ?? '');
   const [saved, setSaved] = useState<ExportPreset[]>(loadSavedPresets);
   const [naming, setNaming] = useState<string | null>(null);
@@ -117,6 +119,7 @@ export function ExportDialog() {
     codec,
     proresProfile,
     range: activeRange,
+    chapters: chapters && markerCount > 0,
   };
   const errors = validateExportSettings(project, settings, (m) => !missing[m.id]);
   if (aspectMismatch && !mapping) errors.push('Choose how the canvas fits the different output shape.');
@@ -289,6 +292,10 @@ export function ExportDialog() {
                   {range
                     ? `Marked range ${formatTimecode(range.start, project.frameRate)} – ${formatTimecode(range.end, project.frameRate)}`
                     : 'Marked range — none marked (press I and O on the timeline)'}
+                </label>
+                <label className={`check${markerCount ? '' : ' disabled'}`} title={markerCount ? 'Players such as QuickTime and VLC show them as chapters' : 'Press M on the timeline to add markers'}>
+                  <input type="checkbox" disabled={!markerCount} checked={chapters && markerCount > 0} onChange={(e) => setChapters(e.target.checked)} aria-label="Chapters from markers" />
+                  {markerCount ? `Chapters from the ${markerCount} marker${markerCount > 1 ? 's' : ''}` : 'Chapters from markers — none (press M on the timeline)'}
                 </label>
               </div>
             </div>

@@ -73,6 +73,8 @@ export interface ExportSettings {
   proresProfile?: 'standard' | 'hq';
   /** Export only this part of the timeline (timeline ticks, end exclusive). */
   range?: { start: Ticks; end: Ticks } | null;
+  /** Write the timeline markers as chapters (MP4/MOV chapter marks). */
+  chapters?: boolean;
 }
 
 export type VideoEncoder = 'x264' | 'videotoolbox';
@@ -111,6 +113,8 @@ export interface ExportPlan {
   totalFrames: number;
   /** Frames rendered before the range start is trimmed off (the caption/title image track covers them). */
   timelineFrames: number;
+  /** The part of the timeline in the output (timeline ticks, end exclusive). */
+  span: { start: Ticks; end: Ticks };
   width: number;
   height: number;
 }
@@ -219,6 +223,8 @@ export interface ExportExtras {
   captionTrack?: string;
   /** Platform whose preview the export matches (sourceColor); default 'other'. */
   previewPlatform?: PreviewPlatform;
+  /** FFmpeg metadata file with chapters (markers.chapterMetadata), written by the runner. */
+  chaptersFile?: string;
 }
 
 /**
@@ -696,6 +702,9 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   }
   // ProRes goes with uncompressed PCM sound (as cameras and Final Cut use); otherwise AAC.
   const audio = codec === 'prores' ? ['-c:a', 'pcm_s16le'] : ['-c:a', 'aac', '-b:a', `${s.audioBitrateKbps}k`];
+  // Chapters come only from the markers (never copied from a source file).
+  const chapterInput = extras.chaptersFile ? inputIndex++ : -1;
+  if (extras.chaptersFile) inputs.push('-f', 'ffmetadata', '-i', extras.chaptersFile);
   const args = [
     '-hide_banner', '-nostdin', '-y',
     '-loglevel', 'error',
@@ -703,6 +712,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     ...inputs,
     '-filter_complex', filters.join(';\n'),
     '-map', '[vout]', '-map', audioOut,
+    '-map_chapters', String(chapterInput),
     ...video,
     '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
     '-r', `${rate.num}/${rate.den}`,
@@ -715,6 +725,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     totalFrames: outB - outA,
     timelineFrames: totalFrames,
     durationSeconds: ticksToSeconds(frameToTicks(outB - outA, rate)),
+    span: { start: rangeStartT, end: rangeEndT },
     width: s.width,
     height: s.height,
   };

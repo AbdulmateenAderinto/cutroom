@@ -57,7 +57,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Speech model download / use own model file | ☑️ | Download path not exercisable in CI (network policy) |
 | Filler-word removal | ✅ | Uses the transcript |
 | Captions: outline/box/plain, size, position, colour, word highlight, ALL CAPS, text editing | ✅ | Frame-exact in export; preview vs export compared |
-| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 45 tools; official MCP client test drives a full edit |
+| AI control via MCP (Claude Desktop / Claude Code) | ✅ | 48 tools; official MCP client test drives a full edit |
 
 ## Music and photos
 
@@ -109,6 +109,14 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Preview: the other clip plays in a transition layer; dips fade a colour layer | ✅ | Preview vs export compared through the window |
 | Range export through a transition; transitions on both ends of a clip | ✅ | |
 | AI tool `set_transition` | ✅ | |
+
+## Editing tools
+
+| Feature | Status | Notes |
+|---|---|---|
+| Markers: **M** or **+ Marker** at the playhead; name, colour, time in the inspector; drag on the ruler; ↑/↓ stop at them; delete, undo | ✅ | One marker per frame; they keep their timeline position when clips change |
+| Markers as chapters in the export (MP4 and MOV), shifted for a range export | ✅ | Checked with `ffprobe -show_chapters`; chapters are never copied from source files any more |
+| AI tools `add_marker`, `set_marker`, `remove_marker`; `export_video` `chapters` | ✅ | |
 
 ## Overlay tracks (picture-in-picture)
 
@@ -238,6 +246,9 @@ undo and Reset, and preview vs export colours for four settings (max difference 
 **Shortcuts UI run (tenth script, 8 steps):** every new shortcut pressed in the real app with its
 effect checked (cuts, trims, select, move, copy/cut/paste + undo, shuttle rates, title, fit, the
 searchable list) and that typing in a text field doesn't trigger them.
+
+**Editing tools UI run (thirteenth script):** markers with M and the button, rename/recolour in the
+inspector, dragging on the ruler, ↑/↓ stopping at them, chapters in an export, delete and undo.
 
 **Overlays UI run (twelfth script, 7 steps):** **⧉ PiP** adds the clip at the playhead on a V2 row
 and selects it; dragging and resizing it in the preview and the “Top left” preset (the main clip's
