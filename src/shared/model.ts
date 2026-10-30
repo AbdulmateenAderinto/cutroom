@@ -107,7 +107,11 @@ export function clipAngle(framing: Framing, animated = 0): number {
   return (framing.rotation ?? 0) + animated;
 }
 
-export type TransitionKind = 'crossfade' | 'dipBlack' | 'dipWhite';
+export type TransitionKind =
+  | 'crossfade' | 'dipBlack' | 'dipWhite'
+  | 'wipeLeft' | 'wipeRight' | 'wipeUp' | 'wipeDown'
+  | 'slideLeft' | 'slideRight' | 'slideUp' | 'slideDown'
+  | 'zoom';
 
 export interface ClipItem {
   kind: 'clip';

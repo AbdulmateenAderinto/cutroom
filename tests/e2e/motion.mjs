@@ -1,7 +1,9 @@
 /**
- * UI test for rotation and title keyframes in the real app: rotate a clip with the Rotation field
- * and the ↻ button, keyframe its rotation, keyframe a title's position and rotation, then compare
- * the preview with the export at still and moving frames.
+ * UI test for rotation, title keyframes and the wipe/slide/zoom transitions in the real app:
+ * rotate a clip with the Rotation field and the ↻ button, keyframe its rotation, keyframe a
+ * title's position and rotation, compare the preview with the export at still and moving frames;
+ * then a second clip with a wipe (into the rotated clip), a slide and a zoom, each compared
+ * mid-transition.
  *
  * Run: npm run test:e2e   (Linux without a display: xvfb-run -a npm run test:e2e)
  */
@@ -12,6 +14,9 @@ const out = outputDir('motion');
 const userData = path.join(out, 'userdata');
 // A 4:3 gradient picture on a 16:9 canvas, so rotated corners are visible.
 const src = "nullsrc=s=640x480:r=30:d=4,format=rgb24,geq=r='40+180*X/W':g='200-150*Y/H':b='60+40*T',scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv";
+const src2 = "nullsrc=s=640x360:r=30:d=4,format=rgb24,geq=r='230-120*Y/H':g='40+60*T':b='240-200*X/W',scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv";
+const clip2 = fixture('motion-grad-16x9.mp4', (f) => ff(['-f', 'lavfi', '-i', src2, '-f', 'lavfi', '-i', 'sine=f=880:d=4', '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+  '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-c:a', 'aac', '-shortest', f]));
 const clip = fixture('motion-grad-4x3.mp4', (f) => ff(['-f', 'lavfi', '-i', src, '-f', 'lavfi', '-i', 'sine=d=4', '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
   '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-c:a', 'aac', '-shortest', f]));
 
@@ -94,6 +99,54 @@ await step('preview matches the export at still and moving frames', async () => 
     const near = compareFrames(['-i', png], at(control[f]), undefined, [48, 27]);
     console.log(`      frame ${f}: preview vs export ${same.toFixed(2)} (another moment ${near.toFixed(2)})`);
     assert(same < 8 && same < near * 0.7, `frame ${f}: preview and export differ (${same.toFixed(2)})`);
+  }
+});
+
+await step('wipe, slide and zoom into a second clip: preview matches the export mid-transition', async () => {
+  await h.stubOpen([clip2]);
+  await page.click('button:has-text("Import…")');
+  await page.waitForFunction(() => window.__cutroom.store.get().project.media.length === 2);
+  await page.click('.media-item >> nth=1 >> button:has-text("Add to timeline")');
+  // Leave footage past the cut: first clip 0–3 s, second clip from 1 s of its file.
+  await page.evaluate(() => {
+    const s = window.__cutroom.store.get();
+    const [a, b] = s.project.sequence.items;
+    window.__cutroom.store.set({ project: { ...s.project, sequence: { items: [{ ...a, sourceOut: 3 * 705_600_000 }, { ...b, sourceIn: 705_600_000 }] } } });
+  });
+  const at = (file, x) => ['-ss', (x / 30 - 0.005).toFixed(4), '-i', file];
+  for (const kind of ['wipeLeft', 'slideUp', 'zoom']) {
+    await page.click('.tl-track .clip >> nth=0');
+    await page.selectOption('select[aria-label="Transition to next clip"]', kind);
+    const tr = (await h.state()).sequence.items[0].transition;
+    assert(tr?.kind === kind, JSON.stringify(tr));
+    await page.keyboard.press('Escape');
+    const shots = [];
+    for (const f of [84, 88, 95]) { // inside the default 0.5 s window (frames 83–97)
+      await h.seekFrame(f);
+      await h.previewReady().catch(async (e) => {
+        console.log('previewReady', f, await page.evaluate(() => ({ want: window.__cutroom.engine.mainTarget, vids: [...document.querySelectorAll('video.stage-video')].map((v) => [v.className, v.style.display, v.readyState, v.seeking, v.currentTime]) })));
+        throw e;
+      });
+      await page.waitForFunction(() => {
+        const v = document.querySelector('video.transition-video');
+        return v && v.style.display === 'block' && v.readyState >= 2 && !v.seeking;
+      }, null, { timeout: 10000 }).catch(async (e) => {
+        console.log('transition layer', f, await page.evaluate(() => [...document.querySelectorAll('video.stage-video')].map((v) => [v.className, v.style.display, v.readyState, v.seeking, v.currentTime, v.style.clipPath])));
+        throw e;
+      });
+      await page.waitForTimeout(400);
+      const png = path.join(out, `${kind}-${f}.png`);
+      await page.locator('.stage').screenshot({ path: png });
+      shots.push({ f, png });
+    }
+    const file = path.join(out, `${kind}.mp4`);
+    await h.exportTo(file, { fps: 30 });
+    for (const { f, png } of shots) {
+      const same = compareFrames(['-i', png], at(file, f), undefined, [48, 27]);
+      const other = compareFrames(['-i', png], at(file, f === 88 ? 84 : 88), undefined, [48, 27]);
+      console.log(`      ${kind} frame ${f}: preview vs export ${same.toFixed(2)} (frame ${f === 88 ? 84 : 88}: ${other.toFixed(2)})`);
+      assert(same < 8 && same < other * 0.7, `${kind} frame ${f}: preview and export differ (${same.toFixed(2)})`);
+    }
   }
 });
 

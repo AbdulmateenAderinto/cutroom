@@ -171,10 +171,10 @@ export const CONTROL_TOOLS: ToolDef[] = [
   {
     name: 'set_transition',
     runs: 'renderer',
-    description: 'Set the transition from a clip into the NEXT clip: crossfade (both pictures and sounds mix; needs footage past the cut, so trim the clips a little first), dipBlack / dipWhite (fade through a colour), or none (a hard cut). Centred on the cut; the timeline length does not change. Returns the length actually used and why it is shorter, if it is.',
+    description: 'Set the transition from a clip into the NEXT clip: crossfade (both pictures and sounds mix; needs footage past the cut, so trim the clips a little first), wipeLeft/Right/Up/Down (a moving edge reveals the next clip), slideLeft/Right/Up/Down (the next clip pushes this one out), zoom (crossfade while zooming through), dipBlack / dipWhite (fade through a colour), or none (a hard cut). All but the dips need footage past the cut and crossfade the sound. Centred on the cut; the timeline length does not change. Returns the length actually used and why it is shorter, if it is.',
     inputSchema: obj({
       clip_id: str('the clip BEFORE the cut'),
-      kind: str('transition', { enum: ['none', 'crossfade', 'dipBlack', 'dipWhite'] }),
+      kind: str('transition', { enum: ['none', 'crossfade', 'dipBlack', 'dipWhite', 'wipeLeft', 'wipeRight', 'wipeUp', 'wipeDown', 'slideLeft', 'slideRight', 'slideUp', 'slideDown', 'zoom'] }),
       duration: num('seconds, 0.1..4 (default 0.5)'),
     }, ['clip_id', 'kind']),
   },

@@ -41,7 +41,7 @@ import { overlayEnd, overlayLayout, overlays } from '../../shared/overlays';
 function readyProxies(): string {
   return Object.entries(store.get().proxies).filter(([, p]) => p.status === 'ready').map(([id]) => id).join(',');
 }
-import { type ResolvedTransition, dipColour, resolveTransitions, transitionMix } from '../../shared/transitions';
+import { type LayerFx, type ResolvedTransition, dipColour, isDip, resolveTransitions, transitionLook, transitionMix } from '../../shared/transitions';
 import { playhead } from '../state/playhead';
 import { attachVideoElement, detachVideoElement, setVideoGain, stopMusic, syncMusic } from './audio';
 import { store } from '../state/store';
@@ -227,7 +227,7 @@ class PreviewEngine {
   }
 
   /** Position the element for clip `l` at timeline time t (framing + animation, as in export). */
-  private applyStyle(idx: number | HTMLVideoElement | HTMLImageElement, l: LaidOutItem, t: Ticks, mix = 1) {
+  private applyStyle(idx: number | HTMLVideoElement | HTMLImageElement, l: LaidOutItem, t: Ticks, mix = 1, fx?: LayerFx) {
     const el = typeof idx === 'number' ? this.els[idx] : idx;
     if (l.item.kind !== 'clip') return;
     const clip = l.item;
@@ -236,15 +236,36 @@ class PreviewEngine {
     const { width: cw, height: ch } = this.seq.project.canvas;
     const base = computeClipRect(m.info.displayWidth, m.info.displayHeight, cw, ch, clip.framing);
     const dur = l.end - l.start;
-    const st = evalAnimation(clip.animation, Math.min(Math.max(0, t - l.start), dur), dur, clip.sourceIn, clipSpeed(clip));
-    const r = animateRect(base, st, cw, ch);
+    const st0 = evalAnimation(clip.animation, Math.min(Math.max(0, t - l.start), dur), dur, clip.sourceIn, clipSpeed(clip));
+    const st = fx && fx.scale !== 1 ? { ...st0, scale: st0.scale * fx.scale } : st0;
+    const r0 = animateRect(base, st, cw, ch);
+    // Transitions: slides move the whole picture by a fraction of the canvas.
+    const r = fx ? { ...r0, x: r0.x + fx.dx * cw, y: r0.y + fx.dy * ch } : r0;
+    // Wipes: only part of the canvas shows this clip. clip-path works in the element's own
+    // (rotated) box, so the canvas rectangle's corners are mapped back through the rotation.
+    const angle = clipAngle(clip.framing, st.rotation);
+    let clipPath = '';
+    if (fx?.clip) {
+      const c = fx.clip;
+      const a = (-angle * Math.PI) / 180;
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      const pts = [[c.x0, c.y0], [c.x1, c.y0], [c.x1, c.y1], [c.x0, c.y1]].map(([u, v]) => {
+        const dx = u * cw - cx;
+        const dy = v * ch - cy;
+        const lx = dx * Math.cos(a) - dy * Math.sin(a) + r.w / 2;
+        const ly = dx * Math.sin(a) + dy * Math.cos(a) + r.h / 2;
+        return `${((lx / r.w) * 100).toFixed(3)}% ${((ly / r.h) * 100).toFixed(3)}%`;
+      });
+      clipPath = `polygon(${pts.join(', ')})`;
+    }
+    if (el.style.clipPath !== clipPath) el.style.clipPath = clipPath;
     el.style.opacity = String(st.opacity * mix);
     el.style.left = `${(r.x / cw) * 100}%`;
     el.style.top = `${(r.y / ch) * 100}%`;
     el.style.width = `${(r.w / cw) * 100}%`;
     el.style.height = `${(r.h / ch) * 100}%`;
     // Rotation around the picture's centre (CSS rotates clockwise, like FFmpeg's rotate).
-    const angle = clipAngle(clip.framing, st.rotation);
     const transform = angle % 360 !== 0 ? `rotate(${angle}deg)` : '';
     if (el.style.transform !== transform) el.style.transform = transform;
     if (el instanceof HTMLVideoElement) setVideoGain(el, clip.muted ? 0 : clip.volume * mix);
@@ -444,7 +465,7 @@ class PreviewEngine {
     const m = transitionMix(tr, t);
     const before = t < tr.cut;
     const cur = before ? tr.a : tr.b;
-    if (tr.kind !== 'crossfade') {
+    if (isDip(tr.kind)) {
       this.tv.style.display = 'none';
       this.timg.style.display = 'none';
       this.dip.style.background = dipColour(tr.kind);
@@ -457,11 +478,17 @@ class PreviewEngine {
     const other = otherL.item as ClipItem;
     const media = findMedia(this.seq.project, other.mediaId);
     if (!media || store.get().missing[media.id]) return;
-    // Before the cut the incoming clip fades in on top; after it the incoming clip is the main one.
-    const otherMix = before ? m.b : 1;
+    // Before the cut the incoming clip is drawn on top of the outgoing one by the transition layer;
+    // after it the incoming clip is the main one, on top of the outgoing clip in the layer below.
+    // Crossfade/zoom: the incoming clip's opacity is the mix. Wipes/slides: both fully opaque,
+    // with the incoming clip cut to the wipe's edge or both pictures shifted (transitionLook).
+    const look = transitionLook(tr, t);
+    const otherMix = before && !look.opaque ? m.b : 1;
+    const fxCur = before ? look.a : look.bFx;
+    const fxOther = before ? look.bFx : look.a;
     if (activeEl) {
       activeEl.style.zIndex = '1';
-      this.applyStyle(activeEl as HTMLVideoElement, cur, t, before ? 1 : m.b);
+      this.applyStyle(activeEl as HTMLVideoElement, cur, t, before || look.opaque ? 1 : m.b, fxCur);
       if (activeEl instanceof HTMLVideoElement) setVideoGain(activeEl, (cur.item as ClipItem).muted ? 0 : (cur.item as ClipItem).volume * (before ? 1 - m.b : m.b));
     }
     const z = before ? '2' : '0';
@@ -472,7 +499,7 @@ class PreviewEngine {
         this.timg.src = previewUrl(media) ?? '';
         this.timgMedia = media.id;
       }
-      this.applyStyle(this.timg, otherL, t, otherMix);
+      this.applyStyle(this.timg, otherL, t, otherMix, fxOther);
       this.timg.style.zIndex = z;
       this.timg.style.display = 'block';
       return;
@@ -495,7 +522,7 @@ class PreviewEngine {
       if (!this.tv.paused) this.tv.pause();
       if (Math.abs(this.tv.currentTime - target) > 0.002) this.tv.currentTime = target;
     }
-    this.applyStyle(this.tv, otherL, t, otherMix);
+    this.applyStyle(this.tv, otherL, t, otherMix, fxOther);
     setVideoGain(this.tv, other.muted ? 0 : other.volume * (before ? m.b : 1 - m.b));
     this.tv.style.zIndex = z;
     this.tv.style.display = 'block';
@@ -503,7 +530,7 @@ class PreviewEngine {
 
   /** Load the incoming clip of an upcoming crossfade into the transition element ahead of time. */
   private prepareTransition(t: Ticks) {
-    const next = this.transitions.find((x) => x.kind === 'crossfade' && x.start > t && x.start - t < 1.5 * TICKS_PER_SECOND);
+    const next = this.transitions.find((x) => !isDip(x.kind) && x.start > t && x.start - t < 1.5 * TICKS_PER_SECOND);
     if (!next || !this.tv || this.tv.seeking) return;
     const clip = next.b.item as ClipItem;
     const media = findMedia(this.seq.project, clip.mediaId);
@@ -756,3 +783,4 @@ class PreviewEngine {
 }
 
 export const engine = new PreviewEngine();
+

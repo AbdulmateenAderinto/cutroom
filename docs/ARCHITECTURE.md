@@ -92,6 +92,12 @@ gap:   background colour × N frames + silence × M samples
 then:  concat → (pad or crop if the output aspect differs, chosen explicitly) → libx264 + AAC → MP4
 ```
 
+**Transitions**: crossfade, wipes, slides and zoom are one `xfade` segment over the window
+(`transition=fade|wipeleft|…|slidedown`); zoom also scales each clip per frame through the animated
+path. `transitionLook()` in transitions.ts restates xfade's formulas (b = incoming mix, progress =
+1 − b) as a visible region / offset / scale per layer, and the preview applies exactly that with
+CSS (clip-path polygon, position offset, scale). Dips use `fade` on each clip's own segment.
+
 **Rotation** (`Framing.rotation` + the `rotation` keyframe): the clip goes through the animated path.
 The picture is scaled once to its largest size, rotated (`rotate`, transparent fill) into a square
 whose side is its diagonal, and the square is resized per frame with `scale` commands — uniform

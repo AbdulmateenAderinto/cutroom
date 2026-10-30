@@ -110,6 +110,9 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Picture and sound mix per frame exactly as `transitionMix()` says | ✅ | Brightness measured on every exported frame (≤ 4 levels) |
 | Preview: the other clip plays in a transition layer; dips fade a colour layer | ✅ | Preview vs export compared through the window |
 | Range export through a transition; transitions on both ends of a clip | ✅ | |
+| Wipes (left, right, up, down) and slides (left, right, up, down) | ✅ | FFmpeg `xfade`; every 3rd frame of all 8 checked point by point against `transitionLook()` (the preview's maths); preview vs export 2.2–3.3/255 |
+| Zoom (crossfade while the outgoing clip zooms in and the incoming one settles) | ✅ | Preview vs export 2.6–3.3/255 |
+| Wipes on rotated clips | ✅ | The preview maps the wipe edge back through the rotation (CSS clip-path polygon) |
 | AI tool `set_transition` | ✅ | |
 
 ## Editing tools
@@ -162,7 +165,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Notarization / Developer ID signing, auto-update, bundled FFmpeg | ❌ | Needs an Apple Developer account; FFmpeg licensing decision |
 
 Not planned yet: generative tools, background removal, motion tracking, optical flow,
-plugins, blend modes, proxies, wipes/slides and other transition shapes.
+plugins, blend modes, proxies, other transition shapes (circles, pushes with blur…).
 
 ## Verification
 
@@ -264,9 +267,10 @@ video element's rate changes during playback, preview vs export at three moments
 11.7–53 for a frame 45 earlier); a freeze frame with ⇧F and a reversed clip, each compared with the
 export (2.3–5.5/255 vs 16–21 for another moment), and “Play forwards again”.
 
-**Motion UI run (fourteenth script, 4 steps):** rotation by field and ↺/↻, a rotation keyframe pair,
+**Motion UI run (fourteenth script, 5 steps):** rotation by field and ↺/↻, a rotation keyframe pair,
 a title with position and rotation keyframes, and preview vs export at four moments (2.1–3.0/255 vs
-23–53 for a moment with a different angle or position).
+23–53 for a moment with a different angle or position); then a wipe (out of the rotated clip), a
+slide and a zoom, each compared at three frames inside the transition (2.2–3.3/255 vs 25–55).
 
 **Overlays UI run (twelfth script, 7 steps):** **⧉ PiP** adds the clip at the playhead on a V2 row
 and selects it; dragging and resizing it in the preview and the “Top left” preset (the main clip's

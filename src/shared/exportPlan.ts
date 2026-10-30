@@ -32,7 +32,7 @@ import {
   sourceAt,
   sourceColor,
 } from './model';
-import { dipColour, resolveTransitions } from './transitions';
+import { type ResolvedTransition, dipColour, isDip, resolveTransitions, transitionMix, xfadeName, zoomScale } from './transitions';
 import { clipColor, ffmpegMixer } from './color';
 import { overlayLayout, overlays } from './overlays';
 import {
@@ -336,7 +336,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
    * `layer`: composed on a transparent canvas instead (an overlay-track clip, laid over the main
    * track afterwards); fades then change the alpha instead of mixing with the background colour.
    */
-  const renderClip = (l: LaidOutItem, f0: number, f1: number, layer = false): [string, string] => {
+  const renderClip = (l: LaidOutItem, f0: number, f1: number, layer = false, extraScale?: (t: Ticks) => number): [string, string] => {
     const n = segN++;
     const frames = f1 - f0;
     const samples = samplesOf(f0, f1);
@@ -402,14 +402,15 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const r0 = computeClipRect(info.displayWidth, info.displayHeight, cw, ch, item.framing);
     const R = { x: r0.x * k, y: r0.y * k, w: r0.w * k, h: r0.h * k };
     const V = intersect(R, bw, bh);
-    if (hasAnimation(item.animation) || rotates(item)) {
+    if (hasAnimation(item.animation) || rotates(item) || extraScale) {
       // Animated (or rotated) clip: evaluate the animation at every output frame (same function as
       // the preview) and drive FFmpeg with per-frame commands for size, position, angle and opacity.
       const dur = l.end - l.start;
       const quarter = 0.25 / (rate.num / rate.den);
       const states = Array.from({ length: frames }, (_, j) => {
         const rel = Math.max(0, frameToTicks(f0 + j, rate) - l.start);
-        const st = evalAnimation(item.animation, Math.min(rel, dur), dur, item.sourceIn, clipSpeed(item));
+        const st0 = evalAnimation(item.animation, Math.min(rel, dur), dur, item.sourceIn, clipSpeed(item));
+        const st = extraScale ? { ...st0, scale: st0.scale * extraScale(frameToTicks(f0 + j, rate)) } : st0;
         return { r: animateRect(r0, st, cw, ch), st, angle: clipAngle(item.framing, st.rotation) };
       });
       const rotating = states.some((s) => s.angle % 360 !== 0);
@@ -522,7 +523,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   const transitions = resolveTransitions(project, items);
   type Seg =
     | { kind: 'gap' | 'clip'; l: LaidOutItem; f0: number; f1: number; dipIn?: { frames: number; colour: string }; dipOut?: { frames: number; colour: string } }
-    | { kind: 'xfade'; a: LaidOutItem; b: LaidOutItem; f0: number; f1: number };
+    | { kind: 'xfade'; tr: ResolvedTransition; a: LaidOutItem; b: LaidOutItem; f0: number; f1: number };
   const segs: Seg[] = [];
   items.forEach((l) => {
     let f0 = fr(l.start);
@@ -530,12 +531,12 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const before = transitions.find((t) => t.b === l);
     const after = transitions.find((t) => t.a === l);
     const seg: Seg = { kind: l.item.kind, l, f0, f1 };
-    if (before?.kind === 'crossfade') seg.f0 = f0 = fr(before.end);
+    if (before && !isDip(before.kind)) seg.f0 = f0 = fr(before.end);
     else if (before) seg.dipIn = { frames: fr(before.end) - f0, colour: dipColour(before.kind) };
-    if (after?.kind === 'crossfade') seg.f1 = f1 = fr(after.start);
+    if (after && !isDip(after.kind)) seg.f1 = f1 = fr(after.start);
     else if (after) seg.dipOut = { frames: f1 - fr(after.start), colour: dipColour(after.kind) };
     segs.push(seg);
-    if (after?.kind === 'crossfade') segs.push({ kind: 'xfade', a: after.a, b: after.b, f0: fr(after.start), f1: fr(after.end) });
+    if (after && !isDip(after.kind)) segs.push({ kind: 'xfade', tr: after, a: after.a, b: after.b, f0: fr(after.start), f1: fr(after.end) });
   });
 
   for (const seg of segs) {
@@ -554,10 +555,13 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       // Both clips over the whole window, mixed linearly: frame j shows a j/n of the incoming clip.
       const n = seg.f1 - seg.f0;
       const dur = f6(ticksToSeconds(frameToTicks(n, rate)));
-      const [va, aa] = renderClip(seg.a, f0, f1);
-      const [vb, ab] = renderClip(seg.b, f0, f1);
+      // Zoom: each clip is also scaled per frame (transitionLook); the pictures are then crossfaded.
+      const zoom = (which: 'a' | 'b') =>
+        seg.tr.kind === 'zoom' ? (t: Ticks) => zoomScale(which, transitionMix(seg.tr, t).b) : undefined;
+      const [va, aa] = renderClip(seg.a, f0, f1, false, zoom('a'));
+      const [vb, ab] = renderClip(seg.b, f0, f1, false, zoom('b'));
       const k = segN++;
-      filters.push(`${va}${vb}xfade=transition=fade:duration=${dur}:offset=0,trim=end_frame=${frames},format=yuv420p[xv${k}]`);
+      filters.push(`${va}${vb}xfade=transition=${xfadeName(seg.tr.kind)}:duration=${dur}:offset=0,trim=end_frame=${frames},format=yuv420p[xv${k}]`);
       filters.push(`${aa}afade=t=out:st=0:d=${dur}:curve=tri[xao${k}]`);
       filters.push(`${ab}afade=t=in:st=0:d=${dur}:curve=tri[xai${k}]`);
       filters.push(`[xao${k}][xai${k}]amix=inputs=2:normalize=0:duration=first,atrim=end_sample=${samples}[xa${k}]`);
