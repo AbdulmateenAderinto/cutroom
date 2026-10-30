@@ -102,6 +102,9 @@ export interface CutroomApi {
   chooseExportPath(defaultName: string): Promise<string | null>;
   startExport(project: Project, settings: ExportSettings): Promise<ExportResult>;
   cancelExport(): Promise<void>;
+  /** Make (or reuse) the preview copy of a file the preview can't play directly. */
+  makeProxy(path: string, info: MediaInfo): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  onProxyProgress(cb: (p: { path: string; fraction: number }) => void): () => void;
   /** Whether the hardware encoder works here (checked once with a test encode). */
   encoders(): Promise<{ videotoolbox: boolean; reason?: string }>;
   onExportProgress(cb: (p: ExportProgress) => void): () => void;

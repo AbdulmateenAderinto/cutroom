@@ -12,6 +12,7 @@ function MediaItem({ m }: { m: MediaRef }) {
   const missing = useStore((s) => !!s.missing[m.id]);
   const selected = useStore((s) => s.selection?.kind === 'media' && s.selection.id === m.id);
   const previewing = useStore((s) => s.previewMediaId === m.id);
+  const proxy = useStore((s) => s.proxies[m.id]);
   const uses = useStore((s) =>
     s.project.sequence.items.filter((i) => i.kind === 'clip' && i.mediaId === m.id).length +
     (s.project.audioTracks ?? []).reduce((n, t) => n + t.clips.filter((c) => c.mediaId === m.id).length, 0));
@@ -37,6 +38,8 @@ function MediaItem({ m }: { m: MediaRef }) {
         )}
         <span className="thumb-duration">{i.kind === 'image' ? 'Photo' : formatDuration(i.duration)}</span>
         {previewing && <span className="thumb-badge">Previewing</span>}
+        {proxy?.status === 'making' && <span className="thumb-badge proxy" title="Making a preview copy (this format can't be played directly; export uses the original)">Preparing {Math.round((proxy.fraction ?? 0) * 100)}%</span>}
+        {proxy?.status === 'failed' && <span className="thumb-badge proxy failed" title={proxy.error}>No preview</span>}
       </div>
       <div className="media-meta">
         <div className="media-name">{m.name}</div>

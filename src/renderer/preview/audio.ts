@@ -11,6 +11,7 @@
 import { type AudioTrack, findMedia, type Project } from '../../shared/model';
 import { audioClipEnd, clipGainAt, duckGainAt, speechIntervals, tracks } from '../../shared/audio';
 import { type Ticks, ticksToSeconds } from '../../shared/time';
+import { previewUrl } from './mediaUrl';
 
 let ctx: AudioContext | null = null;
 const videoGains = new Map<HTMLMediaElement, GainNode>();
@@ -85,7 +86,9 @@ export function syncMusic(project: Project, t: Ticks, playing: boolean, missing:
         music.get(c.id)?.el.pause();
         continue;
       }
-      const p = player(c.id, c.mediaId, window.cutroom.mediaUrl(m.path), track);
+      const url = previewUrl(m);
+      if (!url) continue; // preview copy of this sound not ready yet
+      const p = player(c.id, c.mediaId, url, track);
       live.add(c.id);
       p.gain.gain.value = clipGainAt(c, t);
       const want = ticksToSeconds(c.sourceIn + Math.max(0, t - c.start));

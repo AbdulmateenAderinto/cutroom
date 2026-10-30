@@ -72,13 +72,14 @@ describe('probe', () => {
     expect(r.warnings.join(' ')).toMatch(/HEVC/);
   });
 
-  it('rejects unsupported inputs with readable reasons', async () => {
+  it('accepts ProRes and MKV (with preview copies) and rejects what cannot be read, with reasons', async () => {
     const prores = await probeMedia(fx('prores.mov'));
-    expect(prores.ok).toBe(false);
-    if (!prores.ok) expect(prores.error).toMatch(/prores.*not supported/i);
+    expect(prores.ok && prores.info.preview).toBe('transcode');
     const mkv = await probeMedia(fx('video.mkv'));
-    if (!mkv.ok) expect(mkv.error).toMatch(/\.mkv/);
-    expect(mkv.ok).toBe(false);
+    expect(mkv.ok && mkv.info.preview).toBe('remux');
+    const unknown = await probeMedia(fx('prores.mov').replace('.mov', '.xyz'));
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) expect(unknown.error).toMatch(/\.xyz.*not supported/);
     const garbageExt = await probeMedia(fx('prores.mov').replace('.mov', '.ogg'));
     expect(garbageExt.ok).toBe(false);
     const garbage = await probeMedia(fx('garbage.mp4'));

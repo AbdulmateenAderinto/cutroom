@@ -86,7 +86,7 @@ export const CONTROL_TOOLS: ToolDef[] = [
   {
     name: 'import_media',
     runs: 'main',
-    description: 'Import files into the Media panel (absolute paths): video (MP4/MOV with H.264), audio for music tracks (MP3, M4A, WAV, FLAC) and photos (JPEG, PNG, WebP). Files are referenced, never modified.',
+    description: 'Import files into the Media panel (absolute paths): video (MP4, MOV, MKV, WebM, AVI, MTS, MXF, … incl. ProRes and HEVC), audio for music tracks (MP3, M4A, WAV, FLAC, AIFF, OGG, …) and photos (JPEG, PNG, WebP, TIFF, HEIC on macOS). Formats the preview can\'t play get a preview copy in the background; exports use the originals. Files are referenced, never modified.',
     inputSchema: obj({ paths: { type: 'array', items: { type: 'string' }, description: 'absolute file paths' } }, ['paths']),
   },
 

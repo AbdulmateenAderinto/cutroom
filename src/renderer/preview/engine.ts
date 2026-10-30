@@ -31,6 +31,12 @@ import {
 import { type Ticks, TICKS_PER_SECOND, frameDuration, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { evalAnimation } from '../../shared/animation';
 import { clipColor, svgMatrix } from '../../shared/color';
+import { previewUrl } from './mediaUrl';
+
+/** Which preview copies are ready (changes when one finishes, so the preview can show it). */
+function readyProxies(): string {
+  return Object.entries(store.get().proxies).filter(([, p]) => p.status === 'ready').map(([id]) => id).join(',');
+}
 import { type ResolvedTransition, dipColour, resolveTransitions, transitionMix } from '../../shared/transitions';
 import { playhead } from '../state/playhead';
 import { attachVideoElement, setVideoGain, stopMusic, syncMusic } from './audio';
@@ -59,6 +65,7 @@ class PreviewEngine {
   private sourceMode: string | null = null;
   private unsub: (() => void) | null = null;
   onOffline: (mediaName: string | null) => void = () => {};
+  onPreparing: (mediaId: string | null) => void = () => {};
 
   private img: HTMLImageElement | null = null;
   private imgMedia: string | null = null;
@@ -94,10 +101,13 @@ class PreviewEngine {
     }
     let lastProject = store.get().project;
     let lastSource = store.get().previewMediaId;
+    let lastReady = readyProxies();
     this.rebuild();
     this.unsub = store.subscribe(() => {
       const s = store.get();
-      if (s.project === lastProject && s.previewMediaId === lastSource) return;
+      const ready = readyProxies();
+      if (s.project === lastProject && s.previewMediaId === lastSource && ready === lastReady) return;
+      lastReady = ready;
       const modeChanged = s.previewMediaId !== lastSource;
       lastProject = s.project;
       lastSource = s.previewMediaId;
@@ -191,7 +201,9 @@ class PreviewEngine {
     const m = findMedia(this.seq.project, mediaId);
     const el = this.els[idx];
     if (!m || !el) return -1;
-    el.src = window.cutroom.mediaUrl(m.path);
+    const url = previewUrl(m);
+    if (!url) return -1; // preview copy not ready yet
+    el.src = url;
     this.elMedia[idx] = mediaId;
     return idx;
   }
@@ -337,7 +349,7 @@ class PreviewEngine {
       this.tv.pause();
       this.tv.style.display = 'none';
       if (this.timgMedia !== media.id) {
-        this.timg.src = window.cutroom.mediaUrl(media.path);
+        this.timg.src = previewUrl(media) ?? '';
         this.timgMedia = media.id;
       }
       this.applyStyle(this.timg, otherL, t, otherMix);
@@ -347,7 +359,7 @@ class PreviewEngine {
     }
     this.timg.style.display = 'none';
     if (this.tvMedia !== media.id) {
-      this.tv.src = window.cutroom.mediaUrl(media.path);
+      this.tv.src = previewUrl(media) ?? '';
       this.tvMedia = media.id;
     }
     const target = this.sourceSeconds(other, otherL, t);
@@ -377,7 +389,8 @@ class PreviewEngine {
     const media = findMedia(this.seq.project, clip.mediaId);
     if (!media || media.info.kind === 'image' || store.get().missing[media.id]) return;
     if (this.tvMedia !== media.id) {
-      this.tv.src = window.cutroom.mediaUrl(media.path);
+      if (!previewUrl(media)) return;
+      this.tv.src = previewUrl(media)!;
       this.tvMedia = media.id;
     }
     const target = this.sourceSeconds(clip, next.b, next.start);
@@ -399,10 +412,17 @@ class PreviewEngine {
     }
     this.onOffline(null);
     const media = findMedia(this.seq.project, clip.mediaId);
+    if (media && !previewUrl(media)) {
+      // A preview copy is being made for this file (format the preview can't play directly).
+      this.show(-1);
+      this.onPreparing(media.id);
+      return null;
+    }
+    this.onPreparing(null);
     if (media?.info.kind === 'image' && this.img) {
       // Photos: an <img> positioned like a video; the wall clock drives playback.
       if (this.imgMedia !== media.id) {
-        this.img.src = window.cutroom.mediaUrl(media.path);
+        this.img.src = previewUrl(media) ?? '';
         this.imgMedia = media.id;
       }
       this.applyStyle(this.img, l, Math.min(t, l.end - this.frame()));

@@ -46,6 +46,12 @@ export interface MediaInfo {
   colorTags?: { matrix: string; primaries: string };
   /** Photos with transparency (PNG/WebP): the background colour shows through. */
   hasAlpha?: boolean;
+  /**
+   * How the preview shows this file (the export always reads the original): 'native' = the
+   * original; otherwise a cached preview copy made with FFmpeg ('remux': picture copied, sound
+   * converted; 'transcode': H.264 copy; 'audio'; 'image'). Absent = 'native'.
+   */
+  preview?: 'native' | 'remux' | 'transcode' | 'audio' | 'image';
   // Audio
   hasAudio: boolean;
   audioCodec: string | null;

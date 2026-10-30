@@ -1,26 +1,24 @@
 /**
- * Media inspection with ffprobe, plus the (deliberately narrow) list of supported inputs for
- * this milestone. Anything outside it is rejected with a readable reason rather than half-working.
+ * Media inspection with ffprobe. Anything FFmpeg can decode in the supported file types is
+ * accepted; probe also decides how the preview shows it (see shared/formats.ts). Files that can't
+ * be read are rejected with a readable reason rather than half-working.
  */
 import { execFile } from 'node:child_process';
 import { statSync } from 'node:fs';
+import { AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, VIDEO_EXTENSIONS, audioPreviewMode, imagePreviewMode, videoPreviewMode } from '../../shared/formats';
 import type { MediaInfo } from '../../shared/model';
 import { type Rational, parseRational, rateToFloat, secondsToTicks } from '../../shared/time';
 import { ffprobePath } from './ffbin';
+import { getConvertDir, heicToJpeg, isHeic } from './heic';
+
+export { AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, VIDEO_EXTENSIONS };
 
 export type ProbeResult =
   | { ok: true; info: MediaInfo; warnings: string[] }
   | { ok: false; error: string };
 
-export const VIDEO_EXTENSIONS = ['mp4', 'mov', 'm4v'];
-/** Audio formats the preview (Chromium) can play; FFmpeg decodes them all for export. */
-export const AUDIO_EXTENSIONS = ['mp3', 'm4a', 'aac', 'wav', 'flac'];
-/** Still images the preview can show; HEIC is not supported by Chromium or FFmpeg 6. */
-export const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
-export const SUPPORTED_EXTENSIONS = [...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS, ...IMAGE_EXTENSIONS];
 /** Photos have no length of their own; clips of them can be any length up to this. */
 export const IMAGE_MAX_DURATION_S = 3600;
-const AUDIO_CODECS = ['mp3', 'aac', 'flac', 'pcm_s16le', 'pcm_s24le', 'pcm_s32le', 'pcm_f32le', 'pcm_u8', 'alac'];
 
 function ffprobeJson(file: string): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -47,14 +45,32 @@ function rotationOf(stream: any): number {
   return ((Math.round(r) % 360) + 360) % 360;
 }
 
-export async function probeMedia(file: string): Promise<ProbeResult> {
+export interface ProbeOptions {
+  /** Where HEIC photos are converted to JPEG (macOS); without it HEIC is rejected. */
+  convertDir?: string;
+}
+
+export async function probeMedia(file: string, opts: ProbeOptions = { convertDir: getConvertDir() ?? undefined }): Promise<ProbeResult> {
   const ext = file.split('.').pop()?.toLowerCase() ?? '';
-  if (ext === 'heic' || ext === 'heif') {
-    return { ok: false, error: 'HEIC photos are not supported yet. Export them as JPEG first (Photos app → File → Export).' };
+  if (isHeic(file)) {
+    // Neither Chromium nor FFmpeg 6 reads HEIC; macOS converts it (sips) to a full-quality JPEG
+    // that both the preview and the export use. The project still refers to the original file.
+    if (process.platform !== 'darwin' || !opts.convertDir) {
+      return { ok: false, error: 'HEIC photos can only be imported on a Mac (Cutroom uses macOS to convert them). Export them as JPEG first.' };
+    }
+    let jpeg: string;
+    try {
+      jpeg = await heicToJpeg(opts.convertDir, file);
+    } catch (e) {
+      return { ok: false, error: `Could not convert this HEIC photo: ${(e as Error).message}` };
+    }
+    const r = await probeImage(jpeg, 'image');
+    if (r.ok) r.warnings.push('HEIC photo: converted to a full-quality JPEG copy for preview and export (the original is not changed).');
+    return r;
   }
-  if (IMAGE_EXTENSIONS.includes(ext)) return probeImage(file);
+  if (IMAGE_EXTENSIONS.includes(ext)) return probeImage(file, imagePreviewMode(ext));
   if (!SUPPORTED_EXTENSIONS.includes(ext)) {
-    return { ok: false, error: `“.${ext}” files are not supported yet. This version imports MP4/MOV (H.264) video, MP3/M4A/AAC/WAV/FLAC audio and JPEG/PNG/WebP photos.` };
+    return { ok: false, error: `“.${ext}” files are not supported. Cutroom imports video (${VIDEO_EXTENSIONS.join(', ')}), audio (${AUDIO_EXTENSIONS.join(', ')}) and photos (${IMAGE_EXTENSIONS.join(', ')}).` };
   }
   let data: any;
   try {
@@ -65,18 +81,17 @@ export async function probeMedia(file: string): Promise<ProbeResult> {
   const streams: any[] = data.streams ?? [];
   const v = streams.find((s) => s.codec_type === 'video' && !s.disposition?.attached_pic);
   const a = streams.find((s) => s.codec_type === 'audio');
-  if (AUDIO_EXTENSIONS.includes(ext) || (!v && a)) return probeAudio(file, data, a);
+  if (AUDIO_EXTENSIONS.includes(ext) || (!v && a)) return probeAudio(file, data, a, ext);
   if (!v) return { ok: false, error: 'No video or audio stream found in this file.' };
 
   const warnings: string[] = [];
   const codec: string = v.codec_name ?? 'unknown';
-  if (codec !== 'h264' && codec !== 'hevc') {
-    return {
-      ok: false,
-      error: `Video codec “${codec}” is not supported yet (preview cannot play it). Convert to H.264 first, e.g. ffmpeg -i in.mov -c:v libx264 -crf 18 -c:a aac out.mp4`,
-    };
+  if (!v.codec_name || codec === 'none' || codec === 'unknown') {
+    return { ok: false, error: 'The video in this file uses a codec FFmpeg cannot decode.' };
   }
-  if (codec === 'hevc') warnings.push('HEVC (H.265): preview depends on hardware decoding (macOS supports it); this path is not yet tested.');
+  const preview = videoPreviewMode({ ext, container: data.format?.format_name ?? '', videoCodec: codec, audioCodec: a?.codec_name ?? null, platform: process.platform });
+  if (preview === 'transcode') warnings.push(`${codec.toUpperCase()} can't be played directly by the preview: a lighter H.264 preview copy is made in the background. The export uses the original.`);
+  if (preview === 'remux') warnings.push('The preview uses a copy with converted sound (made in the background). The export uses the original.');
 
   const width = Number(v.width) || 0;
   const height = Number(v.height) || 0;
@@ -119,11 +134,7 @@ export async function probeMedia(file: string): Promise<ProbeResult> {
   const durSec = Number(v.duration) || Number(data.format?.duration) || 0;
   if (durSec <= 0) return { ok: false, error: 'Could not determine the duration of this file.' };
 
-  let audioCodec: string | null = null;
-  if (a) {
-    audioCodec = a.codec_name ?? 'unknown';
-    if (audioCodec !== 'aac') warnings.push(`Audio codec “${audioCodec}” is untested; it may be silent in preview (export decodes it with FFmpeg).`);
-  }
+  const audioCodec: string | null = a ? a.codec_name ?? 'unknown' : null;
 
   let fileSize = Number(data.format?.size) || 0;
   try {
@@ -157,17 +168,17 @@ export async function probeMedia(file: string): Promise<ProbeResult> {
       audioCodec,
       audioSampleRate: a ? Number(a.sample_rate) || null : null,
       audioChannels: a ? Number(a.channels) || null : null,
+      ...(preview !== 'native' ? { preview } : {}),
     },
   };
 }
 
 /** Audio-only files (music, voice-over) for audio tracks. */
-function probeAudio(file: string, data: any, a: any): ProbeResult {
+function probeAudio(file: string, data: any, a: any, ext: string): ProbeResult {
   if (!a) return { ok: false, error: 'No audio stream found in this file.' };
   const codec: string = a.codec_name ?? 'unknown';
-  if (!AUDIO_CODECS.includes(codec)) {
-    return { ok: false, error: `Audio codec “${codec}” is not supported yet. Use MP3, AAC (M4A), WAV or FLAC.` };
-  }
+  if (!a.codec_name || codec === 'none') return { ok: false, error: 'The sound in this file uses a codec FFmpeg cannot decode.' };
+  const preview = audioPreviewMode({ ext, container: data.format?.format_name ?? '', audioCodec: codec, platform: process.platform });
   const durSec = Number(a.duration) || Number(data.format?.duration) || 0;
   if (durSec <= 0) return { ok: false, error: 'Could not determine the duration of this file.' };
   let fileSize = Number(data.format?.size) || 0;
@@ -177,8 +188,9 @@ function probeAudio(file: string, data: any, a: any): ProbeResult {
   const none = { num: 30, den: 1 };
   return {
     ok: true,
-    warnings: [],
+    warnings: preview === 'audio' ? ['The preview plays a converted copy of this sound (made in the background). The export uses the original.'] : [],
     info: {
+      ...(preview !== 'native' ? { preview } : {}),
       kind: 'audio',
       container: data.format?.format_name ?? '',
       fileSize,
@@ -194,7 +206,7 @@ function probeAudio(file: string, data: any, a: any): ProbeResult {
 }
 
 /** Photos. Orientation comes from the first decoded frame (EXIF), which FFmpeg and Chromium both apply. */
-async function probeImage(file: string): Promise<ProbeResult> {
+async function probeImage(file: string, preview: 'native' | 'image'): Promise<ProbeResult> {
   let data: any;
   try {
     data = await new Promise((resolve, reject) => {
@@ -239,6 +251,7 @@ async function probeImage(file: string): Promise<ProbeResult> {
       colorMatrix: 'bt709', colorRange: 'tv',
       hasAlpha: /a/.test(pixFmt.replace('yuvj', '')) && /(rgba|bgra|argb|abgr|ya|yuva|gbrap)/.test(pixFmt),
       hasAudio: false, audioCodec: null, audioSampleRate: null, audioChannels: null,
+      ...(preview !== 'native' ? { preview } : {}),
     },
   };
 }

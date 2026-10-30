@@ -73,7 +73,8 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 
 | Area | Features |
 |---|---|
-| Editing | Import MP4/MOV, trim, split, delete (close gap / leave gap), reorder, duplicate, undo/redo, snapping, frame stepping |
+| Import | MP4/MOV/MKV/WebM/AVI/MTS/MXF… (H.264, HEVC, ProRes, DNxHR…), GIF; MP3/WAV/AIFF/OGG…; JPEG/PNG/TIFF/HEIC (Mac). Preview copies for formats the preview can't play |
+| Editing | Trim, split, delete (close gap / leave gap), reorder, duplicate, undo/redo, snapping, frame stepping |
 | Framing | Canvas presets (16:9, 9:16, 1:1, 4:5, custom), Fit / Fill / Manual per clip |
 | Animation | In/out presets, slow zoom/pan, keyframes with easing |
 | Music | Audio tracks, waveforms, fades, volume to 200%, auto-ducking under speech |
@@ -93,7 +94,8 @@ Projects save as `.cutroom` files (format version 5; older ones open fine).
 Tick these off; anything that fails is worth a GitHub issue or a message to Claude.
 
 - [ ] `npm run dev` opens the window; FFmpeg is found (no red banner).
-- [ ] Import a few iPhone clips (HEVC, portrait, maybe HDR) and photos (HEIC is rejected on purpose — convert to JPEG).
+- [ ] Import a few iPhone clips (HEVC, portrait, maybe HDR) and **HEIC photos** (converted with macOS's sips — untested so far).
+- [ ] Import a ProRes or camera file (.mov/.mts/.mxf): "Preparing…" then preview; export matches.
 - [ ] Playback is smooth with real 4K footage; music stays in sync.
 - [ ] Export with **Apple hardware — VideoToolbox** in the export dialog (it is only offered if a test encode works).
 - [ ] AirDrop an *Apple devices — HEVC* export to an iPhone; open it in Photos. Open a ProRes export in Final Cut Pro.

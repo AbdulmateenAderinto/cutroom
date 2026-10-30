@@ -17,6 +17,7 @@ import { audioClipDuration, audioClipEnd, duckGainAt, speechIntervals, tracks } 
 import {
   type ClipItem,
   type LaidOutItem,
+  type MediaInfo,
   type MediaRef,
   type PreviewPlatform,
   type Project,
@@ -220,6 +221,31 @@ export interface ExportExtras {
 }
 
 /**
+ * The first filters for a video source, so the rest of the chain sees the colours the preview
+ * shows (see sourceColor): `tagSource + toBt709`, then convert from `matrix`/`range` to BT.709.
+ * Shared with the preview copies (main/media/proxy.ts), so they show the same colours.
+ */
+export function sourceColorSteps(info: MediaInfo, platform: PreviewPlatform) {
+  const src = sourceColor(info, platform);
+  // SD primaries (macOS only): converted to BT.709 first, in linear light with the sRGB curve as
+  // Chromium does (pure SMPTE-C green shows as 63,251,0), so the rest of the chain sees BT.709.
+  // The range is converted beforehand: the colorspace filter takes no full-range (yuvj) input.
+  const gamut = src.primaries === 'smpte170m' || src.primaries === 'bt470bg';
+  // Video frames are first tagged with the matrix/range assumed here: FFmpeg 8+ converts untagged
+  // frames (as BT.601) to match the output's BT.709 tag, which shifted untagged HD colours.
+  const tagSource = `setparams=${src.matrix === 'other' ? '' : `colorspace=${src.matrix === 'bt601' ? 'smpte170m' : 'bt709'}:`}range=${info.colorRange === 'pc' ? 'pc' : 'tv'},`;
+  const toBt709 = gamut
+    ? `scale=in_range=${info.colorRange === 'pc' ? 'pc' : 'tv'}:out_range=tv,format=yuv420p,` +
+      `colorspace=ispace=${src.matrix === 'bt601' ? 'smpte170m' : 'bt709'}:irange=tv:iprimaries=${src.primaries}:itrc=srgb:` +
+      'space=bt709:range=tv:primaries=bt709:trc=srgb:fast=0,' +
+      'setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv,'
+    : '';
+  const matrix: 'bt709' | 'bt601' | 'other' = gamut ? 'bt709' : src.matrix;
+  const range: 'tv' | 'pc' = gamut ? 'tv' : info.colorRange ?? 'tv';
+  return { tagSource, toBt709, matrix, range };
+}
+
+/**
  * Pitch-preserving tempo change for a speed. rubberband handles any ratio in one stage; atempo
  * handles 0.5–2× per stage (chained for 0.25× and 4×).
  */
@@ -305,24 +331,9 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     // Convert the source's colour matrix/range to the BT.709 limited-range output, the same
     // interpretation the preview (Chromium) uses, so colours match.
     const isImage = info.kind === 'image';
-    const src = sourceColor(info, extras.previewPlatform ?? 'other');
-    // SD primaries (macOS only): converted to BT.709 first, in linear light with the sRGB curve as
-    // Chromium does (pure SMPTE-C green shows as 63,251,0), so the rest of the chain sees BT.709.
-    // The range is converted beforehand: the colorspace filter takes no full-range (yuvj) input.
-    const gamut = !isImage && (src.primaries === 'smpte170m' || src.primaries === 'bt470bg');
-    // Video frames are first tagged with the matrix/range assumed here: FFmpeg 8+ converts untagged
-    // frames (as BT.601) to match the output's BT.709 tag, which shifted untagged HD colours.
-    const tagSource = isImage
-      ? ''
-      : `setparams=${src.matrix === 'other' ? '' : `colorspace=${src.matrix === 'bt601' ? 'smpte170m' : 'bt709'}:`}range=${info.colorRange === 'pc' ? 'pc' : 'tv'},`;
-    const toBt709 = gamut
-      ? `scale=in_range=${info.colorRange === 'pc' ? 'pc' : 'tv'}:out_range=tv,format=yuv420p,` +
-        `colorspace=ispace=${src.matrix === 'bt601' ? 'smpte170m' : 'bt709'}:irange=tv:iprimaries=${src.primaries}:itrc=srgb:` +
-        'space=bt709:range=tv:primaries=bt709:trc=srgb:fast=0,' +
-        'setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv,'
-      : '';
-    const matrix = gamut ? 'bt709' : src.matrix;
-    const range = gamut ? 'tv' : info.colorRange;
+    const { tagSource, toBt709, matrix, range } = isImage
+      ? { tagSource: '', toBt709: '', matrix: 'bt709' as const, range: 'tv' as const }
+      : sourceColorSteps(info, extras.previewPlatform ?? 'other');
     // Photos are first decoded to RGB (JPEG's full-range BT.601 is undone by that step), so the
     // resizing scale converts RGB → BT.709 limited range, as for backgrounds and captions.
     // Colour adjustments work on RGB (as the preview's SVG filter does): the source is converted to
@@ -337,7 +348,13 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const speed = clipSpeed(item);
     // Speed: timestamps are divided by the speed (frames shown sooner/later); sound is time-stretched
     // with its pitch kept (tempoFilter), like the preview (HTMLMediaElement.preservesPitch).
-    const pts = speed === 1 ? 'setpts=PTS-STARTPTS' : `setpts=(PTS-STARTPTS)/${speed}`;
+    // Constant-frame-rate video: timestamps are snapped to the file's own frame grid. Matroska/WebM
+    // store milliseconds (a frame at 66.67 ms is stored as 67 ms), which would otherwise make the
+    // export show the previous frame where the preview (which seeks a quarter frame in) shows the
+    // right one. Exact timestamps (MP4) are unchanged by this; variable frame rate is left alone.
+    const fr = info.frameRate;
+    const t0 = !isImage && !info.isVFR ? `round((PTS-STARTPTS)*TB*${fr.num}/${fr.den})*${fr.den}/(${fr.num}*TB)` : 'PTS-STARTPTS';
+    const pts = speed === 1 ? `setpts=${t0}` : `setpts=(${t0})/${speed}`;
     // The time stretch needs input past the clip's end to produce its last output window, so read
     // a little more where the file has it (the exact sample trim below removes the excess).
     const readFor0 = speed * ticksToSeconds(frameToTicks(frames, rate)) + 2 * speed * ticksToSeconds(frameDuration(rate)) + (speed === 1 ? 0 : 0.25);

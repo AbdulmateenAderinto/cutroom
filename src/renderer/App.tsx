@@ -82,6 +82,18 @@ export function App() {
     api.listRecovery().then(setRecovery);
     const offMenu = api.onMenu(runAction);
     installClipboardHandlers();
+    // Preview copies: start them whenever media is added, opened or relinked.
+    const offProxy = api.onProxyProgress(({ path, fraction }) => A.proxyProgress(path, fraction));
+    let lastMedia = store.get().project.media;
+    let lastMissing = store.get().missing;
+    A.ensureProxies();
+    const offMediaWatch = store.subscribe(() => {
+      const st = store.get();
+      if (st.project.media === lastMedia && st.missing === lastMissing) return;
+      lastMedia = st.project.media;
+      lastMissing = st.missing;
+      A.ensureProxies();
+    });
     const offClose = api.onCloseRequested(async () => {
       if (await A.saveProject()) api.closeNow();
     });
@@ -106,6 +118,8 @@ export function App() {
       offClose();
       offControl();
       offStore();
+      offProxy();
+      offMediaWatch();
       clearInterval(timer);
       window.removeEventListener('keydown', onKeyDown);
     };

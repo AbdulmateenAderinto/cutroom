@@ -6,7 +6,11 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 
 | Feature | Status | Notes |
 |---|---|---|
-| Import MP4/MOV (H.264 + AAC) via button or drag-and-drop | ✅ | Unsupported files are rejected with a reason |
+| Import video, audio and photos via button or drag-and-drop (formats below) | ✅ | Unreadable/unknown files are rejected with a reason |
+| Video: MP4/MOV/M4V (H.264, HEVC, AV1, ProRes, DNxHR…), MKV, WebM, AVI, MTS/M2TS/TS, MXF, MPG/VOB, 3GP, DV, WMV, FLV, animated GIF | ✅ | Tested: ProRes .mov, DNxHR .mxf, H.264+Opus .mkv, H.264+AC-3 .mts (1.4 s start offset), MPEG-4 .avi, VP9 .webm, GIF |
+| Formats the preview can't play get a preview copy, made once in the background (progress shown); export reads the original | ✅ | Every frame of each preview copy checked against the original; preview vs export compared in the app |
+| Audio: MP3, M4A/AAC, WAV, FLAC, AIFF, OGG/Opus, CAF, WMA, AC-3 | ✅ | Tested: AIFF, OGG, WMA |
+| Photos: JPEG, PNG, WebP, BMP, TIFF; HEIC/HEIF on macOS | ✅ / ☑️ | TIFF/BMP tested; **HEIC is converted with macOS's `sips` and has not been tested yet** (Linux refuses it with a message) |
 | Metadata and thumbnails, generated asynchronously | ✅ | Thumbnails cached in the app's data folder |
 | Source preview of a media file | ✅ | Click it in the Media panel |
 | Add to timeline (button or drag-and-drop) | ✅ | |
@@ -240,9 +244,12 @@ progress/result screens, missing-media state and the gap rendering.
 
 ## Known limitations
 
-- **Inputs:** video: H.264 in MP4/MOV (HEVC is accepted but untested); ProRes, DNxHD, AV1, VP9,
-  MKV/WebM are rejected. Audio: MP3, M4A/AAC, WAV, FLAC. Photos: JPEG, PNG, WebP (still images
-  only; HEIC is rejected with a message — convert it in Photos/Preview first; animated GIF/WebP are not supported).
+- **Inputs:** anything FFmpeg decodes in the listed file types. Formats the preview can't play are shown
+  from a preview copy (H.264, at most 1920×1080, frame-exact), made once and cached in the app's data
+  folder; the export always reads the original, so quality isn't lost. HEVC plays directly on macOS
+  and gets a copy elsewhere. Untagged AVI/MPG/etc. follow the usual rule (SD = BT.601). AVI files with
+  MP3 sound written by FFmpeg can start with a repeated frame (the file's own timing; preview and export
+  agree). HEIC needs macOS; animated WebP and RAW photos are not supported.
 - **Photos** are decoded at full size for every clip in the export; very large photos (e.g. 50 MP)
   make exports slower and use more memory. Wide-gamut (Display P3) photos are treated as sRGB.
 - **Variable frame rate:** export conforms to the project frame rate. A frame can occasionally differ

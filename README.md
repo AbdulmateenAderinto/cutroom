@@ -58,7 +58,10 @@ npm start
 
 ## Try the milestone workflow
 
-1. **Import…** (top of the Media panel) and pick three MP4/MOV files, or drag files onto the panel.
+1. **Import…** (top of the Media panel) and pick some videos, or drag files onto the panel. Most
+   formats work (MP4, MOV, MKV, WebM, AVI, MTS, MXF, ProRes, HEVC, GIF, and HEIC photos on a Mac);
+   ones the preview can't play show **Preparing…** while a preview copy is made — the export always
+   uses the original file.
 2. Click a media item to preview it as a source clip. Use **Back to timeline** to return.
 3. Click **+ Add to timeline** on each one, or drag it onto the timeline.
 4. Drag a clip's left/right edge to trim it. For exact values, select the clip and type in

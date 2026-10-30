@@ -4,6 +4,7 @@
 import type { Project } from '../../shared/model';
 import type { CaptionTrack, ExportSettings } from '../../shared/exportPlan';
 import { type ExportProgress, type ExportResult, runExport } from './exportRunner';
+import { decodablePath, isHeic } from '../media/heic';
 
 export interface JobState {
   outputPath: string;
@@ -49,8 +50,12 @@ export async function startExport(
         return job.result;
       }
     }
+    // HEIC photos are read from their converted JPEG copies.
+    const decodable = new Map<string, string>();
+    for (const m of project.media) if (isHeic(m.path)) decodable.set(m.path, await decodablePath(m.path).catch(() => m.path));
     job.result = await runExport(project, settings, {
       captions,
+      mediaPath: (m) => decodable.get(m.path) ?? m.path,
       signal: abort.signal,
       onProgress: (p) => {
         job.progress = p;

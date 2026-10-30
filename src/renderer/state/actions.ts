@@ -84,6 +84,40 @@ export async function loadWaveform(mediaId: string) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Preview copies (formats the preview can't play directly; the export uses the originals)
+
+function setProxy(id: string, v: ReturnType<typeof store.get>['proxies'][string]) {
+  store.set((st) => ({ proxies: { ...st.proxies, [id]: v } }));
+}
+
+/** Start making preview copies for media that need one (cached by the app, so quick when already made). */
+export function ensureProxies() {
+  const s = store.get();
+  for (const m of s.project.media) {
+    const mode = m.info.preview;
+    if (!mode || mode === 'native' || s.missing[m.id]) continue;
+    const cur = s.proxies[m.id];
+    if (cur && cur.source === m.path && cur.status !== 'failed') continue;
+    if (cur?.status === 'failed' && cur.source === m.path) continue; // don't retry in a loop
+    setProxy(m.id, { source: m.path, status: 'making', fraction: 0 });
+    void api().makeProxy(m.path, m.info).then((r) => {
+      if (store.get().proxies[m.id]?.source !== m.path) return; // relinked meanwhile
+      setProxy(m.id, r.ok ? { source: m.path, status: 'ready', path: r.path } : { source: m.path, status: 'failed', error: r.error });
+      if (!r.ok) toast(`Could not prepare a preview of ${m.name}: ${r.error}. Export still uses the original.`, 'error');
+    });
+  }
+}
+
+/** Progress events from the main process (by file path). */
+export function proxyProgress(path: string, fraction: number) {
+  const s = store.get();
+  for (const m of s.project.media) {
+    const p = s.proxies[m.id];
+    if (m.path === path && p?.status === 'making') setProxy(m.id, { ...p, fraction });
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Keyboard-first editing: trim to playhead, jump between cuts, select, move, copy/paste
 
 /** Q / W: trim the start / end of the clip under the playhead to the playhead (ripple). */

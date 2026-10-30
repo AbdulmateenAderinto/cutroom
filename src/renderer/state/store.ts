@@ -42,6 +42,8 @@ export interface AppState {
   snapping: boolean;
   /** In/out points for exporting part of the timeline (I / O keys); null ends = timeline start/end. Not saved. */
   marks: { in: Ticks | null; out: Ticks | null };
+  /** Preview copies of media the preview can't play directly, by media id. */
+  proxies: Record<string, { source: string; status: 'making' | 'ready' | 'failed'; path?: string; fraction?: number; error?: string }>;
   pxPerSecond: number;
   previewMediaId: string | null; // non-null while previewing a source file instead of the timeline
   thumbs: Record<string, string>;
@@ -90,6 +92,7 @@ export const store = createStore<AppState>({
   selection: null,
   snapping: true,
   marks: { in: null, out: null },
+  proxies: {},
   pxPerSecond: 60,
   previewMediaId: null,
   thumbs: {},

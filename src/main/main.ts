@@ -7,7 +7,7 @@ import path from 'node:path';
 import { BrowserWindow, Menu, type MenuItemConstructorOptions, app, dialog, ipcMain, shell } from 'electron';
 import type { MenuAction } from '../preload/api';
 import type { ExportSettings } from '../shared/exportPlan';
-import { type Project, PROJECT_EXTENSION } from '../shared/model';
+import { type MediaInfo, type Project, PROJECT_EXTENSION } from '../shared/model';
 import { setupAnalysis } from './analysis/analysisTools';
 import { setupAiControl } from './control/aiControl';
 import { setupTranscription } from './transcribe/transcribeService';
@@ -15,6 +15,8 @@ import { cancelExport, startExport } from './export/exportJobs';
 import { encoderAvailability } from './export/encoders';
 import { checkFfmpeg, resolveBinaries } from './media/ffbin';
 import { SUPPORTED_EXTENSIONS, probeMedia } from './media/probe';
+import { makeProxy } from './media/proxy';
+import { setConvertDir } from './media/heic';
 import { thumbnailDataUrl } from './media/thumbnails';
 import { waveformPeaks } from './media/waveform';
 import { allowMediaPath, handleMediaProtocol, registerSchemePrivileges } from './mediaProtocol';
@@ -179,6 +181,15 @@ function registerIpc() {
     thumbnailDataUrl(path.join(app.getPath('userData'), 'thumbnails'), p, at),
   );
 
+  ipcMain.handle('media:proxy', (e, p: string, info: MediaInfo) =>
+    makeProxy(path.join(app.getPath('userData'), 'proxies'), p, info, (fraction) => e.sender.send('media:proxyProgress', { path: p, fraction }))
+      .then((out) => {
+        allowMediaPath(out);
+        return { ok: true as const, path: out };
+      })
+      .catch((err) => ({ ok: false as const, error: (err as Error).message })),
+  );
+
   ipcMain.handle('media:waveform', (_e, p: string) => waveformPeaks(path.join(app.getPath('userData'), 'waveforms'), p).catch(() => null));
 
   ipcMain.handle('media:exists', (_e, paths: string[]) => paths.map((p) => existsSync(p)));
@@ -279,6 +290,7 @@ function registerIpc() {
 
 app.whenReady().then(() => {
   resolveBinaries(app.isPackaged ? [path.join(process.resourcesPath, 'bin')] : []);
+  setConvertDir(path.join(app.getPath('userData'), 'converted'));
   handleMediaProtocol();
   ai = setupAiControl(() => win);
   registerIpc();

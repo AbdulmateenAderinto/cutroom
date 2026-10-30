@@ -54,6 +54,9 @@ export function PreviewPanel() {
   const playing = usePlayhead((p) => p.playing);
   const time = usePlayhead((p) => p.time);
   const [offline, setOffline] = useState<string | null>(null);
+  const [preparingId, setPreparing] = useState<string | null>(null);
+  const preparing = useStore((s) => (preparingId ? s.proxies[preparingId] : undefined));
+  const preparingName = preparingId ? findMedia(project, preparingId)?.name : undefined;
   const sourceMedia = previewMediaId ? findMedia(project, previewMediaId) : undefined;
   const canvas = sourceMedia
     ? { width: sourceMedia.info.displayWidth, height: sourceMedia.info.displayHeight }
@@ -64,6 +67,7 @@ export function PreviewPanel() {
 
   useEffect(() => {
     engine.onOffline = setOffline;
+    engine.onPreparing = setPreparing;
     engine.attach(va.current!, vb.current!, im.current!, { tv: tv.current!, timg: timg.current!, dip: dip.current! });
     return () => engine.detach();
   }, []);
@@ -161,6 +165,16 @@ export function PreviewPanel() {
             <img ref={timg} className="stage-video" alt="" />
             <div ref={dip} className="stage-dip" />
             {!sourceMedia && <OverlayLayer project={project} width={size.w} height={size.h} />}
+            {preparingId && !offline && (
+              <div className="stage-message">
+                <strong>{preparing?.status === 'failed' ? 'No preview for this file' : `Preparing a preview… ${Math.round((preparing?.fraction ?? 0) * 100)}%`}</strong>
+                <span>
+                  {preparing?.status === 'failed'
+                    ? `${preparingName}: ${preparing.error ?? 'the preview copy could not be made'}. The export still uses the original.`
+                    : `${preparingName} is in a format the preview can't play directly, so a lighter copy is being made (once). The export uses the original.`}
+                </span>
+              </div>
+            )}
             {offline && (
               <div className="stage-message">
                 <strong>Media offline</strong>
