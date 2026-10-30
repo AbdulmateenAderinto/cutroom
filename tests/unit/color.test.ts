@@ -51,7 +51,7 @@ describe('colour adjustments', () => {
   });
 
   it('values are clamped and rounded; neutral settings are removed from the clip', () => {
-    expect(legalColor({ exposure: 9, saturation: -1, contrast: 1.234 })).toEqual({ exposure: 2, contrast: 1.23, saturation: 0, temperature: 0 });
+    expect(legalColor({ exposure: 9, saturation: -1, contrast: 1.234 })).toEqual({ exposure: 2, contrast: 1.23, saturation: 0, temperature: 0, hue: 0, lightness: 0 });
     let p = ops.addClip(ops.addMedia(createProject(), [media]), 'm')!.project;
     const id = p.sequence.items[0].id;
     p = ops.setColor(p, id, { saturation: 0 });

@@ -33,7 +33,7 @@ import {
 } from '../../shared/model';
 import { type Ticks, TICKS_PER_SECOND, frameDuration, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { evalAnimation } from '../../shared/animation';
-import { clipColor, svgMatrix } from '../../shared/color';
+import { clipColor, svgCurveTables, svgMatrix } from '../../shared/color';
 import { previewUrl } from './mediaUrl';
 import { overlayEnd, overlayLayout, overlays } from '../../shared/overlays';
 
@@ -273,18 +273,21 @@ class PreviewEngine {
   }
 
   // One SVG colour filter per element (each element shows one clip at a time).
-  private filters = new Map<HTMLElement, SVGFEColorMatrixElement>();
+  private filters = new Map<HTMLElement, { matrix: SVGFEColorMatrixElement; transfer: SVGFEComponentTransferElement }>();
 
-  /** Colour adjustments as an SVG feColorMatrix on gamma-encoded RGB, the export's transform. */
+  /**
+   * Colour adjustments as an SVG feColorMatrix on gamma-encoded RGB (the export's transform),
+   * followed by the curves as feComponentTransfer tables (the export's curves tables).
+   */
   private colorFilter(el: HTMLElement, clip: ClipItem) {
     const adj = clipColor(clip);
     if (!adj) {
       if (el.style.filter) el.style.filter = '';
       return;
     }
-    let fe = this.filters.get(el);
-    if (!fe) {
-      const ns = 'http://www.w3.org/2000/svg';
+    let f = this.filters.get(el);
+    const ns = 'http://www.w3.org/2000/svg';
+    if (!f) {
       let svg = document.getElementById('cutroom-color-filters') as SVGSVGElement | null;
       if (!svg) {
         svg = document.createElementNS(ns, 'svg') as SVGSVGElement;
@@ -295,18 +298,33 @@ class PreviewEngine {
         svg.style.position = 'absolute';
         document.body.appendChild(svg);
       }
-      const f = document.createElementNS(ns, 'filter');
-      f.id = `cutroom-cf${this.filters.size}`;
-      f.setAttribute('color-interpolation-filters', 'sRGB');
-      fe = document.createElementNS(ns, 'feColorMatrix');
-      fe.setAttribute('type', 'matrix');
-      f.appendChild(fe);
-      svg.appendChild(f);
-      this.filters.set(el, fe);
-      el.dataset.colorFilter = f.id;
+      const filter = document.createElementNS(ns, 'filter');
+      filter.id = `cutroom-cf${++filterSeq}`;
+      filter.setAttribute('color-interpolation-filters', 'sRGB');
+      const matrix = document.createElementNS(ns, 'feColorMatrix') as SVGFEColorMatrixElement;
+      matrix.setAttribute('type', 'matrix');
+      filter.appendChild(matrix);
+      const transfer = document.createElementNS(ns, 'feComponentTransfer') as SVGFEComponentTransferElement;
+      for (const k of ['R', 'G', 'B']) transfer.appendChild(document.createElementNS(ns, `feFunc${k}`));
+      filter.appendChild(transfer);
+      svg.appendChild(filter);
+      f = { matrix, transfer };
+      this.filters.set(el, f);
+      el.dataset.colorFilter = filter.id;
     }
     const values = svgMatrix(adj);
-    if (fe.getAttribute('values') !== values) fe.setAttribute('values', values);
+    if (f.matrix.getAttribute('values') !== values) f.matrix.setAttribute('values', values);
+    const tables = svgCurveTables(adj);
+    [...f.transfer.children].forEach((fn, i) => {
+      const v = tables ? [tables.r, tables.g, tables.b][i] : null;
+      if (v) {
+        if (fn.getAttribute('type') !== 'table') fn.setAttribute('type', 'table');
+        if (fn.getAttribute('tableValues') !== v) fn.setAttribute('tableValues', v);
+      } else if (fn.getAttribute('type') !== 'identity') {
+        fn.setAttribute('type', 'identity');
+        fn.removeAttribute('tableValues');
+      }
+    });
     const want = `url("#${el.dataset.colorFilter}")`;
     if (el.style.filter !== want) el.style.filter = want;
   }
@@ -423,7 +441,7 @@ class PreviewEngine {
     }
     const fe = this.filters.get(e.el);
     if (fe) {
-      fe.parentElement?.remove();
+      fe.matrix.parentElement?.remove();
       this.filters.delete(e.el);
     }
     e.el.remove();
@@ -781,6 +799,8 @@ class PreviewEngine {
     this.raf = requestAnimationFrame(this.tick);
   }
 }
+
+let filterSeq = 0;
 
 export const engine = new PreviewEngine();
 

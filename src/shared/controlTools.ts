@@ -163,9 +163,11 @@ export const CONTROL_TOOLS: ToolDef[] = [
   {
     name: 'set_color',
     runs: 'renderer',
-    description: 'Adjust a clip\'s colour: exposure (stops, -2..2), contrast (0..2, 1 = unchanged), saturation (0..2, 0 = black and white), temperature (-1 cooler .. 1 warmer). Only the given values change; all neutral = no adjustment. Check with get_frame.',
+    description: 'Adjust a clip\'s colour: exposure (stops, -2..2), contrast (0..2, 1 = unchanged), saturation (0..2, 0 = black and white), temperature (-1 cooler .. 1 warmer), hue (degrees, -180..180), lightness (-0.5..0.5, added to every channel), and curves (applied after the sliders: master, r, g, b, each a list of up to 16 [x, y] points in 0..1, smoothed; (0,0) and (1,1) are added at the ends unless given; [] straightens a curve). Only the given values change; all neutral = no adjustment. Check with get_frame.',
     inputSchema: obj({
-      clip_id: str('clip id'), exposure: num('-2..2'), contrast: num('0..2'), saturation: num('0..2'), temperature: num('-1..1'), reset: bool('back to neutral first'),
+      clip_id: str('clip id'), exposure: num('-2..2'), contrast: num('0..2'), saturation: num('0..2'), temperature: num('-1..1'), hue: num('-180..180'), lightness: num('-0.5..0.5'),
+      curves: obj(Object.fromEntries(['master', 'r', 'g', 'b'].map((k) => [k, { type: 'array', items: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 }, maxItems: 16 }]))),
+      reset: bool('back to neutral first'),
     }, ['clip_id']),
   },
   {

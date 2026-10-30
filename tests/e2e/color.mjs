@@ -1,6 +1,7 @@
 /**
  * UI test for colour adjustments in the real app: the sliders, live preview (SVG filter), undo,
- * reset, and the preview's colours matching the export's for several settings.
+ * reset, the preview's colours matching the export's for several settings, and curves (drag a
+ * point in the editor, presets; preview vs export).
  *
  * Run: npm run test:e2e   (Linux without a display: xvfb-run -a npm run test:e2e)
  */
@@ -35,6 +36,7 @@ const settingsList = [
   ['vivid-warm', { Saturation: 1.6, Temperature: 0.8 }],
   ['dark-contrasty', { Exposure: -0.5, Contrast: 1.4 }],
   ['black-and-white', { Saturation: 0 }],
+  ['hue-lightness', { Hue: 60, Lightness: 0.08 }],
 ];
 
 await step('import, add and select the clip; Colour section shows neutral', async () => {
@@ -87,6 +89,51 @@ await step('preview colours match the export for four settings', async () => {
   // And the settings really do something (black-and-white is grey in the export).
   const bw = quadrants(['-ss', '0.995', '-i', shots[3].file]);
   assert(bw.every(([r, g, b]) => Math.abs(r - g) < 4 && Math.abs(g - b) < 4), `black-and-white not grey: ${JSON.stringify(bw)}`);
+});
+
+await step('curves: drag a point in the editor; presets; preview colours match the export', async () => {
+  await page.click('.tl-track .clip >> nth=0');
+  if (await page.locator('.inspector button:has-text("Reset")').isVisible()) await page.click('.inspector button:has-text("Reset")');
+  // Click on the master curve at x = 0.5 and drag the new point up to y ≈ 0.7.
+  await page.locator('svg.curves-box').scrollIntoViewIfNeeded();
+  const box = await page.locator('svg.curves-box').boundingBox();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.3, { steps: 5 });
+  await page.mouse.up();
+  let c = (await clip()).color;
+  const pt = c?.curves?.master?.[0];
+  assert(pt && Math.abs(pt[0] - 0.5) < 0.03 && Math.abs(pt[1] - 0.7) < 0.03, `curve point: ${JSON.stringify(c ?? null)}`);
+  await page.click('button:has-text("Undo")');
+  assert(!(await clip()).color?.curves, 'undo should remove the dragged point in one step');
+  await page.click('.inspector .segmented button:has-text("Blue")');
+  await page.click('.inspector button:has-text("Teal & orange")');
+  c = (await clip()).color;
+  assert(c?.curves?.r && c?.curves?.b, JSON.stringify(c));
+  await setSlider('Hue', -20);
+  const filter = await page.evaluate(() => {
+    const v = [...document.querySelectorAll('video.stage-video')].find((e) => e.style.display === 'block');
+    const id = /#([\w-]+)/.exec(v.style.filter)?.[1];
+    const f = document.getElementById(id);
+    return [...f.querySelectorAll('feFuncR, feFuncG, feFuncB')].map((x) => (x.getAttribute('tableValues') ?? '').split(' ').map(Number));
+  });
+  // Red and blue are curved; green's table is the straight line.
+  const mid = (t) => t[77]; // x = 0.3: red → 0.26, blue → 0.36 in this preset
+  assert(filter.length === 3 && filter.every((t) => t.length === 256), `tables: ${filter.map((t) => t.length)}`);
+  assert(Math.abs(mid(filter[1]) - 77 / 255) < 0.002 && Math.abs(mid(filter[0]) - 0.26) < 0.01 && Math.abs(mid(filter[2]) - 0.36) < 0.01, `mid values ${filter.map(mid)}`);
+  await page.keyboard.press('Escape');
+  await h.seekFrame(30);
+  await h.previewReady();
+  await page.waitForTimeout(300);
+  const png = path.join(out, 'preview-curves.png');
+  await page.locator('.stage').screenshot({ path: png });
+  const file = path.join(out, 'curves.mp4');
+  await h.exportTo(file, { fps: 30 });
+  const a = quadrants(['-i', png]);
+  const b = quadrants(['-ss', '0.995', '-i', file]);
+  const err = Math.max(...a.flatMap((rgb, i) => rgb.map((v, k) => Math.abs(v - b[i][k]))));
+  console.log(`      curves: preview ${JSON.stringify(a)} export ${JSON.stringify(b)} (max diff ${err})`);
+  assert(err <= 8, `preview and export colours differ by up to ${err}`);
 });
 
 await h.close();

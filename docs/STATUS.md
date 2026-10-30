@@ -151,8 +151,11 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Feature | Status | Notes |
 |---|---|---|
 | Per clip: exposure, contrast, saturation, temperature; reset; live sliders (one undo step per drag) | ✅ | |
-| Export colours match the shared maths (`applyColor`) | ✅ | SD BT.601, HD BT.709 and photo sources, 6 settings: within 4/255 |
-| Preview (SVG `feColorMatrix` in sRGB) matches the export | ✅ | 4 settings compared: within 3–5/255, same as with no adjustment |
+| Hue and lightness sliders | ✅ | Part of the same colour matrix |
+| Curves: master and red/green/blue; click to add, drag, double-click or drag out to remove; presets (S-curve, lift shadows, faded, teal & orange) | ✅ | Monotone cubic, one 256-entry table per channel; the preview (feComponentTransfer) and the export (all 256 points to FFmpeg `curves`) use the same table |
+| Export colours match the shared maths (`applyColor`) | ✅ | SD BT.601, HD BT.709 and photo sources, 9 settings incl. hue, lightness and curves: within 4/255 |
+| Preview (SVG `feColorMatrix` in sRGB) matches the export | ✅ | 5 slider settings and a curves preset compared: within 3–5/255, same as with no adjustment |
+| Selective colour (change only the reds…), colour wheels, scopes | ❌ | |
 | AI tool `set_color` | ✅ | |
 
 ## Packaging

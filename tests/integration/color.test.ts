@@ -47,6 +47,9 @@ const CASES: [string, Partial<ColorAdjust>][] = [
   ['black and white', { saturation: 0 }],
   ['vivid, warm', { saturation: 1.6, temperature: 0.8 }],
   ['flat, cool', { contrast: 0.5, temperature: -1 }],
+  ['hue +90, lightness +0.1', { hue: 90, lightness: 0.1 }],
+  ['S-curve', { curves: { master: [[0.25, 0.15], [0.75, 0.85]] } }],
+  ['red/blue curves + saturation', { saturation: 1.3, curves: { r: [[0.5, 0.65]], b: [[0.5, 0.35]] } }],
 ];
 
 describe('colour adjustments in export', () => {

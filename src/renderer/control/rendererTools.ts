@@ -588,10 +588,15 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
       case 'set_color': {
         const c = clipOrThrow(p, args.clip_id);
         const patch: Record<string, number> = {};
-        for (const k of ['exposure', 'contrast', 'saturation', 'temperature']) {
+        for (const k of ['exposure', 'contrast', 'saturation', 'temperature', 'hue', 'lightness']) {
           if (args[k] === undefined) continue;
           if (!Number.isFinite(args[k])) throw new ToolError(`${k} must be a number.`);
           patch[k] = Number(args[k]);
+        }
+        if (args.curves) {
+          const cur = { ...(args.reset ? {} : clipOrThrow(p, args.clip_id).color?.curves) } as Record<string, unknown>;
+          for (const k of ['master', 'r', 'g', 'b']) if (args.curves[k] !== undefined) cur[k] = args.curves[k];
+          (patch as Record<string, unknown>).curves = cur;
         }
         edit('adjusted colour', (pr) => ops.setColor(args.reset ? ops.setColor(pr, c.id, NEUTRAL) : pr, c.id, patch));
         return ok({ color: clipOrThrow(store.get().project, c.id).color ?? 'neutral' });

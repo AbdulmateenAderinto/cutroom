@@ -83,7 +83,7 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Titles | Text rows, 5 styles, fonts, looks, drag to place, fade/rise/pop/typewriter (key **T**) |
 | Speed | 0.25×–4× per clip, pitch kept; stepped speed ramps (ease into/out of slow motion); freeze frame (**⇧F**); reverse |
 | Transitions | Crossfade, dip to black/white, wipes, slides, zoom |
-| Colour | Exposure, contrast, saturation, temperature |
+| Colour | Exposure, contrast, saturation, temperature, hue, lightness, curves |
 | Smart tools | Remove pauses, split at scenes, transcribe (whisper.cpp), remove filler words, captions |
 | Export | H.264, HEVC (Apple `hvc1`) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
 | AI | 53 MCP tools so Claude can edit, look at frames and export |

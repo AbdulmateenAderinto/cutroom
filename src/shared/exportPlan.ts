@@ -33,7 +33,7 @@ import {
   sourceColor,
 } from './model';
 import { type ResolvedTransition, dipColour, isDip, resolveTransitions, transitionMix, xfadeName, zoomScale } from './transitions';
-import { clipColor, ffmpegMixer } from './color';
+import { clipColor, ffmpegCurves, ffmpegMixer } from './color';
 import { overlayLayout, overlays } from './overlays';
 import {
   type Rational,
@@ -396,7 +396,8 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       tagSource +
       toBt709 +
       (isImage ? 'format=rgba,' : adjust ? `scale=in_color_matrix=${matrix === 'bt601' ? 'bt601' : 'bt709'}:in_range=${range === 'pc' ? 'pc' : 'tv'},format=rgba,` : '') +
-      (adjust ? `colorchannelmixer=${ffmpegMixer(adjust)},` : '');
+      (adjust ? `colorchannelmixer=${ffmpegMixer(adjust)},` : '') +
+      (adjust && ffmpegCurves(adjust) ? `${ffmpegCurves(adjust)},` : '');
 
     // Video framing — identical maths to the preview, scaled into output pixels.
     const r0 = computeClipRect(info.displayWidth, info.displayHeight, cw, ch, item.framing);

@@ -92,6 +92,11 @@ gap:   background colour × N frames + silence × M samples
 then:  concat → (pad or crop if the output aspect differs, chosen explicitly) → libx264 + AAC → MP4
 ```
 
+**Colour** (src/shared/color.ts): the sliders are one affine RGB transform (preview: SVG
+`feColorMatrix`; export: `colorchannelmixer`), then curves as one 256-entry table per channel
+(preview: `feComponentTransfer` tables; export: FFmpeg `curves` given all 256 points, x rounded up so
+FFmpeg's own spacing check passes). Both sides work on gamma-encoded 8-bit RGB.
+
 **Transitions**: crossfade, wipes, slides and zoom are one `xfade` segment over the window
 (`transition=fade|wipeleft|…|slidedown`); zoom also scales each clip per frame through the animated
 path. `transitionLook()` in transitions.ts restates xfade's formulas (b = incoming mix, progress =
