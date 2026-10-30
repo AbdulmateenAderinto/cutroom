@@ -51,6 +51,9 @@ class PreviewEngine {
   private seq: Seq = { project: createProject(), items: [], duration: 0 };
   private current: LaidOutItem | null = null;
   private raf = 0;
+  /** J/K/L shuttle: playback speed multiplier (1, 2, 4); `reverse` while playing backwards. */
+  private shuttle = 1;
+  private reverse = false;
   private wallStart = 0;
   private wallT0 = 0;
   private sourceMode: string | null = null;
@@ -348,7 +351,7 @@ class PreviewEngine {
       this.tvMedia = media.id;
     }
     const target = this.sourceSeconds(other, otherL, t);
-    const rate = clipSpeed(other);
+    const rate = clipSpeed(other) * this.shuttle;
     if (this.tv.playbackRate !== rate) this.tv.playbackRate = rate;
     this.tv.preservesPitch = true;
     if (playing) {
@@ -413,7 +416,7 @@ class PreviewEngine {
     const target = this.sourceSeconds(clip, l, displayT);
     if (Math.abs(el.currentTime - target) > (forPlay ? 0.02 : 0.002)) el.currentTime = target;
     // Speed: the element plays its media faster/slower; pitch is kept (as in the export).
-    const rate = clipSpeed(clip);
+    const rate = clipSpeed(clip) * this.shuttle;
     if (el.playbackRate !== rate) el.playbackRate = rate;
     el.preservesPitch = true;
     this.applyStyle(idx, l, displayT);
@@ -449,6 +452,7 @@ class PreviewEngine {
 
   pause() {
     this.stopLoop();
+    this.shuttle = 1;
     for (const el of this.els) el.pause();
     if (playhead.get().playing) {
       playhead.set({ playing: false });
@@ -465,7 +469,64 @@ class PreviewEngine {
     this.tv?.pause();
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.reverse = false;
   }
+
+  /** Current shuttle speed: 0 paused, 1/2/4 forward, -1/-2/-4 backward. */
+  get shuttleSpeed(): number {
+    if (!playhead.get().playing) return 0;
+    return this.reverse ? -this.shuttle : this.shuttle;
+  }
+
+  /** L: play forward; pressed again while playing forward: 2×, then 4×. */
+  shuttleForward() {
+    const sp = this.shuttleSpeed;
+    if (sp > 0) {
+      if (this.shuttle >= 4) return;
+      this.shuttle *= 2;
+      const t = playhead.get().time;
+      this.stopLoop();
+      this.startAt(t);
+      return;
+    }
+    if (sp < 0) this.pause();
+    this.shuttle = 1;
+    this.play();
+  }
+
+  /** J: play backward (picture only); pressed again: 2×, then 4×. */
+  shuttleBackward() {
+    const sp = this.shuttleSpeed;
+    if (sp < 0) {
+      this.shuttle = Math.min(4, this.shuttle * 2);
+      this.wallT0 = playhead.get().time;
+      this.wallStart = performance.now();
+      return;
+    }
+    if (sp > 0) this.pause();
+    if (playhead.get().time <= 0) return;
+    this.shuttle = 1;
+    this.reverse = true;
+    for (const el of this.els) el.pause();
+    this.wallT0 = playhead.get().time;
+    this.wallStart = performance.now();
+    playhead.set({ playing: true });
+    this.raf = requestAnimationFrame(this.reverseTick);
+  }
+
+  private reverseTick = () => {
+    const t = this.wallT0 - secondsToTicks(((performance.now() - this.wallStart) / 1000) * this.shuttle);
+    if (t <= 0) {
+      this.pause();
+      this.seek(0);
+      return;
+    }
+    this.current = this.itemAt(t);
+    playhead.set({ time: t });
+    this.render(t, false); // shows the frame at t (each frame is a seek; sound stays silent)
+    syncMusic(this.seq.project, t, false, store.get().missing);
+    this.raf = requestAnimationFrame(this.reverseTick);
+  };
 
   toggle() {
     playhead.get().playing ? this.pause() : this.play();
@@ -487,7 +548,7 @@ class PreviewEngine {
       t = timelineAt(clip, l.start, secondsToTicks(el.currentTime));
       if (el.ended) t = l.end;
     } else {
-      t = this.wallT0 + secondsToTicks((performance.now() - this.wallStart) / 1000);
+      t = this.wallT0 + secondsToTicks(((performance.now() - this.wallStart) / 1000) * this.shuttle);
     }
     t = Math.max(l.start, t);
     if (t >= l.end) {
@@ -495,7 +556,7 @@ class PreviewEngine {
       return;
     }
     playhead.set({ time: t });
-    syncMusic(this.seq.project, t, true, store.get().missing);
+    syncMusic(this.seq.project, t, true, store.get().missing, this.shuttle);
     this.applyTransition(t, true);
     if (l.item.kind === 'clip' && l.item.animation && !this.inTransition) {
       if (this.img && this.img.style.display === 'block') this.applyStyle(this.img, l, t);

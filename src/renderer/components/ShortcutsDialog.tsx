@@ -1,42 +1,44 @@
+import { useState } from 'react';
+import { SHORTCUTS, keyLabel } from '../shortcuts';
 import { store } from '../state/store';
 
+const GROUPS = ['Playback', 'Navigate', 'Edit', 'Timeline', 'File'] as const;
+
 export function ShortcutsDialog() {
-  const m = window.cutroom.platform === 'darwin' ? '⌘' : 'Ctrl+';
-  const rows: [string, string][] = [
-    ['Space', 'Play / pause'],
-    ['← / →', 'Previous / next frame (Shift: 10 frames)'],
-    ['Home / End', 'Go to start / end'],
-    ['S or ' + m + 'B', 'Split clip at playhead'],
-    ['Delete', 'Delete selected clip and close the gap'],
-    ['Shift+Delete', 'Delete selected clip, leave a gap'],
-    [m + 'D', 'Duplicate selected clip'],
-    [m + 'Z / ' + m + '⇧Z', 'Undo / redo'],
-    ['T', 'Add a title at the playhead'],
-    ['I / O', 'Mark the start / end of a range to export'],
-    ['Alt+X', 'Clear the marked range'],
-    ['N', 'Toggle snapping (hold Alt while dragging to bypass)'],
-    ['+ / −', 'Zoom timeline (or ' + m + ' + scroll wheel)'],
-    [m + 'I', 'Import media'],
-    [m + 'S / ' + m + '⇧S', 'Save / save as'],
-    [m + 'O', 'Open project'],
-    [m + 'E', 'Export'],
-    ['Esc', 'Deselect / back to timeline preview'],
-  ];
+  const [q, setQ] = useState('');
+  const match = (label: string, keys: string) => !q || `${label} ${keys}`.toLowerCase().includes(q.toLowerCase());
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && store.set({ dialog: null })}>
-      <div className="modal small" role="dialog" aria-label="Keyboard shortcuts">
+      <div className="modal shortcuts-modal" role="dialog" aria-label="Keyboard shortcuts">
         <header className="modal-head">
           <h2>Keyboard shortcuts</h2>
           <button className="btn ghost tiny" onClick={() => store.set({ dialog: null })} aria-label="Close">✕</button>
         </header>
-        <p className="muted small">Every action is also available with the mouse: toolbar buttons, the Edit menu and the clip panel.</p>
-        <table className="shortcuts">
-          <tbody>
-            {rows.map(([k, v]) => (
-              <tr key={k}><td><kbd>{k}</kbd></td><td>{v}</td></tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="modal-body">
+          <input className="input" autoFocus placeholder="Search shortcuts" aria-label="Search shortcuts" value={q} onChange={(e) => setQ(e.target.value)} />
+          <p className="muted small">Shortcuts work when you are not typing in a field. Every action is also in the menus or on screen.</p>
+          <div className="shortcut-groups">
+            {GROUPS.map((g) => {
+              const rows = SHORTCUTS.filter((s) => s.group === g).map((s) => ({ s, keys: s.keys.map(keyLabel) })).filter(({ s, keys }) => match(s.label, keys.join(' ')));
+              if (!rows.length) return null;
+              return (
+                <section key={g}>
+                  <h3>{g}</h3>
+                  <table className="shortcuts">
+                    <tbody>
+                      {rows.map(({ s, keys }) => (
+                        <tr key={s.label}>
+                          <td>{keys.map((k) => <kbd key={k}>{k}</kbd>)}</td>
+                          <td>{s.label}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

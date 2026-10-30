@@ -103,7 +103,7 @@ export async function runMainTool(tool: ToolDef, args: Record<string, any>, deps
 
     case 'export_video': {
       const out = String(args.path);
-      if (!path.isAbsolute(out) || !out.toLowerCase().endsWith('.mp4')) return textResult('`path` must be an absolute path ending in .mp4.', true);
+      if (!path.isAbsolute(out) || !/\.(mp4|mov)$/i.test(out)) return textResult('`path` must be an absolute path ending in .mp4 or .mov.', true);
       if (!existsSync(path.dirname(out)) || !statSync(path.dirname(out)).isDirectory()) return textResult(`Folder does not exist: ${path.dirname(out)}`, true);
       if (existsSync(out) && !args.overwrite) return textResult(`${out} already exists. Pass overwrite=true to replace it, or choose another name.`, true);
       const project = await getProjectRaw(deps);
@@ -116,12 +116,14 @@ export async function runMainTool(tool: ToolDef, args: Record<string, any>, deps
       const settings: ExportSettings = {
         outputPath: out, width, height, frameRate,
         canvasMapping: args.fit === 'fill' ? 'fill' : 'fit',
-        videoBitrateMbps: args.bitrate_mbps ?? suggestBitrateMbps(width, height, frameRate),
+        videoBitrateMbps: args.bitrate_mbps ?? suggestBitrateMbps(width, height, frameRate, args.codec === 'hevc' ? 'hevc' : 'h264'),
         x264Preset: 'medium',
         audioBitrateKbps: 192,
         rateControl: args.crf !== undefined ? 'crf' : 'bitrate',
         crf: args.crf,
         encoder: args.encoder === 'videotoolbox' ? 'videotoolbox' : 'x264',
+        codec: args.codec === 'hevc' || args.codec === 'prores' ? args.codec : 'h264',
+        proresProfile: args.prores_hq ? 'hq' : 'standard',
         range: args.start !== undefined || args.end !== undefined
           ? { start: secondsToTicks(args.start ?? 0), end: Math.min(secondsToTicks(args.end ?? Infinity), layoutSequence(project).duration) }
           : null,

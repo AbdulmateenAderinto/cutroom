@@ -214,7 +214,11 @@ export async function runExport(project: Project, settings: ExportSettings, opts
   const duration = Number(info.format?.duration) || 0;
   const frameDur = 1 / rateToFloat(settings.frameRate);
   const problems: string[] = [];
-  if (!v || v.codec_name !== 'h264') problems.push('no H.264 video stream');
+  const codec = settings.codec ?? 'h264';
+  const label = { h264: 'H.264', hevc: 'HEVC', prores: 'ProRes' }[codec];
+  if (!v || v.codec_name !== codec) problems.push(`no ${label} video stream`);
+  // Apple devices only play HEVC tagged hvc1.
+  if (v && codec === 'hevc' && v.codec_tag_string !== 'hvc1') problems.push(`HEVC is tagged ${v.codec_tag_string}, not hvc1`);
   if (v && (v.width !== settings.width || v.height !== settings.height)) problems.push(`size is ${v.width}×${v.height}`);
   if (Math.abs(duration - plan.durationSeconds) > 3 * frameDur + 0.05) {
     problems.push(`duration is ${duration.toFixed(3)}s, expected ${plan.durationSeconds.toFixed(3)}s`);

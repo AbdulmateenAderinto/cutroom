@@ -70,7 +70,9 @@ npm start
    image in the preview (corner handle scales it), or type Scale / X / Y.
 8. **Save** (⌘S) creates a `.cutroom` file; **Open…** reopens it.
 9. **Export…**: choose a file, resolution, frame rate and target bitrate in Mb/s, then **Export**.
-   Or pick a **Preset**, switch to **Constant quality (CRF)**, or use Apple's hardware encoder. To export
+   Or pick a **Preset** (including *Apple devices*: HEVC for iPhone/iPad/Mac/Apple TV, ProRes for Final
+   Cut Pro), choose the codec (H.264, HEVC, ProRes) and .mp4 or .mov, switch to **Constant quality (CRF)**,
+   or use Apple's hardware encoder. To export
    part of the timeline, press **I** and **O** at its start and end first.
 
 **Music:** import an MP3/M4A/WAV/FLAC and click **+ Add to timeline**. It goes on an audio track at
@@ -87,7 +89,8 @@ More, with a clip selected: the **Animation** section (presets and keyframes) an
 (pauses, scenes, transcription, filler words, captions). Caption style is in **Project settings**
 (deselect with Esc).
 
-Every action has a button or menu item. Keyboard shortcuts are a convenience; see **Shortcuts** in the top bar.
+Every action has a button or menu item. Keyboard shortcuts (J/K/L, Q/W trim to playhead, ↑/↓ between
+cuts, ⌘C/⌘V clips, I/O and more) are listed under **Shortcuts** in the top bar, or press **?**.
 
 ## Tests
 

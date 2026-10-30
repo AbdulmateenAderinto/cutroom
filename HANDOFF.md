@@ -83,7 +83,7 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Transitions | Crossfade, dip to black/white |
 | Colour | Exposure, contrast, saturation, temperature |
 | Smart tools | Remove pauses, split at scenes, transcribe (whisper.cpp), remove filler words, captions |
-| Export | MP4 H.264/AAC; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
+| Export | H.264, HEVC (Apple `hvc1`) or ProRes 422/HQ in .mp4/.mov; Apple device presets; size, frame rate, bitrate or CRF; presets; export a marked range (**I** / **O**, Alt+X clears); Apple hardware encoder where available; safe `.partial` → verify → rename |
 | AI | 42 MCP tools so Claude can edit, look at frames and export |
 
 Projects save as `.cutroom` files (format version 5; older ones open fine).
@@ -96,6 +96,8 @@ Tick these off; anything that fails is worth a GitHub issue or a message to Clau
 - [ ] Import a few iPhone clips (HEVC, portrait, maybe HDR) and photos (HEIC is rejected on purpose — convert to JPEG).
 - [ ] Playback is smooth with real 4K footage; music stays in sync.
 - [ ] Export with **Apple hardware — VideoToolbox** in the export dialog (it is only offered if a test encode works).
+- [ ] AirDrop an *Apple devices — HEVC* export to an iPhone; open it in Photos. Open a ProRes export in Final Cut Pro.
+- [ ] Try the keyboard shortcuts (press **?** for the list), especially J/K/L and ⌘C/⌘V on a Mac keyboard.
 - [ ] Speech: `brew install whisper-cpp`, download a model in the app, transcribe a real clip.
 - [ ] AI control from the real Claude Desktop / Claude Code.
 - [ ] `npm run dist:mac` builds the `.dmg`, and the installed app starts and exports.

@@ -109,5 +109,25 @@ await step('Alt+X clears the range; the dialog then exports the whole timeline',
   await closeExport();
 });
 
+await step('Apple presets: HEVC .mov tagged hvc1; ProRes switches the file to .mov and software encoding', async () => {
+  await openExport();
+  const file = path.join(out, 'apple.mp4');
+  await h.stubSave(file);
+  await page.click('.modal.export button:has-text("Choose…")');
+  await page.selectOption('select[aria-label="Export preset"]', 'apple-hevc');
+  assert((await page.inputValue('select[aria-label="Video codec"]')) === 'hevc', 'preset did not pick HEVC');
+  assert(await page.locator('.modal.export .path:has-text("apple.mov")').isVisible(), 'file name should switch to .mov');
+  await page.selectOption('select[aria-label="Video codec"]', 'prores');
+  assert(await page.locator('select[aria-label="Video encoder"] option[value="videotoolbox"]').isDisabled(), 'hardware encoder should be off for ProRes');
+  assert(await page.locator('text=/ProRes keeps a fixed, very high quality/').isVisible(), 'ProRes quality note missing');
+  await page.selectOption('select[aria-label="Video codec"]', 'hevc');
+  await page.click('.modal.export button:has-text("Export")');
+  await page.waitForSelector('text=/Export complete and verified|Export failed/', { timeout: 120000 });
+  assert(await page.locator('text=Export complete and verified').isVisible(), await page.locator('.modal.export .modal-body').textContent());
+  await page.click('.modal.export button:has-text("Close")');
+  const v = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=codec_name,codec_tag_string,profile', '-of', 'json', path.join(out, 'apple.mov')]).toString()).streams[0];
+  assert(v.codec_name === 'hevc' && v.codec_tag_string === 'hvc1', JSON.stringify(v));
+});
+
 await h.close();
 process.exit(finish());

@@ -4,7 +4,11 @@ import {
   AUDIO_BITRATES,
   CRF_RANGE,
   type ExportSettings,
+  VIDEO_CODECS,
+  type VideoCodec,
   type VideoEncoder,
+  containerOf,
+  proresMbps,
   X264_PRESETS,
   type X264Preset,
   aspectDiffers,
@@ -66,6 +70,8 @@ export function ExportDialog() {
   const [rateControl, setRateControl] = useState<'bitrate' | 'crf'>(remembered.rateControl ?? 'bitrate');
   const [crf, setCrf] = useState(remembered.crf ?? CRF_RANGE.default);
   const [encoder, setEncoder] = useState<VideoEncoder>(remembered.encoder ?? 'x264');
+  const [codec, setCodec] = useState<VideoCodec>(remembered.codec ?? 'h264');
+  const [proresProfile, setProresProfile] = useState<'standard' | 'hq'>(remembered.proresProfile ?? 'standard');
   const [hw, setHw] = useState<{ videotoolbox: boolean; reason?: string } | null>(null);
   const range = useMemo(() => markedRange(), []);
   const [useRange, setUseRange] = useState(!!range);
@@ -80,7 +86,7 @@ export function ExportDialog() {
   const size = sizeKey === 'custom'
     ? { width: Number(customW) || 0, height: Number(customH) || 0 }
     : sizes.find((s) => `${s.width}x${s.height}` === sizeKey) ?? sizes[0];
-  const suggested = suggestBitrateMbps(size.width || cw, size.height || ch, rate);
+  const suggested = suggestBitrateMbps(size.width || cw, size.height || ch, rate, codec);
   const [mbps, setMbps] = useState(String(remembered.videoBitrateMbps ?? suggested));
   const aspectMismatch = size.width > 0 && size.height > 0 && aspectDiffers(cw, ch, size.width, size.height);
 
@@ -90,7 +96,11 @@ export function ExportDialog() {
     ? ticksToFrame(activeRange.end, rate, 'round') - ticksToFrame(activeRange.start, rate, 'round')
     : ticksToFrame(projDuration, rate, 'round');
   const durationSec = ticksToSeconds(frameToTicks(outFrames, rate));
-  const estimate = estimateFileSizeBytes(durationSec, Number(mbps) || 0, audioKbps);
+  const prores = codec === 'prores';
+  const estimate = prores
+    ? estimateFileSizeBytes(durationSec, proresMbps(size.width || cw, size.height || ch, rate, proresProfile), 48 * 16 * 2)
+    : estimateFileSizeBytes(durationSec, Number(mbps) || 0, audioKbps);
+  const showEstimate = prores || rateControl === 'bitrate';
 
   const settings: ExportSettings = {
     outputPath,
@@ -104,6 +114,8 @@ export function ExportDialog() {
     rateControl,
     crf,
     encoder,
+    codec,
+    proresProfile,
     range: activeRange,
   };
   const errors = validateExportSettings(project, settings, (m) => !missing[m.id]);
@@ -128,6 +140,8 @@ export function ExportDialog() {
     setPreset(r.x264Preset);
     setAudioKbps(r.audioKbps);
     setEncoder(r.encoder);
+    changeCodec(r.codec, r.container);
+    setProresProfile(r.proresProfile);
   };
   // Any manual change means the settings no longer match the chosen preset.
   const edited = <T,>(set: (v: T) => void) => (v: T) => {
@@ -135,7 +149,7 @@ export function ExportDialog() {
     setPresetId('');
   };
   const savePreset = () => {
-    const pr = presetFromSettings(naming ?? '', { width: size.width, height: size.height, frameRate: rate, rateControl, mbps: Number(mbps), crf, x264Preset: preset, audioKbps, encoder }, cw, ch, project.frameRate);
+    const pr = presetFromSettings(naming ?? '', { width: size.width, height: size.height, frameRate: rate, rateControl, mbps: Number(mbps), crf, x264Preset: preset, audioKbps, encoder, codec, proresProfile, container: containerOf(outputPath || '.mp4') }, cw, ch, project.frameRate);
     const next = [...saved, pr];
     setSaved(next);
     storeSavedPresets(next);
@@ -164,8 +178,16 @@ export function ExportDialog() {
     store.set({ dialog: null });
   };
 
+  // The file name's ending decides the container; ProRes is always a QuickTime .mov.
+  const ext = prores ? 'mov' : outputPath ? containerOf(outputPath) : 'mp4';
+  function changeCodec(c: VideoCodec, container?: 'mp4' | 'mov') {
+    setCodec(c);
+    if (c === 'prores') setEncoder('x264'); // ProRes is encoded in software
+    const want = c === 'prores' ? 'mov' : container;
+    if (want) setOutputPath((pth) => (pth ? pth.replace(/\.(mp4|mov)$/i, `.${want}`) : pth));
+  }
   const choosePath = async () => {
-    const p = await window.cutroom.chooseExportPath(outputPath || `${project.name || 'Untitled'}.mp4`);
+    const p = await window.cutroom.chooseExportPath(outputPath || `${project.name || 'Untitled'}.${ext}`);
     if (p) setOutputPath(p);
   };
 
@@ -212,13 +234,15 @@ export function ExportDialog() {
                 <div className="row gap center">
                   <select className="input" value={presetId} onChange={(e) => applyPreset(e.target.value)} aria-label="Export preset">
                     <option value="">Custom settings</option>
-                    <optgroup label="Built in">
-                      {BUILTIN_PRESETS.map((pr) => (
-                        <option key={pr.id} value={pr.id} disabled={pr.encoder === 'videotoolbox' && hw !== null && !hw.videotoolbox}>
-                          {pr.name}{pr.encoder === 'videotoolbox' && hw !== null && !hw.videotoolbox ? ' — not available here' : ''}
-                        </option>
-                      ))}
-                    </optgroup>
+                    {(['General', 'Apple devices'] as const).map((g) => (
+                      <optgroup key={g} label={g}>
+                        {BUILTIN_PRESETS.filter((pr) => (pr.group ?? 'General') === g).map((pr) => (
+                          <option key={pr.id} value={pr.id} disabled={pr.encoder === 'videotoolbox' && hw !== null && !hw.videotoolbox}>
+                            {pr.name}{pr.encoder === 'videotoolbox' && hw !== null && !hw.videotoolbox ? ' — not available here' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
                     {saved.length > 0 && (
                       <optgroup label="Saved">
                         {saved.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
@@ -239,7 +263,10 @@ export function ExportDialog() {
                       onChange={(e) => setNaming(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') savePreset();
-                        if (e.key === 'Escape') setNaming(null);
+                        if (e.key === 'Escape') {
+                          e.stopPropagation(); // cancel naming only, keep the dialog open
+                          setNaming(null);
+                        }
                       }}
                     />
                     <button className="btn tiny primary" onClick={savePreset}>Save</button>
@@ -268,7 +295,23 @@ export function ExportDialog() {
 
             <div className="export-row">
               <span className="field-label">Format</span>
-              <div>MP4 · H.264 video (High profile, 8-bit 4:2:0) · AAC audio <span className="muted small">— more codecs are planned</span></div>
+              <div className="col gap">
+                <select className="input" value={codec} onChange={(e) => { changeCodec(e.target.value as VideoCodec); setPresetId(''); }} aria-label="Video codec">
+                  {VIDEO_CODECS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+                {prores && (
+                  <select className="input" value={proresProfile} onChange={(e) => edited(setProresProfile)(e.target.value as 'standard' | 'hq')} aria-label="ProRes profile">
+                    <option value="standard">ProRes 422</option>
+                    <option value="hq">ProRes 422 HQ (higher quality, larger)</option>
+                  </select>
+                )}
+                <span className="muted small">
+                  {codec === 'h264' && <>H.264 High, 8-bit 4:2:0 · AAC · {ext === 'mov' ? 'QuickTime .mov' : 'MP4'} — plays on every phone, browser and TV.</>}
+                  {codec === 'hevc' && <>HEVC Main, 8-bit 4:2:0, tagged “hvc1” · AAC · {ext === 'mov' ? 'QuickTime .mov' : 'MP4'} — plays on iPhone/iPad (iOS 11+), Macs (macOS 10.13+) and Apple TV; some older Windows/Android devices can’t play it.</>}
+                  {prores && <>ProRes {proresProfile === 'hq' ? '422 HQ' : '422'}, 10-bit 4:2:2 · uncompressed PCM sound · QuickTime .mov — for Final Cut Pro and other editors, not for sharing.</>}
+                  {!prores && ' The file type follows the name you choose (.mp4 or .mov).'}
+                </span>
+              </div>
             </div>
 
             <div className="export-row">
@@ -336,8 +379,8 @@ export function ExportDialog() {
                   edited(setEncoder)(v);
                   if (v === 'videotoolbox') setRateControl('bitrate');
                 }} aria-label="Video encoder">
-                  <option value="x264">Software — libx264 (best quality per bit)</option>
-                  <option value="videotoolbox" disabled={hw !== null && !hw.videotoolbox}>
+                  <option value="x264">{codec === 'hevc' ? 'Software — libx265 (best quality per bit)' : prores ? 'Software — FFmpeg ProRes' : 'Software — libx264 (best quality per bit)'}</option>
+                  <option value="videotoolbox" disabled={prores || (hw !== null && !hw.videotoolbox)}>
                     Apple hardware — VideoToolbox (much faster){hw !== null && !hw.videotoolbox ? ' — not available here' : ''}
                   </option>
                 </select>
@@ -349,6 +392,12 @@ export function ExportDialog() {
             <div className="export-row">
               <span className="field-label">Video quality</span>
               <div className="col gap">
+                {prores ? (
+                  <span className="muted small">
+                    ProRes keeps a fixed, very high quality: about {proresMbps(size.width || cw, size.height || ch, rate, proresProfile)} Mb/s at this size and frame rate (Apple’s published data rates).
+                  </span>
+                ) : (
+                <>
                 <label className="check">
                   <input type="radio" name="rc" checked={rateControl === 'bitrate'} onChange={() => edited(setRateControl)('bitrate')} /> Target bitrate (average)
                 </label>
@@ -399,18 +448,20 @@ export function ExportDialog() {
                     content requires: lower numbers are better and larger. 18–22 suits most finished videos. The size can't be predicted in advance.
                   </p>
                 </Disclosure>
+                              </>
+                )}
               </div>
             </div>
 
             <div className="export-row">
               <span className="field-label">Audio</span>
               <div className="row gap center">
-                <span>AAC · 48 kHz · stereo ·</span>
-                <select className="input" value={audioKbps} onChange={(e) => edited(setAudioKbps)(Number(e.target.value))} aria-label="Audio bitrate">
+                {prores ? <span>PCM (uncompressed) · 48 kHz · 16-bit stereo</span> : <span>AAC · 48 kHz · stereo ·</span>}
+                {!prores && <select className="input" value={audioKbps} onChange={(e) => edited(setAudioKbps)(Number(e.target.value))} aria-label="Audio bitrate">
                   {AUDIO_BITRATES.map((b) => (
                     <option key={b} value={b}>{b} kb/s{b === 192 ? ' (default)' : ''}</option>
                   ))}
-                </select>
+                </select>}
               </div>
             </div>
 
@@ -429,10 +480,10 @@ export function ExportDialog() {
             <div className="estimate">
               <div>
                 Duration <strong>{fmtTime(durationSec)}</strong> ({outFrames} frames)
-                {rateControl === 'bitrate' && <> · Estimated size <strong>≈ {formatBytes(estimate)}</strong></>}
+                {showEstimate && <> · Estimated size <strong>≈ {formatBytes(estimate)}</strong></>}
               </div>
               <div className="muted small">
-                {rateControl === 'bitrate'
+                {showEstimate
                   ? 'Estimate = (video + audio bitrate) × duration. The real file is usually close but can be noticeably smaller or larger.'
                   : 'Constant quality: the size depends on the content, so there is no estimate.'}
               </div>
@@ -474,8 +525,8 @@ export function ExportDialog() {
               <div><dt>File</dt><dd>{phase.result.output.path}</dd></div>
               <div><dt>Video</dt><dd>{phase.result.output.videoCodec.toUpperCase()} · {phase.result.output.width}×{phase.result.output.height} · {phase.result.output.frameRate} fps</dd></div>
               <div><dt>Duration</dt><dd>{phase.result.output.durationSeconds.toFixed(2)} s</dd></div>
-              <div><dt>Size</dt><dd>{formatBytes(phase.result.output.sizeBytes)}{rateControl === 'bitrate' && <> (estimated ≈ {formatBytes(estimate)})</>}</dd></div>
-              <div><dt>Measured video bitrate</dt><dd>{phase.result.output.videoBitrateMbps?.toFixed(2) ?? '—'} Mb/s average ({rateControl === 'crf' ? `CRF ${crf}` : `target ${mbps}`}{encoder === 'videotoolbox' ? ', hardware encoder' : ''})</dd></div>
+              <div><dt>Size</dt><dd>{formatBytes(phase.result.output.sizeBytes)}{showEstimate && <> (estimated ≈ {formatBytes(estimate)})</>}</dd></div>
+              <div><dt>Measured video bitrate</dt><dd>{phase.result.output.videoBitrateMbps?.toFixed(2) ?? '—'} Mb/s average ({prores ? `ProRes ${proresProfile === 'hq' ? '422 HQ' : '422'}` : rateControl === 'crf' ? `CRF ${crf}` : `target ${mbps}`}{encoder === 'videotoolbox' ? ', hardware encoder' : ''})</dd></div>
               <div><dt>Audio</dt><dd>{phase.result.output.audioCodec?.toUpperCase()} · {phase.result.output.audioSampleRate} Hz</dd></div>
             </dl>
           </div>

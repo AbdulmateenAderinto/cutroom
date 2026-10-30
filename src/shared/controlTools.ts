@@ -375,9 +375,11 @@ export const CONTROL_TOOLS: ToolDef[] = [
     name: 'export_video',
     runs: 'main',
     description:
-      'Start exporting an MP4 (H.264/AAC). Returns immediately; poll get_export_status. Defaults: whole timeline, canvas size, project frame rate, a suggested bitrate, software encoder. Will not overwrite an existing file unless overwrite=true.',
+      'Start exporting a video (.mp4 or QuickTime .mov, chosen by the path\'s ending). Returns immediately; poll get_export_status. Defaults: H.264, whole timeline, canvas size, project frame rate, a suggested bitrate, software encoder. For Apple devices HEVC gives about half the size; ProRes (.mov only) is for editing in Final Cut Pro. Will not overwrite an existing file unless overwrite=true.',
     inputSchema: obj({
-      path: str('absolute output path ending in .mp4'),
+      path: str('absolute output path ending in .mp4 or .mov'),
+      codec: str('h264 (default), hevc (H.265, tagged for Apple devices) or prores (ProRes 422, .mov only)', { enum: ['h264', 'hevc', 'prores'] }),
+      prores_hq: bool('ProRes 422 HQ instead of standard ProRes 422'),
       width: num('output width (even)'),
       height: num('output height (even)'),
       frame_rate: num('frames per second'),

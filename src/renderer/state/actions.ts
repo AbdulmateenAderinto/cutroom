@@ -1,14 +1,14 @@
 /**
  * User-level actions shared by buttons, menus and keyboard shortcuts.
  */
-import type { MediaRef, Project } from '../../shared/model';
+import type { AudioClip, MediaRef, Project, TitleClip, TrackItem } from '../../shared/model';
 import { createProject, evenDim, findMedia, layoutSequence, newId } from '../../shared/model';
 import * as ops from '../../shared/ops';
 import {
   addAudioClip, addAudioTrack, audioClipEnd, deleteAudioClip, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip,
   removeAudioTrack, setSpeech, soundFromSilence, splitAudioClip, updateAudioClip,
 } from '../../shared/audio';
-import { type TitlePreset, addTitle, deleteTitle, duplicateTitle, splitTitle } from '../../shared/titles';
+import { type TitlePreset, addTitle, deleteTitle, duplicateTitle, findTitle, moveTitle, splitTitle, updateTitle } from '../../shared/titles';
 import { TICKS_PER_SECOND, type Ticks, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
 import { playhead } from './playhead';
@@ -81,6 +81,118 @@ export async function loadWaveform(mediaId: string) {
   } finally {
     waveLoading.delete(mediaId);
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Keyboard-first editing: trim to playhead, jump between cuts, select, move, copy/paste
+
+/** Q / W: trim the start / end of the clip under the playhead to the playhead (ripple). */
+export function trimToPlayhead(edge: 'start' | 'end') {
+  const t = playhead.get().time;
+  const lay = layoutSequence(store.get().project);
+  const l = lay.items.find((x) => t > x.start && t < x.end) ?? lay.items.find((x) => t === x.start && edge === 'end');
+  if (!l || l.item.kind !== 'clip') return toast('Put the playhead inside a clip first.');
+  const id = l.item.id;
+  if (edge === 'start') {
+    commit((p) => ops.trimEdge(p, id, 'start', t - l.start), { selection: { kind: 'item', id } });
+    engine.seek(l.start); // the clip now starts where the playhead was; stay on that frame
+  } else {
+    commit((p) => ops.trimEdge(p, id, 'end', t - l.end), { selection: { kind: 'item', id } });
+  }
+}
+
+/** ↑ / ↓: jump to the previous / next cut (clip boundary, title or audio clip edge). */
+export function jumpToEdit(dir: -1 | 1) {
+  const p = store.get().project;
+  const lay = layoutSequence(p);
+  const pts = new Set<Ticks>([0, lay.duration]);
+  for (const l of lay.items) pts.add(l.start).add(l.end);
+  for (const tr of p.audioTracks ?? []) for (const c of tr.clips) pts.add(c.start).add(audioClipEnd(c));
+  for (const ti of p.titles ?? []) pts.add(ti.start).add(ti.start + ti.duration);
+  const t = playhead.get().time;
+  const sorted = [...pts].filter((x) => x <= lay.duration).sort((a, b) => a - b);
+  const target = dir > 0 ? sorted.find((x) => x > t) : [...sorted].reverse().find((x) => x < t);
+  if (target !== undefined) engine.seek(Math.min(target, Math.max(0, lay.duration - frameDuration(p.frameRate))));
+}
+
+/** X: select the video-track clip under the playhead. */
+export function selectAtPlayhead() {
+  const t = playhead.get().time;
+  const l = layoutSequence(store.get().project).items.find((x) => t >= x.start && t < x.end);
+  if (l) store.set({ selection: { kind: 'item', id: l.item.id } });
+}
+
+/** ⌥← / ⌥→: move the selected clip one place earlier/later (titles and audio clips: one frame). */
+export function moveSelected(dir: -1 | 1) {
+  const sel = store.get().selection;
+  const p = store.get().project;
+  const f = frameDuration(p.frameRate);
+  if (sel?.kind === 'item') {
+    const from = p.sequence.items.findIndex((i) => i.id === sel.id);
+    if (from < 0) return;
+    if ((dir < 0 && from === 0) || (dir > 0 && from === p.sequence.items.length - 1)) return;
+    commit((q) => ops.moveItem(q, sel.id, dir < 0 ? from - 1 : from + 2));
+  } else if (sel?.kind === 'title') {
+    const t = findTitle(p, sel.id);
+    if (t) commit((q) => moveTitle(q, sel.id, Math.max(0, t.start + dir * f)));
+  } else if (sel?.kind === 'audio') {
+    const hit = findAudioClip(p, sel.id);
+    if (hit) commit((q) => moveAudioClip(q, sel.id, Math.max(0, hit.clip.start + dir * f)));
+  }
+}
+
+type Clip = { kind: 'items'; items: TrackItem[] } | { kind: 'title'; title: TitleClip } | { kind: 'audio'; clip: AudioClip; trackId: string };
+let clipboard: Clip | null = null;
+
+/** ⌘C: copy the selected clip, title or audio clip (Cutroom's own clipboard). */
+export function copySelection(): boolean {
+  const sel = store.get().selection;
+  const p = store.get().project;
+  if (sel?.kind === 'item') {
+    const it = p.sequence.items.find((i) => i.id === sel.id);
+    if (it) clipboard = { kind: 'items', items: [structuredClone(it)] };
+  } else if (sel?.kind === 'title') {
+    const t = findTitle(p, sel.id);
+    if (t) clipboard = { kind: 'title', title: structuredClone(t) };
+  } else if (sel?.kind === 'audio') {
+    const hit = findAudioClip(p, sel.id);
+    if (hit) clipboard = { kind: 'audio', clip: structuredClone(hit.clip), trackId: hit.track.id };
+  } else return false;
+  return true;
+}
+
+/** ⌘X: copy, then delete (closing the gap). */
+export function cutSelection() {
+  if (copySelection()) deleteSelected('close-gap');
+}
+
+/** ⌘V: paste at the playhead (a clip is inserted there, splitting the clip under the playhead). */
+export function pasteAtPlayhead(): boolean {
+  const c = clipboard;
+  if (!c) return false;
+  const t = playhead.get().time;
+  const p = store.get().project;
+  if (c.kind === 'items') {
+    const r = ops.insertAt(p, c.items, t);
+    if (!r.ids.length) {
+      toast('The copied clip’s media is not in this project.');
+      return true;
+    }
+    commit(() => r.project, { selection: { kind: 'item', id: r.ids[0] } });
+  } else if (c.kind === 'title') {
+    const r = addTitle(p, t, { text: c.title.text, duration: c.title.duration, style: c.title.style });
+    commit(() => updateTitle(r.project, r.id, (x) => ({ ...x, animIn: c.title.animIn, animOut: c.title.animOut, animLength: c.title.animLength })), { selection: { kind: 'title', id: r.id } });
+  } else {
+    const r = addAudioClip(p, c.clip.mediaId, t, (p.audioTracks ?? []).some((x) => x.id === c.trackId) ? c.trackId : undefined);
+    if (!r) {
+      toast('The copied audio’s media is not in this project.');
+      return true;
+    }
+    let next = updateAudioClip(r.project, r.clipId, (x) => ({ ...x, sourceIn: c.clip.sourceIn, sourceOut: c.clip.sourceOut, volume: c.clip.volume, fadeIn: c.clip.fadeIn, fadeOut: c.clip.fadeOut }));
+    next = moveAudioClip(next, r.clipId, t);
+    commit(() => next, { selection: { kind: 'audio', id: r.clipId } });
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------------------------

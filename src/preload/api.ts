@@ -57,7 +57,9 @@ export interface RecoveryEntry {
 export type MenuAction =
   | 'new' | 'open' | 'save' | 'saveAs' | 'import' | 'export'
   | 'undo' | 'redo' | 'split' | 'delete' | 'deleteLeaveGap' | 'duplicate'
-  | 'playPause' | 'toggleSnapping' | 'zoomIn' | 'zoomOut' | 'zoomFit' | 'shortcuts';
+  | 'playPause' | 'toggleSnapping' | 'zoomIn' | 'zoomOut' | 'zoomFit' | 'shortcuts'
+  | 'playBackward' | 'pause' | 'playForward' | 'prevEdit' | 'nextEdit' | 'trimStart' | 'trimEnd'
+  | 'selectAtPlayhead' | 'moveEarlier' | 'moveLater' | 'addTitle' | 'markIn' | 'markOut' | 'clearMarks';
 
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 export interface ToolResult {

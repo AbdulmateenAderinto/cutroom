@@ -14,6 +14,7 @@ import { TopBar } from './components/TopBar';
 import { audioDebug } from './preview/audio';
 import { engine } from './preview/engine';
 import * as A from './state/actions';
+import { installClipboardHandlers, runShortcut } from './shortcuts';
 import { playhead } from './state/playhead';
 import { isDirty, store, useStore } from './state/store';
 
@@ -41,39 +42,33 @@ function runAction(action: MenuAction) {
     case 'zoomOut': return A.zoomBy(0.8);
     case 'zoomFit': return A.zoomToFit(document.querySelector('.tl-scroll')?.clientWidth ?? 1000);
     case 'shortcuts': return store.set({ dialog: s.dialog === 'shortcuts' ? null : 'shortcuts' });
+    case 'playBackward': return engine.shuttleBackward();
+    case 'pause': return engine.pause();
+    case 'playForward': return engine.shuttleForward();
+    case 'prevEdit': return A.jumpToEdit(-1);
+    case 'nextEdit': return A.jumpToEdit(1);
+    case 'trimStart': return A.trimToPlayhead('start');
+    case 'trimEnd': return A.trimToPlayhead('end');
+    case 'selectAtPlayhead': return A.selectAtPlayhead();
+    case 'moveEarlier': return A.moveSelected(-1);
+    case 'moveLater': return A.moveSelected(1);
+    case 'addTitle': return A.addTitleAction();
+    case 'markIn': return A.markIn();
+    case 'markOut': return A.markOut();
+    case 'clearMarks': return A.clearMarks();
   }
 }
 
 function onKeyDown(e: KeyboardEvent) {
-  const t = e.target as HTMLElement;
-  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable) return;
+  // Esc closes a dialog even while typing in one of its fields.
   if (store.get().dialog) {
-    if (e.key === 'Escape') store.set({ dialog: null });
+    // (not while an export is running: it must be cancelled with its button)
+    if (e.key === 'Escape' && !document.querySelector('.modal.export [role="progressbar"]')) store.set({ dialog: null });
     return;
   }
-  const mod = e.metaKey || e.ctrlKey;
-  const k = e.key;
-  let handled = true;
-  if (k === ' ') engine.toggle();
-  else if (k === 'ArrowLeft') engine.step(e.shiftKey ? -10 : -1);
-  else if (k === 'ArrowRight') engine.step(e.shiftKey ? 10 : 1);
-  else if (k === 'Home') A.seekToStart();
-  else if (k === 'End') A.seekToEnd();
-  else if ((k === 's' || k === 'S') && !mod) A.splitAtPlayhead();
-  else if (k === 'b' && mod) A.splitAtPlayhead();
-  else if ((k === 'Delete' || k === 'Backspace') && !mod) A.deleteSelected(e.shiftKey ? 'leave-gap' : 'close-gap');
-  else if (k === 'd' && mod) A.duplicateSelected();
-  else if ((k === 't' || k === 'T') && !mod) A.addTitleAction();
-  else if ((k === 'i' || k === 'I') && !mod) A.markIn();
-  else if ((k === 'o' || k === 'O') && !mod) A.markOut();
-  else if (e.code === 'KeyX' && e.altKey && !mod) A.clearMarks();
-  else if ((k === 'n' || k === 'N') && !mod) store.set({ snapping: !store.get().snapping });
-  else if ((k === '=' || k === '+') && !mod) A.zoomBy(1.25);
-  else if (k === '-' && !mod) A.zoomBy(0.8);
-  else if (k === '?') store.set({ dialog: 'shortcuts' });
-  else if (k === 'Escape') store.set({ selection: null, previewMediaId: null });
-  else handled = false;
-  if (handled) e.preventDefault();
+  const t = e.target as HTMLElement;
+  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable) return;
+  if (runShortcut(e)) e.preventDefault();
 }
 
 export function App() {
@@ -86,6 +81,7 @@ export function App() {
     api.checkFfmpeg().then((f) => store.set({ ffmpeg: f }));
     api.listRecovery().then(setRecovery);
     const offMenu = api.onMenu(runAction);
+    installClipboardHandlers();
     const offClose = api.onCloseRequested(async () => {
       if (await A.saveProject()) api.closeNow();
     });

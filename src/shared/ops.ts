@@ -280,6 +280,25 @@ export function moveItem(project: Project, id: string, toIndex: number): Project
   return withItems(project, items);
 }
 
+/**
+ * Insert copies of `items` at timeline time t (snapped to a frame). If t is inside a clip, that
+ * clip is split there first. Copies get new ids; clips whose media is not in the project are skipped.
+ */
+export function insertAt(project: Project, items: TrackItem[], t: Ticks): { project: Project; ids: string[] } {
+  let p = project;
+  t = snapProject(Math.max(0, t), p.frameRate);
+  const split = splitAt(p, t);
+  if (split) p = split.project;
+  const index = layoutSequence(p).items.filter((l) => l.start < t).length;
+  const copies = items
+    .filter((it) => it.kind === 'gap' || findMedia(p, it.mediaId))
+    .map((it) => ({ ...structuredClone(it), id: newId(it.kind) }) as TrackItem);
+  if (!copies.length) return { project, ids: [] };
+  const arr = [...p.sequence.items];
+  arr.splice(index, 0, ...copies);
+  return { project: withItems(p, arr), ids: copies.map((c) => c.id) };
+}
+
 export function duplicateItem(project: Project, id: string): { project: Project; newId: string } | null {
   const idx = project.sequence.items.findIndex((i) => i.id === id);
   if (idx < 0) return null;

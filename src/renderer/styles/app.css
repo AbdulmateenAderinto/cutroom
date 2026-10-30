@@ -317,3 +317,8 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .btn.on { background: var(--accent); color: #111; border-color: var(--accent); }
 .color-row { display: grid; grid-template-columns: 82px 1fr 92px; align-items: center; gap: 6px; }
 .color-value { text-align: right; }
+.shortcuts-modal { width: min(760px, 94vw); max-height: 86vh; overflow: auto; }
+.shortcut-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 4px 20px; margin-top: 8px; }
+.shortcut-groups h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 10px 0 4px; }
+.shortcuts td:first-child { white-space: nowrap; padding-right: 10px; }
+.shortcuts kbd + kbd { margin-left: 4px; }

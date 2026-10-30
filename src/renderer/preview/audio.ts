@@ -68,7 +68,7 @@ function player(clipId: string, mediaId: string, src: string, track: AudioTrack)
 }
 
 /** Bring music in line with timeline time t. Call every animation frame while playing, and on seek/pause. */
-export function syncMusic(project: Project, t: Ticks, playing: boolean, missing: Record<string, boolean>) {
+export function syncMusic(project: Project, t: Ticks, playing: boolean, missing: Record<string, boolean>, rate = 1) {
   if (speechCache.project !== project) speechCache = { project, intervals: speechIntervals(project) };
   const live = new Set<string>();
   for (const track of tracks(project)) {
@@ -95,10 +95,11 @@ export function syncMusic(project: Project, t: Ticks, playing: boolean, missing:
         if (Math.abs(p.el.currentTime - want) > 0.02 && !p.el.seeking) p.el.currentTime = want;
         continue;
       }
+      if (p.el.playbackRate !== rate) p.el.playbackRate = rate; // J/K/L shuttle
       if (p.el.paused) {
         if (Math.abs(p.el.currentTime - want) > 0.03) p.el.currentTime = want;
         void p.el.play().catch(() => {});
-      } else if (!p.el.seeking && p.el.readyState >= 3 && Math.abs(p.el.currentTime - want) > 0.12) {
+      } else if (!p.el.seeking && p.el.readyState >= 3 && Math.abs(p.el.currentTime - want) > 0.12 * rate) {
         // Correct real drift only; re-seeking while still buffering would make it fall further behind.
         p.el.currentTime = want;
       }

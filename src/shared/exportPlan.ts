@@ -62,11 +62,32 @@ export interface ExportSettings {
   crf?: number;
   /** 'x264' (default, software) or 'videotoolbox' (Apple hardware encoder, macOS only). */
   encoder?: VideoEncoder;
+  /**
+   * Video codec (default 'h264'). 'hevc' = H.265, tagged hvc1 so Apple devices play it; 'prores' =
+   * Apple ProRes 422 for editing (`.mov` only; quality-based, so bitrate/CRF don't apply).
+   * The container (MP4 or QuickTime .mov) follows the output file's extension.
+   */
+  codec?: VideoCodec;
+  proresProfile?: 'standard' | 'hq';
   /** Export only this part of the timeline (timeline ticks, end exclusive). */
   range?: { start: Ticks; end: Ticks } | null;
 }
 
 export type VideoEncoder = 'x264' | 'videotoolbox';
+export type VideoCodec = 'h264' | 'hevc' | 'prores';
+export const VIDEO_CODECS: { id: VideoCodec; label: string }[] = [
+  { id: 'h264', label: 'H.264 — plays everywhere' },
+  { id: 'hevc', label: 'HEVC (H.265) — about half the size, plays on Apple devices' },
+  { id: 'prores', label: 'Apple ProRes 422 — for editing (Final Cut Pro), very large' },
+];
+
+export const containerOf = (outputPath: string): 'mp4' | 'mov' => (/\.mov$/i.test(outputPath) ? 'mov' : 'mp4');
+
+/** ProRes data rates (Mb/s) at 1920×1080 29.97 fps, from Apple's ProRes white paper; scaled by pixels × fps. */
+export function proresMbps(w: number, h: number, fps: Rational, profile: 'standard' | 'hq' = 'standard'): number {
+  const base = profile === 'hq' ? 220 : 147;
+  return Math.round((base * (w * h * rateToFloat(fps))) / (1920 * 1080 * 29.97));
+}
 export const CRF_RANGE = { min: 12, max: 35, default: 20 };
 
 export const AUDIO_BITRATES = [128, 160, 192, 256, 320];
@@ -108,7 +129,9 @@ export function outputSizeOptions(canvasW: number, canvasH: number): { label: st
 }
 
 /** Rough starting point: ~0.1 bits per pixel per frame (H.264, typical footage). */
-export function suggestBitrateMbps(w: number, h: number, fps: Rational): number {
+export function suggestBitrateMbps(w: number, h: number, fps: Rational, codec: VideoCodec = 'h264'): number {
+  // HEVC reaches the same quality at roughly 60% of H.264's bitrate.
+  if (codec === 'hevc') return Math.max(1, Math.round(suggestBitrateMbps(w, h, fps) * 0.6 * 2) / 2);
   const mbps = (w * h * rateToFloat(fps) * 0.1) / 1e6;
   return Math.max(1, Math.round(mbps * 2) / 2);
 }
@@ -130,7 +153,11 @@ export function validateExportSettings(project: Project, s: ExportSettings, medi
   if (!(s.width >= 16 && s.height >= 16 && s.width <= 7680 && s.height <= 7680)) errors.push('Output size must be between 16 and 7680 pixels.');
   if (s.width % 2 || s.height % 2) errors.push('H.264 output needs even width and height.');
   if (!(s.videoBitrateMbps >= 0.1 && s.videoBitrateMbps <= 400)) errors.push('Video bitrate must be between 0.1 and 400 Mb/s.');
-  if (s.rateControl === 'crf') {
+  const codec = s.codec ?? 'h264';
+  if (!/\.(mp4|mov)$/i.test(s.outputPath) && s.outputPath) errors.push('The output file must end in .mp4 or .mov.');
+  if (codec === 'prores' && containerOf(s.outputPath) !== 'mov' && s.outputPath) errors.push('ProRes is saved as a QuickTime .mov file: change the file name ending to .mov.');
+  if (codec === 'prores' && s.encoder === 'videotoolbox') errors.push('ProRes is encoded in software here; choose the software encoder.');
+  if (s.rateControl === 'crf' && codec !== 'prores') {
     if (s.encoder === 'videotoolbox') errors.push('Constant quality is not available with the hardware encoder. Use a target bitrate, or the software encoder.');
     if (!(Number.isFinite(s.crf) && s.crf! >= CRF_RANGE.min && s.crf! <= CRF_RANGE.max)) errors.push(`Quality (CRF) must be between ${CRF_RANGE.min} and ${CRF_RANGE.max}.`);
   }
@@ -590,18 +617,33 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   }
 
   const kbps = Math.round(s.videoBitrateMbps * 1000);
-  const video =
-    s.encoder === 'videotoolbox'
-      ? // Apple's hardware encoder: average bitrate only (its constant-quality mode is not used).
-        ['-c:v', 'h264_videotoolbox', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-b:v', `${kbps}k`]
+  const codec = s.codec ?? 'h264';
+  const crf = String(s.crf ?? CRF_RANGE.default);
+  // Average-bitrate mode with a VBV cap: the encoder aims for this average; it is not constant and
+  // the final size is approximate.
+  const vbv = ['-b:v', `${kbps}k`, '-maxrate', `${kbps * 2}k`, '-bufsize', `${kbps * 2}k`];
+  let video: string[];
+  if (codec === 'prores') {
+    // ProRes 422 (or HQ), 10-bit 4:2:2; 'apl0' is written into the ProRes frame headers.
+    video = ['-c:v', 'prores_ks', '-profile:v', s.proresProfile === 'hq' ? '3' : '2', '-vendor', 'apl0', '-pix_fmt', 'yuv422p10le'];
+  } else if (codec === 'hevc') {
+    // hvc1 (not FFmpeg's default hev1) is what QuickTime, Photos and iOS require to play HEVC.
+    video = s.encoder === 'videotoolbox'
+      ? ['-c:v', 'hevc_videotoolbox', '-profile:v', 'main', '-pix_fmt', 'yuv420p', '-b:v', `${kbps}k`, '-tag:v', 'hvc1']
       : [
-          '-c:v', 'libx264', '-preset', s.x264Preset, '-profile:v', 'high', '-pix_fmt', 'yuv420p',
+          '-c:v', 'libx265', '-preset', s.x264Preset, '-profile:v', 'main', '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1',
           ...(s.rateControl === 'crf'
-            ? ['-crf', String(s.crf ?? CRF_RANGE.default)]
-            : // Average-bitrate mode with a VBV cap: the encoder aims for this average; it is not
-              // constant and the final size is approximate.
-              ['-b:v', `${kbps}k`, '-maxrate', `${kbps * 2}k`, '-bufsize', `${kbps * 2}k`]),
+            ? ['-crf', crf, '-x265-params', 'log-level=error']
+            : ['-b:v', `${kbps}k`, '-x265-params', `log-level=error:vbv-maxrate=${kbps * 2}:vbv-bufsize=${kbps * 2}`]),
         ];
+  } else {
+    video = s.encoder === 'videotoolbox'
+      ? // Apple's hardware encoder: average bitrate only (its constant-quality mode is not used).
+        ['-c:v', 'h264_videotoolbox', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-b:v', `${kbps}k`, '-tag:v', 'avc1']
+      : ['-c:v', 'libx264', '-preset', s.x264Preset, '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-tag:v', 'avc1', ...(s.rateControl === 'crf' ? ['-crf', crf] : vbv)];
+  }
+  // ProRes goes with uncompressed PCM sound (as cameras and Final Cut use); otherwise AAC.
+  const audio = codec === 'prores' ? ['-c:a', 'pcm_s16le'] : ['-c:a', 'aac', '-b:a', `${s.audioBitrateKbps}k`];
   const args = [
     '-hide_banner', '-nostdin', '-y',
     '-loglevel', 'error',
@@ -612,9 +654,9 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     ...video,
     '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
     '-r', `${rate.num}/${rate.den}`,
-    '-c:a', 'aac', '-b:a', `${s.audioBitrateKbps}k`, '-ar', String(sr), '-ac', '2',
+    ...audio, '-ar', String(sr), '-ac', '2',
     '-movflags', '+faststart',
-    '-f', 'mp4', outputFile,
+    '-f', containerOf(s.outputPath), outputFile,
   ];
   return {
     args,

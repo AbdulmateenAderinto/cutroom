@@ -66,6 +66,7 @@ await step('type 0.5 in the Speed field: slow motion, 8 s long; undo returns to 
 });
 
 await step('preview matches the export at 2×', async () => {
+  await page.keyboard.press('Escape'); // deselect: no framing outline over the picture
   const shots = [];
   for (const f of [15, 40]) {
     await h.seekFrame(f);
@@ -74,7 +75,14 @@ await step('preview matches the export at 2×', async () => {
       const v = [...document.querySelectorAll('video.stage-video')].find((e) => e.style.display === 'block');
       return v && !v.seeking && v.readyState >= 2 && Math.abs(v.currentTime - want) < 0.03;
     }, (2 * f) / 30);
-    await page.waitForTimeout(300);
+    // …and has actually presented that frame (under load, painting can lag behind the seek).
+    await page.evaluate((want) => new Promise((done) => {
+      const v = [...document.querySelectorAll('video.stage-video')].find((e) => e.style.display === 'block');
+      const check = () => v.requestVideoFrameCallback((_now, meta) => (Math.abs(meta.mediaTime - want) < 0.04 ? done() : check()));
+      check();
+      setTimeout(done, 1500); // the frame may already have been presented before we asked
+    }), (2 * f) / 30);
+    await page.waitForTimeout(400);
     const png = path.join(out, `preview-${f}.png`);
     await page.locator('.stage').screenshot({ path: png });
     shots.push({ f, png });

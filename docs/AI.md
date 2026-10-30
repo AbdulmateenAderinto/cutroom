@@ -65,7 +65,7 @@ copy the config again.
 | Animate | `set_animation` (in/out/motion presets), `set_keyframe`, `remove_keyframes` |
 | Analyse | `detect_silence`, `remove_silence`, `detect_scenes`, `split_at_scenes` |
 | Speech | `transcribe`, `get_transcript`, `set_captions`, `remove_filler_words` |
-| Project | `set_canvas`, `undo`, `redo`, `seek`, `save_project`, `export_video` (size, frame rate, bitrate or CRF, encoder, start/end range), `get_export_status` |
+| Project | `set_canvas`, `undo`, `redo`, `seek`, `save_project`, `export_video` (size, frame rate, bitrate or CRF, H.264/HEVC/ProRes, .mp4/.mov, encoder, start/end range), `get_export_status` |
 
 All tool definitions live in `src/shared/controlTools.ts`. To add a tool, add its definition there
 and implement it in `src/renderer/control/rendererTools.ts` (edits) or in a main-process module

@@ -18,6 +18,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Duplicate | ✅ | |
 | Undo / redo (drags count as one step) | ✅ | 200 steps |
 | Snapping (toggle, hold Alt to bypass) | ☑️ | Edges, playhead and preview centring |
+| Keyboard shortcuts: J/K/L shuttle (2×, 4×, backward), ↑/↓ cuts, Q/W trim to playhead, X select, ⌘C/⌘X/⌘V clips, ⌥←/→ move, S/⌘B/⌘K split, T, I/O, ⇧Z fit, and more | ✅ | One table drives keys, menus and the searchable list (`?`); not active while typing |
 | Frame stepping, timeline zoom | ✅ / ☑️ | ←/→, toolbar, ⌘+scroll |
 | Canvas: Match source, 16:9, 9:16, 1:1, 4:5, custom | ✅ | Even sizes enforced (H.264 needs them) |
 | Per-clip framing: Fit / Fill / Manual (drag + numeric) | ✅ | Preview vs export compared pixel by pixel |
@@ -31,6 +32,10 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Constant quality (CRF 12–35) | ✅ | |
 | Export a marked range (I / O on the timeline, Alt+X clears) | ✅ | Frame-exact: same frames as the full export |
 | Presets: 5 built-in, save your own (stored on this computer), delete | ✅ | Sizes by short edge, so presets keep the canvas shape |
+| HEVC (H.265) export tagged `hvc1` (what QuickTime, Photos, iOS and Apple TV need), in .mp4 or .mov | ✅ | Checked with ffprobe: Main, 8-bit 4:2:0, BT.709, AAC-LC, moov before mdat; every frame decoded. **Not yet played on a real iPhone/Apple TV** |
+| H.264 in QuickTime .mov (`avc1`) | ✅ | |
+| Apple ProRes 422 / 422 HQ in .mov with PCM sound (for Final Cut Pro) | ✅ | 10-bit 4:2:2, `apcn`/`apch`, every frame decoded. **Not yet opened in Final Cut Pro** |
+| Apple device presets: H.264 1080p, HEVC 1080p, HEVC 4K, Messages/AirDrop 720p, hardware HEVC, ProRes 422 / HQ | ✅ | |
 | Hardware encoding (VideoToolbox) | ☑️ | Offered only after a test encode succeeds. **Not tested on a Mac yet** (Linux: correctly shown as unavailable) |
 | Explicit fit/crop when output aspect ≠ canvas | ✅ | Export is blocked until you choose |
 | Size estimate, progress, cancel, readable errors | ✅ | |
@@ -206,6 +211,10 @@ footage" note when there is none.
 **Colour UI run (ninth script, 3 steps):** sliders change the clip and attach the preview filter,
 undo and Reset, and preview vs export colours for four settings (max difference 3–5/255).
 
+**Shortcuts UI run (tenth script, 8 steps):** every new shortcut pressed in the real app with its
+effect checked (cuts, trims, select, move, copy/cut/paste + undo, shuttle rates, title, fit, the
+searchable list) and that typing in a text field doesn't trigger them.
+
 **MCP run (`npm run test:mcp`, 12 steps):** security checks (no token, wrong token, browser origin
 all refused), tool listing, import, contact sheet and frames, `build_timeline`, editing plus undo/redo,
 readable errors for bad input, timeline frame capture, export with polling, analysis tools, speech
@@ -259,6 +268,10 @@ progress/result screens, missing-media state and the gap rendering.
 - **Audio tracks:** fades are linear; ducking reacts to any sound in the video (not just speech) and
   needs the video's audio analysed once (cached). The export limiter catches peaks above −0.2 dBFS
   when boosted tracks add up.
+- **Apple formats:** HEVC and ProRes files were checked against Apple's format requirements with
+  ffprobe, not played on Apple hardware yet. With FFmpeg 6.1 the .mov's container vendor field reads
+  `FFMP` (the ProRes frame headers say `apl0`); Final Cut Pro and QuickTime don't require it.
+  HEVC/ProRes 10-bit HDR output is not offered.
 - **Export:** the hardware encoder (VideoToolbox) uses an average bitrate only and needs more bits than
   libx264 for the same quality; it has not been tried on a Mac yet. A range late in a long timeline still
   builds the timeline from the start (clips before the range are not decoded, but their length is

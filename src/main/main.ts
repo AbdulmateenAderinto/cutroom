@@ -41,6 +41,11 @@ function buildMenu() {
   const item = (label: string, action: MenuAction, accelerator?: string): MenuItemConstructorOptions => ({
     label, accelerator, click: () => sendMenu(action),
   });
+  // Single keys (S, J, Q, ↑…) are handled by the window so they don't fire while typing in a
+  // field; the menu only shows them.
+  const shown = (label: string, action: MenuAction, accelerator: string): MenuItemConstructorOptions => ({
+    label, accelerator, registerAccelerator: false, click: () => sendMenu(action),
+  });
   const template: MenuItemConstructorOptions[] = [
     ...(isMac ? [{ role: 'appMenu' as const }] : []),
     {
@@ -66,27 +71,48 @@ function buildMenu() {
         { type: 'separator' },
         { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
         { type: 'separator' },
-        item('Split at Playhead', 'split'),
-        item('Duplicate Clip', 'duplicate'),
-        item('Delete Clip (Close Gap)', 'delete'),
-        item('Delete Clip (Leave Gap)', 'deleteLeaveGap'),
+        shown('Split at Playhead', 'split', 'S'),
+        shown('Trim Start to Playhead', 'trimStart', 'Q'),
+        shown('Trim End to Playhead', 'trimEnd', 'W'),
+        shown('Select Clip at Playhead', 'selectAtPlayhead', 'X'),
+        shown('Duplicate Clip', 'duplicate', 'CmdOrCtrl+D'),
+        shown('Move Clip Earlier', 'moveEarlier', 'Alt+Left'),
+        shown('Move Clip Later', 'moveLater', 'Alt+Right'),
+        shown('Delete Clip (Close Gap)', 'delete', 'Backspace'),
+        shown('Delete Clip (Leave Gap)', 'deleteLeaveGap', 'Shift+Backspace'),
+        { type: 'separator' },
+        shown('Add Title', 'addTitle', 'T'),
+        shown('Mark Range Start', 'markIn', 'I'),
+        shown('Mark Range End', 'markOut', 'O'),
+        shown('Clear Range', 'clearMarks', 'Alt+X'),
+      ],
+    },
+    {
+      label: 'Playback',
+      submenu: [
+        shown('Play / Pause', 'playPause', 'Space'),
+        shown('Play Backward', 'playBackward', 'J'),
+        shown('Pause', 'pause', 'K'),
+        shown('Play Forward (Faster)', 'playForward', 'L'),
+        { type: 'separator' },
+        shown('Previous Cut', 'prevEdit', 'Up'),
+        shown('Next Cut', 'nextEdit', 'Down'),
       ],
     },
     {
       label: 'View',
       submenu: [
-        item('Play / Pause', 'playPause'),
-        item('Toggle Snapping', 'toggleSnapping'),
+        shown('Toggle Snapping', 'toggleSnapping', 'N'),
         { type: 'separator' },
-        item('Zoom Timeline In', 'zoomIn'),
-        item('Zoom Timeline Out', 'zoomOut'),
-        item('Fit Timeline to Window', 'zoomFit'),
+        shown('Zoom Timeline In', 'zoomIn', '='),
+        shown('Zoom Timeline Out', 'zoomOut', '-'),
+        shown('Fit Timeline to Window', 'zoomFit', 'Shift+Z'),
         { type: 'separator' },
         { role: 'toggleDevTools' },
         { role: 'togglefullscreen' },
       ],
     },
-    { label: 'Help', submenu: [item('Keyboard Shortcuts', 'shortcuts')] },
+    { label: 'Help', submenu: [shown('Keyboard Shortcuts', 'shortcuts', 'Shift+/')] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -210,10 +236,13 @@ function registerIpc() {
     const r = await dialog.showSaveDialog(win!, {
       title: 'Export Video',
       defaultPath: defaultName,
-      filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
+      filters: defaultName.toLowerCase().endsWith('.mov')
+        ? [{ name: 'QuickTime Movie', extensions: ['mov'] }, { name: 'MP4 Video', extensions: ['mp4'] }]
+        : [{ name: 'MP4 Video', extensions: ['mp4'] }, { name: 'QuickTime Movie', extensions: ['mov'] }],
     });
     if (r.canceled || !r.filePath) return null;
-    return r.filePath.toLowerCase().endsWith('.mp4') ? r.filePath : `${r.filePath}.mp4`;
+    if (/\.(mp4|mov)$/i.test(r.filePath)) return r.filePath;
+    return `${r.filePath}${defaultName.toLowerCase().endsWith('.mov') ? '.mov' : '.mp4'}`;
   });
 
   ipcMain.handle('export:start', (_e, project: Project, settings: ExportSettings) =>
