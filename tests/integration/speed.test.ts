@@ -2,15 +2,15 @@
  * Speed changes in export: every output frame is the source frame the shared maths says
  * (sourceAt), the length is exact, and the sound keeps its pitch.
  */
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { timeStretchFilter } from '../../src/main/export/encoders';
 import { runExport } from '../../src/main/export/exportRunner';
 import type { ExportSettings } from '../../src/shared/exportPlan';
 import { type ClipItem, type MediaRef, createProject, layoutSequence, sourceAt } from '../../src/shared/model';
 import { addClip, addMedia, setSpeed, speedRamp } from '../../src/shared/ops';
 import { TICKS_PER_SECOND as S, frameToTicks, ticksToFrame } from '../../src/shared/time';
-import { OUTPUT_DIR, decodeCodedFrame, ensureDirs, ffprobe, makeCoded, makeSync, mediaRefFor, readAudio, rms, samplePatch, toneFrequency } from '../helpers/fixtures';
+import { OUTPUT_DIR, decodeCodedFrame, ensureDirs, ffmpegHas, ffprobe, makeCoded, makeSync, mediaRefFor, readAudio, rms, samplePatch, toneFrequency } from '../helpers/fixtures';
 
 let A: MediaRef;
 let B: MediaRef;
@@ -57,9 +57,9 @@ describe('speed in export', () => {
       const audio = ffprobe(s.outputPath).streams.find((x: any) => x.codec_type === 'audio');
       expect(Math.abs(Number(audio.duration_ts) - (aSec + 4) * 48000)).toBeLessThan(1024);
       // ... and the 440 → 880 Hz switch is at the video cut (same check as the A/V sync tests).
-      // At 0.25× the stretched sound may end a little early (within the limits measured below;
-      // ≈ 20 ms with FFmpeg 9), so the "before" window stops short of that.
-      const early = speed === 0.25 ? 0.03 : 0.005;
+      // At 0.25× atempo's stretched sound may end a little early (within the limits measured below;
+      // ≈ 20 ms with FFmpeg 9), so the "before" window stops short of that. rubberband is on time.
+      const early = speed === 0.25 && (await timeStretchFilter()) === 'atempo' ? 0.03 : 0.005;
       expect(Math.abs(toneFrequency(pcm, aSec - early - 0.02, aSec - early) - 440)).toBeLessThan(60);
       expect(Math.abs(toneFrequency(pcm, aSec + 0.005, aSec + 0.025) - 880)).toBeLessThan(60);
       expect(Math.abs(toneFrequency(pcm, aSec * 0.2, aSec * 0.8) - 440)).toBeLessThan(10); // pitch kept
@@ -69,7 +69,7 @@ describe('speed in export', () => {
 });
 
 describe('speed: sound lines up with the picture', () => {
-  const hasRubberband = /\srubberband\s/.test(execFileSync('ffmpeg', ['-hide_banner', '-filters']).toString());
+  const hasRubberband = ffmpegHas('filters', 'rubberband'); // in the FFmpeg the export uses
   // Measured limits per filter (see ExportExtras.timeStretch). Negative = sound early.
   const limits: Record<string, Record<number, number>> = {
     rubberband: { 0.25: 0.06, 0.5: 0.04, 2: 0.025 },

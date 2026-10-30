@@ -69,7 +69,8 @@ describe('probe', () => {
     if (!r.ok) return;
     expect(r.info.isHDR).toBe(true);
     expect(r.warnings.join(' ')).toMatch(/HDR/);
-    expect(r.warnings.join(' ')).toMatch(/HEVC/);
+    // HEVC needs a preview copy except on macOS, which decodes it (the warning names the codec).
+    if (process.platform !== 'darwin') expect(r.warnings.join(' ')).toMatch(/HEVC/);
   });
 
   it('accepts ProRes and MKV (with preview copies) and rejects what cannot be read, with reasons', async () => {

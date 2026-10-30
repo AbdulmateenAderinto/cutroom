@@ -170,7 +170,7 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Curves: master and red/green/blue; click to add, drag, double-click or drag out to remove; presets (S-curve, lift shadows, faded, teal & orange) | ✅ | Monotone cubic, one 256-entry table per channel; the preview (feComponentTransfer) and the export (all 256 points to FFmpeg `curves`) use the same table |
 | Export colours match the shared maths (`applyColor`) | ✅ | SD BT.601, HD BT.709 and photo sources, 9 settings incl. hue, lightness and curves: within 4/255 |
 | Preview (SVG `feColorMatrix` in sRGB) matches the export | ✅ | 5 slider settings and a curves preset compared: within 3–5/255, same as with no adjustment |
-| HDR (PQ/HDR10 and HLG) video tone-mapped to SDR BT.709, on by default (Media → Picture to turn off) | ✅ | zscale + Mobius curve, HDR reference white (203 nits) = SDR white. Preview copy and export use the same chain (within 7/255). **Not tried with real iPhone HLG/Dolby Vision footage yet**; needs an FFmpeg with zscale (Homebrew's has it; checked before export) |
+| HDR (PQ/HDR10 and HLG) video tone-mapped to SDR BT.709, on by default (Media → Picture to turn off) | ✅ | zscale + Mobius curve, HDR reference white (203 nits) = SDR white. Preview copy and export use the same chain (within 7/255). **Not tried with real iPhone HLG/Dolby Vision footage yet**; needs an FFmpeg with zscale (Homebrew's `ffmpeg-full`; the plain `ffmpeg` formula lacks it; checked before export) |
 | 3D LUTs (.cube) per media file, before the clip's own colour | ✅ | Copied into the app's LUT folder under a hash name; FFmpeg `lut3d` (tetrahedral) in both the preview copy and the export (within 8/255). A project file can't smuggle anything else into the filter graph (the name is checked) |
 | Selective colour (change only the reds…), colour wheels, scopes | ❌ | |
 | AI tool `set_color` | ✅ | |
@@ -393,7 +393,7 @@ progress/result screens, missing-media state and the gap rendering.
   can be missed. Lower the sensitivity to find more.
 - **Speed and sound:** pitch-preserving time stretch is not sample-exact. Measured beep-vs-flash offsets
   in exports (negative = sound early): with `rubberband` (used when the FFmpeg build has it, as
-  Homebrew's does) −51 ms at 0.25×, −30 ms at 0.5×, +8…+15 ms at 2×; with the `atempo` fallback up to
+  Homebrew's `ffmpeg-full` does) −51 ms at 0.25×, −30 ms at 0.5×, +8…+15 ms at 2×; with the `atempo` fallback up to
   −118 ms at 0.25×, −44 ms at 0.5×, −15 ms at 2×. Normal-speed clips are unaffected (sample-exact).
   The preview uses Chromium's own time stretch, whose offset has not been measured. Speed ramps
   are stepped (a clip split into parts of increasing/decreasing speed), not a continuous curve.

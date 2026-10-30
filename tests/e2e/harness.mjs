@@ -11,7 +11,11 @@ export const fixtures = path.join(root, 'tests/.fixtures/e2e');
 export const TPS = 705_600_000;
 export const FAKE_WHISPER = path.join(root, 'tests/helpers/fake-whisper.mjs');
 
-export const ff = (args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args]);
+// The FFmpeg the app prefers (src/main/media/ffbin.ts): Homebrew's keg-only ffmpeg-full when installed.
+const ffBin = ['/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg', '/usr/local/opt/ffmpeg-full/bin/ffmpeg'].find((p) => existsSync(p)) ?? 'ffmpeg';
+export const ff = (args) => execFileSync(ffBin, ['-hide_banner', '-loglevel', 'error', '-y', ...args]);
+/** Whether that FFmpeg has a filter (Homebrew's plain ffmpeg lacks zscale, vid.stab, rubberband). */
+export const hasFilter = (name) => new RegExp(`\\s${name}\\s`).test(execFileSync(ffBin, ['-hide_banner', '-filters']).toString());
 
 export function fixture(name, make) {
   mkdirSync(fixtures, { recursive: true });

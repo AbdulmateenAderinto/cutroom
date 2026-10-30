@@ -13,7 +13,7 @@ import { probeMedia } from '../../src/main/media/probe';
 import { makeProxy } from '../../src/main/media/proxy';
 import { type MediaRef, createProject } from '../../src/shared/model';
 import { addClip, addMedia } from '../../src/shared/ops';
-import { FIXTURE_DIR, OUTPUT_DIR, decodeCodedFrame, ensureDirs, makeCoded, mediaRefFor, readAudio, samplePatch, toneFrequency } from '../helpers/fixtures';
+import { FIXTURE_DIR, OUTPUT_DIR, decodeCodedFrame, ensureDirs, ffmpegHas, makeCoded, mediaRefFor, readAudio, samplePatch, toneFrequency } from '../helpers/fixtures';
 
 const ff = (args: string[]) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args]);
 const TAGS = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709'];
@@ -99,7 +99,7 @@ describe('sound and photo formats', () => {
       if (!existsSync(f)) ff([...tone, ...args, f]);
     };
     make('fmt-tone.aiff', ['-c:a', 'pcm_s16be']);
-    make('fmt-tone.ogg', ['-c:a', 'libvorbis']);
+    make('fmt-tone.ogg', ['-c:a', ffmpegHas('encoders', 'libvorbis') ? 'libvorbis' : 'libopus']); // Homebrew's ffmpeg has no Vorbis
     make('fmt-tone.wma', ['-c:a', 'wmav2']);
     for (const ext of ['tiff', 'bmp']) {
       const f = path.join(FIXTURE_DIR, `fmt-photo.${ext}`);

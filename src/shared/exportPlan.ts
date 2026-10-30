@@ -802,7 +802,10 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   const outA = Math.min(rangeA, Math.max(0, totalFrames - 1));
   const outB = totalFrames; // already ends at the range end
   const ranged = outA > 0;
-  filters.push(ranged ? `[vfull]trim=start_frame=${outA},setpts=PTS-STARTPTS[vout]` : '[vfull]null[vout]');
+  // The frames carry the output's BT.709 tags: FFmpeg 8+ writes the frames' own (so far only the
+  // matrix) instead of the -color_primaries/-color_trc options, which left those "unknown".
+  const tagOut = 'setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv';
+  filters.push(ranged ? `[vfull]trim=start_frame=${outA},setpts=PTS-STARTPTS,${tagOut}[vout]` : `[vfull]${tagOut}[vout]`);
 
   // ---- Audio tracks (music, voice-over), mixed under the video track's audio ----
   const totalSamples = ticksToSamples(frameToTicks(totalFrames, rate), sr);
@@ -880,6 +883,12 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
         : `${audioOut}${loudnormApply(s.loudness, L, sr, ticksToSamples(rangeEndT - rangeStartT, sr))}[aloud]`,
     );
     audioOut = '[aloud]';
+  }
+  if ((s.codec ?? 'h264') === 'prores' && !extras.segment && extras.loudness !== 'measure') {
+    // To 16-bit PCM through packed float, as a parallel export's float WAV parts are: FFmpeg's
+    // planar and packed float → 16-bit conversions round some samples differently (arm64 builds).
+    filters.push(`${audioOut}aformat=sample_fmts=flt[apcm]`);
+    audioOut = '[apcm]';
   }
 
   const kbps = Math.round(s.videoBitrateMbps * 1000);

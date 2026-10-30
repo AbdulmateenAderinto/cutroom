@@ -17,8 +17,11 @@ that is section 6. Phase 5 (notarized release, bundled FFmpeg) is waiting on you
 You need Homebrew. Then, in Terminal:
 
 ```bash
-brew install node ffmpeg
+brew install node ffmpeg-full
 ```
+
+(`ffmpeg-full` rather than `ffmpeg`: Homebrew's plain `ffmpeg` has no zscale, vid.stab or rubberband,
+so HDR tone mapping would be refused and stabilizing/speed would use the weaker fallbacks.)
 
 ```bash
 git clone https://github.com/AbdulmateenAderinto/cutroom.git ~/cutroom

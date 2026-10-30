@@ -6,7 +6,9 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-const CANDIDATE_DIRS = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
+// Homebrew's `ffmpeg-full` (keg-only, so not on PATH) first: the plain `ffmpeg` formula has no
+// zscale (HDR tone mapping), vid.stab or rubberband.
+const CANDIDATE_DIRS = ['/opt/homebrew/opt/ffmpeg-full/bin', '/usr/local/opt/ffmpeg-full/bin', '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
 
 export interface FfmpegStatus {
   ok: boolean;

@@ -136,7 +136,8 @@
     <section id="setup">
       <h2><span class="n">1</span>Set up (once)</h2>
       <p>You need <a href="https://brew.sh">Homebrew</a>. Then, in Terminal:</p>
-      <div class="cmd"><pre><code>brew install node ffmpeg</code></pre></div>
+      <div class="cmd"><pre><code>brew install node ffmpeg-full</code></pre></div>
+      <p><code>ffmpeg-full</code> rather than <code>ffmpeg</code>: Homebrew's plain <code>ffmpeg</code> has no zscale, vid.stab or rubberband, so HDR tone mapping would be refused and stabilizing/speed would use the weaker fallbacks.</p>
       <div class="cmd"><pre><code>git clone https://github.com/AbdulmateenAderinto/cutroom.git ~/cutroom</code></pre></div>
       <div class="cmd"><pre><code>cd ~/cutroom &amp;&amp; npm install</code></pre></div>
       <h3>Already have a clone from earlier?</h3>

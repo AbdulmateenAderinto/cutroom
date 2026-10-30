@@ -14,7 +14,7 @@ import { runExport } from '../../src/main/export/exportRunner';
 import { type ClipItem, type MediaRef, type Project, createProject, layoutSequence, sourceAt } from '../../src/shared/model';
 import { addClip, addMedia, insertFreezeFrame, setClipRange, unreverse, useReversed, useStabilized } from '../../src/shared/ops';
 import { TICKS_PER_SECOND as S, frameToTicks } from '../../src/shared/time';
-import { FIXTURE_DIR, OUTPUT_DIR, decodeCodedFrame, ensureDirs, makeCoded, makeSync, mediaRefFor, readAudio, samplePatch, toneFrequency } from '../helpers/fixtures';
+import { FIXTURE_DIR, OUTPUT_DIR, decodeCodedFrame, ensureDirs, ffmpegHas, makeCoded, makeSync, mediaRefFor, readAudio, samplePatch, toneFrequency } from '../helpers/fixtures';
 const toneOf = (pcm: Float32Array) => toneFrequency(pcm, 0.5, 1.5);
 
 const R30 = { num: 30, den: 1 };
@@ -160,7 +160,7 @@ describe('stabilize', () => {
     return { mean: sum / (n - 1), frames: n };
   };
 
-  it('vid.stab removes most of the shake, keeps every frame and the sound; switching back restores the clip', async () => {
+  it.skipIf(!ffmpegHas('filters', 'vidstabdetect'))('vid.stab removes most of the shake, keeps every frame and the sound; switching back restores the clip', async () => {
     const file = await makeStabilized(dir, SHAKY.path, SHAKY.info, 0.5 * S, 2.5 * S, 0.8, true);
     const before = motion(SHAKY.path);
     const after = motion(file);

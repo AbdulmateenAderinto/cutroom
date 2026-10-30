@@ -37,7 +37,10 @@ See [docs/STATUS.md](docs/STATUS.md) for what works, what's planned and the know
 
 - macOS 12+ (Apple Silicon or Intel)
 - [Node.js](https://nodejs.org) 20 or newer (22 LTS recommended): `brew install node`
-- FFmpeg with libx264 (used for inspecting media, thumbnails and export): `brew install ffmpeg`
+- FFmpeg with libx264 (used for inspecting media, thumbnails and export): `brew install ffmpeg`.
+  For HDR tone mapping, vid.stab stabilizing and the better speed time-stretch, install the full
+  build instead: `brew install ffmpeg-full` (Homebrew's plain `ffmpeg` no longer has zscale, vid.stab
+  or rubberband). Cutroom uses `ffmpeg-full` when it is installed.
 - Optional, for transcripts and captions: `brew install whisper-cpp` (a speech model is downloaded in the app)
 
 Cutroom looks for `ffmpeg`/`ffprobe` in `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` and your
@@ -177,8 +180,8 @@ Open the `.dmg` and drag Cutroom to Applications.
   opens normally. One downloaded from elsewhere is blocked the first time: right-click the app →
   **Open** → **Open**.
 - FFmpeg is **not bundled** (an FFmpeg build with libx264 is GPL, which affects how the app could be
-  distributed). Install it with `brew install ffmpeg`; Cutroom finds it in `/opt/homebrew/bin` or
-  `/usr/local/bin` even when started from Finder.
+  distributed). Install it with `brew install ffmpeg-full` (or `ffmpeg`, without HDR tone mapping/vid.stab); Cutroom finds
+  it in Homebrew's folders even when started from Finder, preferring `ffmpeg-full`.
 - For AI control, the bridge command shown in **AI control** points inside the installed app, so
   re-copy it into Claude's settings after moving or updating the app.
 

@@ -14,9 +14,16 @@ import path from 'node:path';
 import type { MediaRef } from '../../src/shared/model';
 import { newId } from '../../src/shared/model';
 import { probeMedia } from '../../src/main/media/probe';
+import { ffmpegPath } from '../../src/main/media/ffbin';
 
 export const FIXTURE_DIR = path.resolve(__dirname, '../.fixtures');
 export const OUTPUT_DIR = path.resolve(__dirname, '../.output');
+
+/** Whether the FFmpeg the app uses has a filter/encoder (Homebrew's `ffmpeg` lacks zscale, vid.stab,
+ *  libvorbis, rubberband and flite; `ffmpeg-full` has most of them). */
+export function ffmpegHas(kind: 'filters' | 'encoders', name: string): boolean {
+  return new RegExp(`\\s${name}\\s`).test(execFileSync(ffmpegPath(), ['-hide_banner', `-${kind}`]).toString());
+}
 
 export function ensureDirs() {
   mkdirSync(FIXTURE_DIR, { recursive: true });

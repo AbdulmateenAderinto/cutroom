@@ -13,9 +13,12 @@ import { probeMedia } from '../../src/main/media/probe';
 import { makeProxy } from '../../src/main/media/proxy';
 import { type MediaRef, type Project, createProject } from '../../src/shared/model';
 import { addClip, addMedia } from '../../src/shared/ops';
-import { FIXTURE_DIR, OUTPUT_DIR, ensureDirs } from '../helpers/fixtures';
+import { FIXTURE_DIR, OUTPUT_DIR, ensureDirs, ffmpegHas } from '../helpers/fixtures';
+import { ffmpegPath } from '../../src/main/media/ffbin';
 
-const ff = (args: string[]) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args]);
+const ff = (args: string[]) => execFileSync(ffmpegPath(), ['-hide_banner', '-loglevel', 'error', '-y', ...args]);
+// Tone mapping (and making the HDR fixture) needs zscale; the export refuses without it.
+const HAS_ZSCALE = ffmpegHas('filters', 'zscale');
 const work = mkdtempSync(path.join(os.tmpdir(), 'cutroom-input-'));
 setLutDir(path.join(work, 'luts'));
 // Four patches: orange, teal, white, mid grey.
@@ -32,7 +35,7 @@ const ref = async (file: string, input?: MediaRef['input']): Promise<MediaRef> =
 beforeAll(async () => {
   ensureDirs();
   const hdr = path.join(FIXTURE_DIR, 'quad-pq203-prores.mov');
-  if (!existsSync(hdr)) {
+  if (HAS_ZSCALE && !existsSync(hdr)) {
     // SDR patches converted to PQ / BT.2020 with SDR white at the HDR reference white (203 nits,
     // BT.2408), stored as 10-bit ProRes with HDR10 tags.
     ff(['-f', 'lavfi', '-i', `${quad},fps=30,format=gbrpf32le,zscale=tin=bt709:pin=bt709:min=bt709:rin=full:t=smpte2084:p=bt2020:m=bt2020nc:r=tv:npl=203,format=yuv422p10le`, '-t', '1',
@@ -43,7 +46,7 @@ beforeAll(async () => {
     ff(['-f', 'lavfi', '-i', `${quad},fps=30,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p`, '-t', '1', '-c:v', 'libx264', '-qp', '0',
       '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', sdr]);
   }
-  HDR = await ref(hdr);
+  if (HAS_ZSCALE) HDR = await ref(hdr);
   SDR = await ref(sdr);
 });
 
@@ -62,7 +65,7 @@ async function exportOf(m: MediaRef, name: string) {
 }
 const maxDiff = (a: number[][], b: number[][]) => Math.max(...a.flatMap((c, i) => c.map((v, k) => Math.abs(v - b[i][k]))));
 
-describe('HDR tone mapping', () => {
+describe.skipIf(!HAS_ZSCALE)('HDR tone mapping', () => {
   it('the HDR fixture is detected as HDR', () => {
     expect(HDR.info.isHDR).toBe(true);
   });
@@ -110,7 +113,7 @@ describe('3D LUTs', () => {
     const m = { ...SDR, input: { lut: swap } };
     const file = await exportOf(m, 'in-lut.mp4');
     const got = quads(file);
-    const orig = quads(path.join(OUTPUT_DIR, 'in-sdr.mp4'));
+    const orig = quads(await exportOf(SDR, 'in-lut-ref.mp4')); // own reference: the HDR tests may be skipped
     got.forEach((c, i) => {
       expect(Math.abs(c[0] - orig[i][2])).toBeLessThanOrEqual(4);
       expect(Math.abs(c[2] - orig[i][0])).toBeLessThanOrEqual(4);

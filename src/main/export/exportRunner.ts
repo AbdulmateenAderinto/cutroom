@@ -152,7 +152,7 @@ export async function runExport(project: Project, settings: ExportSettings, opts
     }
   }
   if (usedMedia.some((m) => m.input?.toneMap && m.info.isHDR) && !(await hasFilter('zscale'))) {
-    return fail('HDR tone mapping needs an FFmpeg with the zscale filter (libzimg). Install a full FFmpeg build (e.g. `brew install ffmpeg`), or turn tone mapping off for the HDR clips.');
+    return fail('HDR tone mapping needs an FFmpeg with the zscale filter (libzimg). Install the full FFmpeg build (`brew install ffmpeg-full`) and restart Cutroom, or turn tone mapping off for the HDR clips.');
   }
   const lutCwd = usedMedia.some((m) => m.input?.lut) ? getLutDir() : undefined;
 

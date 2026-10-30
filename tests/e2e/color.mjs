@@ -9,7 +9,7 @@
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { assert, ff, fixture, launch, makeSteps, outputDir } from './harness.mjs';
+import { assert, ff, fixture, hasFilter, launch, makeSteps, outputDir } from './harness.mjs';
 
 const out = outputDir('color');
 const userData = path.join(out, 'userdata');
@@ -18,7 +18,9 @@ const patches = ['0xe68c28', '0x28a096', '0x808080', '0x6e1e1e'];
 const quad = patches.map((c, i) => `color=c=${c}:s=320x180:r=30:d=3[p${i}]`).join(';') + ';[p0][p1]hstack[t];[p2][p3]hstack[b];[t][b]vstack,format=yuv420p';
 // The same patches as HDR10 (PQ, BT.2020, SDR white at the 203-nit reference white), 10-bit ProRes.
 const quadRgb = patches.map((c, i) => `color=c=${c}:s=320x180:r=30:d=3[p${i}]`).join(';') + ';[p0][p1]hstack[t];[p2][p3]hstack[b];[t][b]vstack';
-const hdr = fixture('color-quad-pq.mov', (f) => ff(['-f', 'lavfi', '-i', `${quadRgb},format=gbrpf32le,zscale=tin=bt709:pin=bt709:min=bt709:rin=full:t=smpte2084:p=bt2020:m=bt2020nc:r=tv:npl=203,format=yuv422p10le`,
+// Making the HDR fixture and tone mapping both need zscale (Homebrew's ffmpeg-full).
+const HAS_ZSCALE = hasFilter('zscale');
+const hdr = HAS_ZSCALE && fixture('color-quad-pq.mov', (f) => ff(['-f', 'lavfi', '-i', `${quadRgb},format=gbrpf32le,zscale=tin=bt709:pin=bt709:min=bt709:rin=full:t=smpte2084:p=bt2020:m=bt2020nc:r=tv:npl=203,format=yuv422p10le`,
   '-t', '3', '-c:v', 'prores_ks', '-profile:v', '3', '-color_trc', 'smpte2084', '-color_primaries', 'bt2020', '-colorspace', 'bt2020nc', f]));
 // A 2×2×2 LUT swapping red and blue.
 const lut = path.join(out, 'swap red-blue.cube');
@@ -183,7 +185,8 @@ await step('a LUT on the media file: the preview copy and the export both swap r
   assert((await h.state()).media.length === 1 && !(await h.state()).media[0].input, 'LUT not removed');
 });
 
-await step('an HDR file is tone-mapped by default; preview copy matches the export', async () => {
+if (!HAS_ZSCALE) console.log('  - skipped: HDR tone mapping (this FFmpeg has no zscale; brew install ffmpeg-full)');
+else await step('an HDR file is tone-mapped by default; preview copy matches the export', async () => {
   await h.stubOpen([hdr]);
   await page.click('button:has-text("Import…")');
   await page.waitForFunction(() => window.__cutroom.store.get().project.media.length === 2);
