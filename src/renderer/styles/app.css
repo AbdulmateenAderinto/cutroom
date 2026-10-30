@@ -355,3 +355,4 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .curves-grid line { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
 .curves-diag { stroke: rgba(255, 255, 255, 0.18); stroke-dasharray: 3 3; }
 .curves-pt { fill: #fff; stroke: #000; stroke-width: 1.5; cursor: grab; }
+.rec-on { animation: rec-blink 1s infinite; } @keyframes rec-blink { 50% { opacity: 0.6; } }

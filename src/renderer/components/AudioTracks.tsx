@@ -5,11 +5,12 @@
  * small squares at its top corners to set fade-in / fade-out; drop media from the Media panel on a
  * row to add it there. Audio after the end of the video track is shaded: it is not exported.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type AudioClip, type AudioTrack, findMedia } from '../../shared/model';
 import { addAudioClip, audioClipDuration, moveAudioClip, setAudioClip, setAudioTrack, trimAudioClip } from '../../shared/audio';
 import { type Ticks, formatDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import * as A from '../state/actions';
+import { startVoiceOver, stopVoiceOver } from '../state/voiceover';
 import { beginGesture, commit, endGesture, store, updateGesture, useStore } from '../state/store';
 import { MEDIA_DRAG_TYPE } from './MediaBin';
 
@@ -178,8 +179,40 @@ export function AudioTracks(h: TimeHelpers) {
       ))}
       <div className="tl-audio-add" onDragOver={allowDrop} onDrop={(e) => onDrop(e)}>
         <button className="btn tiny" onClick={() => A.addAudioTrackAction()}>+ Audio track</button>
+        <VoiceOverButton />
         <span className="muted small">Drop music or voice-over here (MP3, M4A, WAV, FLAC — or a video’s sound)</span>
       </div>
     </div>
+  );
+}
+
+/** Record a voice-over from the playhead (the timeline plays while recording). */
+function VoiceOverButton() {
+  const recording = useStore((s) => s.recording);
+  const [mute, setMute] = useState(false);
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    if (!recording) return;
+    const id = window.setInterval(() => setNow(performance.now()), 250);
+    return () => window.clearInterval(id);
+  }, [recording]);
+  if (recording) {
+    const s = Math.max(0, Math.floor((now - recording.since) / 1000));
+    return (
+      <button className="btn tiny danger rec-on" onClick={() => void stopVoiceOver()} title="Stop recording; the voice-over is placed where recording started">
+        ■ Stop recording {Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')}
+      </button>
+    );
+  }
+  return (
+    <>
+      <button className="btn tiny" onClick={() => void startVoiceOver(mute)} title="Record from the microphone while the timeline plays from the playhead">
+        ● Record voice-over
+      </button>
+      <label className="check small" title="Play the timeline silently while recording (when you have no headphones, so it isn't recorded)">
+        <input type="checkbox" checked={mute} onChange={(e) => setMute(e.target.checked)} />
+        silent playback
+      </label>
+    </>
   );
 }

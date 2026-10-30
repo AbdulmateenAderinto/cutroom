@@ -61,7 +61,10 @@
         }
       ],
       "identity": "-",
-      "hardenedRuntime": false
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Cutroom records voice-overs from your microphone when you ask it to."
+      }
     },
     "dmg": {
       "title": "Cutroom ${version}"

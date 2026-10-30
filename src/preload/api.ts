@@ -95,6 +95,10 @@ export interface CutroomApi {
   filesExist(paths: string[]): Promise<boolean[]>;
   /** 100 peaks per second (0..255), or null if the file has no readable audio. */
   waveform(path: string): Promise<Uint8Array | null>;
+  /** Save a voice-over recording (WebM from MediaRecorder) as WAV next to the project. */
+  saveRecording(bytes: Uint8Array, projectPath: string | null): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /** Ask the system for the microphone (macOS); true elsewhere. */
+  micAccess(): Promise<boolean>;
   /** Background noise level of a file's sound (dBFS), for noise reduction. */
   noiseFloor(path: string): Promise<number | null>;
   mediaUrl(path: string): string;

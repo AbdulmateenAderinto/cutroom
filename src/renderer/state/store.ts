@@ -56,6 +56,10 @@ export interface AppState {
   importing: string[]; // names of files being inspected
   /** Background jobs in progress, e.g. "reverse:<clipId>", "freeze". */
   working: string[];
+  /** Voice-over recording in progress. */
+  recording: { since: number } | null;
+  /** Silence the preview (e.g. while recording a voice-over without headphones). */
+  previewMuted: boolean;
   toasts: Toast[];
   dialog: DialogName;
   ffmpeg: FfmpegStatus | null;
@@ -105,6 +109,8 @@ export const store = createStore<AppState>({
   missing: {},
   importing: [],
   working: [],
+  recording: null,
+  previewMuted: false,
   toasts: [],
   dialog: null,
   ffmpeg: null,

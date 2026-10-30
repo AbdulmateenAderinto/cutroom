@@ -11,7 +11,8 @@ import { SpeechSetupDialog } from './components/SpeechSetupDialog';
 import { Timeline } from './components/Timeline';
 import { Toasts } from './components/Toasts';
 import { TopBar } from './components/TopBar';
-import { audioDebug, eqResponse } from './preview/audio';
+import { audioDebug, eqResponse, setPreviewMuted } from './preview/audio';
+import * as VO from './state/voiceover';
 import { eqResponseDb } from '../shared/audioFx';
 import { engine } from './preview/engine';
 import * as A from './state/actions';
@@ -77,6 +78,8 @@ export function App() {
   const dialog = useStore((s) => s.dialog);
   const ffmpeg = useStore((s) => s.ffmpeg);
   const [recovery, setRecovery] = useState<RecoveryEntry[]>([]);
+
+  useEffect(() => store.subscribe(() => setPreviewMuted(store.get().previewMuted)), []);
 
   useEffect(() => {
     const api = window.cutroom;
@@ -178,4 +181,4 @@ export function App() {
 }
 
 // Expose a small hook for automated UI tests (no effect on normal use).
-(window as any).__cutroom = { store, playhead, engine, actions: A, audioDebug, eqResponse, eqResponseDb };
+(window as any).__cutroom = { store, playhead, engine, actions: A, audioDebug, eqResponse, eqResponseDb, voiceover: VO };

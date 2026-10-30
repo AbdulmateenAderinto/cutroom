@@ -3,7 +3,8 @@
  * chapters in the export), multi-select (⌘-click, Shift-click, ⌘A; delete, copy/paste), and
  * detaching a clip's sound for an L-cut, a speed ramp (preview vs export, playback rates), a
  * freeze frame and a reversed clip (both: preview vs export), EQ (the preview's Web Audio response vs
- * the shared formula), noise reduction with “Listen”, and a loudness-normalized export.
+ * the shared formula), noise reduction with “Listen”, a loudness-normalized export, and recording a
+ * voice-over (fake microphone).
  *
  * Run: npm run test:e2e   (Linux without a display: xvfb-run -a npm run test:e2e)
  */
@@ -25,7 +26,8 @@ const b = clip('edit-b.mp4', grad('220-150*X/W', '30+50*T', '60+100*Y/H'), 880);
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const { step, finish } = makeSteps();
 console.log('Cutroom editing tools UI test');
-const h = await launch({ userData });
+// A fake microphone (Chromium plays a beep pattern) for the voice-over step.
+const h = await launch({ userData, extraArgs: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 const { page } = h;
 const time = () => page.evaluate(() => window.__cutroom.playhead.get().time / 705_600_000);
 const key = async (k) => {
@@ -319,6 +321,31 @@ await step('export with loudness normalized to −16 LUFS', async () => {
   const I = Number(/Integrated loudness:\s+I:\s+(-?[\d.]+) LUFS/.exec(r.stderr)?.[1]);
   console.log(`      integrated loudness ${I} LUFS`);
   assert(Math.abs(I + 16) < 1, `loudness ${I} LUFS`);
+});
+
+await step('record a voice-over from 1 s (fake microphone): it lands on a “Voice-over” track where recording started', async () => {
+  await page.keyboard.press('Escape');
+  const before = (await h.state()).media.length;
+  await h.seekFrame(30);
+  await page.click('button:has-text("Record voice-over")');
+  await page.waitForSelector('button:has-text("Stop recording")', { timeout: 10000 });
+  await page.waitForTimeout(2500);
+  await page.click('button:has-text("Stop recording")');
+  await page.waitForFunction((n) => window.__cutroom.store.get().project.media.length === n + 1, before, { timeout: 20000 });
+  const s = await h.state();
+  const track = s.audioTracks.find((t) => t.name === 'Voice-over');
+  const clip = track?.clips[0];
+  const media = s.media.find((m) => m.id === clip?.mediaId);
+  assert(track && clip && media, JSON.stringify(s.audioTracks));
+  assert(Math.abs(clip.start / TPS - 1) < 0.15, `starts at ${clip.start / TPS}`);
+  const len = (clip.sourceOut - clip.sourceIn) / TPS;
+  assert(len > 2 && len < 3.6, `recorded ${len} s`);
+  assert(/\.wav$/.test(media.path) && media.info.hasAudio, media.path);
+  const pcm = execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', media.path, '-f', 'f32le', '-ac', '1', '-']);
+  const f = new Float32Array(pcm.buffer, pcm.byteOffset, pcm.length / 4);
+  const peak = f.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+  assert(peak > 0.05, `the recording is silent (peak ${peak})`);
+  console.log(`      recorded ${len.toFixed(2)} s, placed at ${(clip.start / TPS).toFixed(3)} s, peak ${peak.toFixed(2)}`);
 });
 
 await h.close();

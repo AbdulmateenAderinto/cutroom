@@ -52,8 +52,14 @@ export function setEq(el: HTMLMediaElement, fx: AudioFx | undefined) {
 const trackGains = new Map<string, GainNode>();
 let speechCache: { project: Project | null; intervals: { start: Ticks; end: Ticks }[] } = { project: null, intervals: [] };
 
+let master: GainNode | null = null;
+
 function audio(): AudioContext {
-  if (!ctx) ctx = new AudioContext({ latencyHint: 'interactive' });
+  if (!ctx) {
+    ctx = new AudioContext({ latencyHint: 'interactive' });
+    master = ctx.createGain();
+    master.connect(ctx.destination);
+  }
   if (ctx.state === 'suspended') void ctx.resume();
   return ctx;
 }
@@ -63,7 +69,7 @@ export function attachVideoElement(el: HTMLMediaElement) {
   el.crossOrigin = 'anonymous'; // media is served with CORS so Web Audio may read it
   const c = audio();
   const gain = c.createGain();
-  gain.connect(c.destination);
+  gain.connect(master!);
   eqChain(c, el, gain);
   videoGains.set(el, gain);
 }
@@ -86,7 +92,7 @@ function trackGain(track: AudioTrack): GainNode {
   if (!g) {
     const c = audio();
     g = c.createGain();
-    g.connect(c.destination);
+    g.connect(master!);
     trackGains.set(track.id, g);
   }
   return g;
@@ -186,4 +192,10 @@ export function audioDebug() {
     tracks: [...trackGains.entries()].map(([id, g]) => ({ id, gain: g.gain.value })),
     video: [...videoGains.values()].map((g) => g.gain.value),
   };
+}
+
+/** Silence (or not) everything the preview plays. */
+export function setPreviewMuted(muted: boolean) {
+  audio();
+  if (master) master.gain.value = muted ? 0 : 1;
 }

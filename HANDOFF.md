@@ -78,7 +78,7 @@ If you move or reinstall the app, copy the snippet again (the path changes). Det
 | Framing | Canvas presets (16:9, 9:16, 1:1, 4:5, custom), Fit / Fill / Manual per clip |
 | Overlays | Video tracks V2, V3… over the main track: picture-in-picture (**⧉ PiP** in the Media panel), corner presets, drag/resize in the preview |
 | Animation | In/out presets, slow zoom/pan, keyframes with easing (incl. rotation); clip rotation; title keyframes |
-| Music | Audio tracks, waveforms, fades, volume to 200%, auto-ducking under speech, EQ, noise reduction, loudness normalization (export) |
+| Music | Audio tracks, waveforms, fades, volume to 200%, auto-ducking under speech, EQ, noise reduction, loudness normalization (export), voice-over recording |
 | Photos | JPEG/PNG/WebP clips, EXIF rotation, transparency, Ken Burns |
 | Titles | Text rows, 5 styles, fonts, looks, drag to place, fade/rise/pop/typewriter (key **T**) |
 | Speed | 0.25×–4× per clip, pitch kept; stepped speed ramps (ease into/out of slow motion); freeze frame (**⇧F**); reverse |
@@ -103,6 +103,7 @@ Tick these off; anything that fails is worth a GitHub issue or a message to Clau
 - [ ] AirDrop an *Apple devices — HEVC* export to an iPhone; open it in Photos. Open a ProRes export in Final Cut Pro.
 - [ ] Try the keyboard shortcuts (press **?** for the list), especially J/K/L and ⌘C/⌘V on a Mac keyboard.
 - [ ] Speech: `brew install whisper-cpp`, download a model in the app, transcribe a real clip.
+- [ ] Record a voice-over (● Record voice-over): macOS asks for the microphone once; check the take lines up with the picture.
 - [ ] AI control from the real Claude Desktop / Claude Code.
 - [ ] `npm run dist:mac` builds the `.dmg`, and the installed app starts and exports.
 - [ ] Run the automated tests on the Mac (section 7).

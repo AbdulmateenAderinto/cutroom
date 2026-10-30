@@ -2,9 +2,10 @@
  * Electron main process: window, menus, file dialogs, and the bridge to FFmpeg.
  * All heavy work (ffprobe, thumbnails, export) runs in child processes, never on the UI thread.
  */
-import { existsSync, mkdirSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { BrowserWindow, Menu, type MenuItemConstructorOptions, app, dialog, ipcMain, shell } from 'electron';
+import { BrowserWindow, Menu, type MenuItemConstructorOptions, app, dialog, ipcMain, session, shell, systemPreferences } from 'electron';
 import type { MenuAction } from '../preload/api';
 import type { ExportSettings } from '../shared/exportPlan';
 import { type MediaInfo, type MediaInput, type Project, PROJECT_EXTENSION } from '../shared/model';
@@ -14,7 +15,7 @@ import { setupTranscription } from './transcribe/transcribeService';
 import { cancelExport, startExport } from './export/exportJobs';
 import { runExport } from './export/exportRunner';
 import { encoderAvailability } from './export/encoders';
-import { checkFfmpeg, resolveBinaries } from './media/ffbin';
+import { checkFfmpeg, ffmpegPath, resolveBinaries } from './media/ffbin';
 import { SUPPORTED_EXTENSIONS, probeMedia } from './media/probe';
 import { makeProxy } from './media/proxy';
 import { setConvertDir } from './media/heic';
@@ -207,6 +208,35 @@ function registerIpc() {
     wrap(makeReversed(derivedDir(projectPath), p, info, sourceIn, sourceOut, (fraction) => e.sender.send('media:reverseProgress', { path: p, fraction }))),
   );
 
+  // Voice-over: the recording (WebM/Opus from MediaRecorder) is converted to WAV (exact length,
+  // seekable) next to the project, or in the app's data folder until it is saved.
+  ipcMain.handle('media:saveRecording', async (_e, bytes: Uint8Array, projectPath: string | null) => {
+    const dir = derivedDir(projectPath);
+    mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+    const raw = path.join(dir, `.voice-over-${stamp}.webm`);
+    const out = path.join(dir, `Voice-over ${stamp}.wav`);
+    writeFileSync(raw, Buffer.from(bytes));
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const p = spawn(ffmpegPath(), ['-hide_banner', '-nostdin', '-y', '-loglevel', 'error', '-i', raw, '-vn', '-ar', '48000', '-c:a', 'pcm_s16le', out], { stdio: ['ignore', 'ignore', 'pipe'] });
+        let err = '';
+        p.stderr.on('data', (d) => (err += d.toString()));
+        p.on('error', reject);
+        p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim().split('\n').pop() || `FFmpeg exited with ${code}`))));
+      });
+      return { ok: true as const, path: out };
+    } catch (e) {
+      return { ok: false as const, error: (e as Error).message };
+    } finally {
+      rmSync(raw, { force: true });
+    }
+  });
+  ipcMain.handle('media:micAccess', async () => {
+    if (process.platform !== 'darwin') return true;
+    if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return true;
+    return systemPreferences.askForMediaAccess('microphone');
+  });
   ipcMain.handle('media:noiseFloor', (_e, p: string) => noiseFloor(p));
   ipcMain.handle('media:waveform', (_e, p: string) => waveformPeaks(path.join(app.getPath('userData'), 'waveforms'), p).catch(() => null));
 
@@ -348,6 +378,11 @@ app.whenReady().then(() => {
   resolveBinaries(app.isPackaged ? [path.join(process.resourcesPath, 'bin')] : []);
   setConvertDir(path.join(app.getPath('userData'), 'converted'));
   setLutDir(path.join(app.getPath('userData'), 'luts'));
+  // Only the microphone (for voice-overs) may be asked for; everything else is refused.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, done, details) => {
+    const audioOnly = permission === 'media' && (details as { mediaTypes?: string[] }).mediaTypes?.every((t) => t === 'audio');
+    done(!!audioOnly);
+  });
   handleMediaProtocol();
   ai = setupAiControl(() => win);
   registerIpc();
