@@ -18,7 +18,8 @@ export async function thumbnailDataUrl(cacheDir: string, file: string, atSeconds
       await new Promise<void>((resolve, reject) => {
         execFile(
           ffmpegPath(),
-          ['-hide_banner', '-nostdin', '-loglevel', 'error', '-y', '-ss', atSeconds.toFixed(3), '-i', file,
+          // No seek for t = 0: on a single JPEG, "-ss 0" makes FFmpeg 6 output nothing (photos use 0).
+          ['-hide_banner', '-nostdin', '-loglevel', 'error', '-y', ...(atSeconds > 0 ? ['-ss', atSeconds.toFixed(3)] : []), '-i', file,
             '-frames:v', '1', '-vf', 'scale=320:320:force_original_aspect_ratio=decrease', '-q:v', '5', out],
           { timeout: 30_000 },
           (err) => (err ? reject(err) : resolve()),

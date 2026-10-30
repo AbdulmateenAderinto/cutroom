@@ -259,6 +259,25 @@ await step('speech tools: transcribe, get_transcript, set_captions, remove_fille
   await page.screenshot({ path: path.join(out, 'captions-by-ai.png') });
 });
 
+await step('audio tools: add_audio, set_audio_clip, set_audio_track (ducking), remove_audio_clip', async () => {
+  const MUSIC = path.join(fixtures, 'song 1k.mp3');
+  if (!existsSync(MUSIC)) ff(['-f', 'lavfi', '-i', "aevalsrc='0.25*sin(2*PI*1000*t)':s=44100:d=12", '-c:a', 'libmp3lame', MUSIC]);
+  const imp = await call('import_media', { paths: [MUSIC] });
+  const musicId = imp.json.imported[0].id;
+  const bad = await client.callTool({ name: 'add_clip', arguments: { media_id: musicId } });
+  assert(bad.isError && bad.content[0].text.includes('add_audio'), 'audio file accepted on the video track');
+  const add = (await call('add_audio', { media_id: musicId, start: 0.5, source_in: 1, source_out: 6, volume: 0.8, fade_in: 0.5, fade_out: 1 })).json;
+  const c = add.audio_tracks[0].clips[0];
+  assert(c.start_s === 0.5 && c.source_in_s === 1 && c.source_out_s === 6 && c.volume === 0.8 && c.fade_out_s === 1, JSON.stringify(c));
+  await call('set_audio_clip', { clip_id: add.clip_id, start: 1, volume: 1.4 });
+  const duck = (await call('set_audio_track', { track_id: add.track_id, duck: true, duck_db: -10, name: 'Score' })).json;
+  assert(duck.audio_tracks[0].duck.db === -10 && duck.audio_tracks[0].name === 'Score', JSON.stringify(duck.audio_tracks[0]));
+  const st = await appState();
+  assert(st.media.find((m) => m.id === talkId).speech?.length >= 1, 'speech analysis not stored for ducking');
+  const rm = (await call('remove_audio_clip', { clip_id: add.clip_id })).json;
+  assert(rm.audio_tracks[0].clips.length === 0, 'not removed');
+});
+
 await step('turning AI control off disconnects the bridge', async () => {
   await page.evaluate(() => window.cutroom.setAiEnabled(false));
   const r = await client.callTool({ name: 'get_project', arguments: {} });

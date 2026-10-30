@@ -41,12 +41,15 @@ BigInt is used only inside conversions, where products could exceed 2^53.
 **A magnetic single track.** Clips play back to back in array order; timeline positions are derived,
 not stored. "Delete, leave gap" inserts an explicit `GapItem` (exported as background colour plus silence).
 Each clip carries its own audio, so A/V sync after trims, splits and reordering follows from the timing rules.
+Audio tracks (music, voice-over) sit underneath: their clips have an explicit timeline `start`, so they
+stay where they are when the video track is edited. A photo is a clip whose media is a still image with a
+nominal one-hour source length, so trimming works exactly as for video.
 
 **Undo/redo = snapshots.** Edits are pure functions returning a new `Project`, so history is a list
 of previous projects (unchanged parts are shared). A drag is a "gesture": updated live, committed as one undo step.
 
-**Explicit, cautious media support.** Only H.264 (HEVC flagged as untested) in MP4/MOV is imported in
-this milestone. Anything else is rejected with a reason. See STATUS.md for format limitations.
+**Explicit, cautious media support.** Video: H.264 (HEVC flagged as untested) in MP4/MOV. Audio:
+MP3, M4A/AAC, WAV, FLAC. Photos: JPEG, PNG, WebP. Anything else is rejected with a reason. See STATUS.md for format limitations.
 
 ## Playback and preview (src/renderer/preview/engine.ts)
 
@@ -77,6 +80,8 @@ One FFmpeg process. For each timeline item:
 clip:  -ss (in − ½ frame) -t … -i file        (input seek: fast, frame-accurate when re-encoding)
        [v] setpts → crop (only if partly off-canvas) → scale → overlay on a background of exactly N frames
        [a] trim ½ frame → align → resample 48 kHz stereo → volume → pad/trim to exactly M samples
+photo: -loop 1 -framerate <output rate> -t … -i file, decoded to RGB(A) → same chain, converted RGB→BT.709;
+       alpha kept (yuva420p) so the background shows through
 gap:   background colour × N frames + silence × M samples
 then:  concat → (pad or crop if the output aspect differs, chosen explicitly) → libx264 + AAC → MP4
 ```
@@ -88,6 +93,19 @@ to its frame.
 Safety: FFmpeg writes `name.mp4.partial`. The result is checked with ffprobe (codec, size,
 duration, audio present) and only then renamed to `name.mp4`. On failure or cancel the partial file is
 deleted. Arguments are always an array (`spawn`, never a shell), so any file name is safe.
+
+Audio tracks are mixed after the concat:
+
+```
+each clip:  -ss in -t len -i file → resample → volume → fades → adelay (in samples) ─┐
+track:      amix (normalize=0) → track volume → ducking envelope (asendcmd, 20 ms steps)
+final:      amix with the video track's audio → alimiter (−0.2 dBFS)
+```
+
+The preview routes every `<video>`/`<audio>` element through Web Audio gain nodes and computes gains
+with the same functions (`clipGainAt`, `duckGainAt` in `src/shared/audio.ts`). Music elements follow the
+timeline clock and are re-seeked only if they drift by more than 120 ms. Ducking uses the video's
+"sound present" ranges (the inverse of silence detection), cached per media file.
 
 ## Project files
 
@@ -135,9 +153,6 @@ lists them; the server validates arguments. Editing tools execute in the window 
 
 ## Where to add the planned features
 
-- **Music tracks / waveforms:** add an `audioTracks` array to `Project` (new format version plus a
-  migration in `serialize.ts`). Add an `amix` stage in `exportPlan.ts`, and a Web Audio path in the preview.
-- **Photos:** a `MediaInfo.kind = 'image'`. The preview uses `<img>`; export uses `-loop 1 -t`.
-- **Text / overlays, colour adjustments, keyframes:** a second visual layer in the preview, and an extra
-  overlay or `eq` stage per segment in the export plan. Keyframes need the framing maths evaluated per frame (FFmpeg expressions or `sendcmd`).
+- **Text / overlays, colour adjustments:** a second visual layer in the preview, and an extra
+  overlay or `eq` stage per segment in the export plan.
 - **Speed changes:** `ClipItem.speed`. Timeline duration = source range / speed; `setpts`/`atempo` in export.

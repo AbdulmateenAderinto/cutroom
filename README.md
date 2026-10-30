@@ -10,6 +10,8 @@ Status: the core workflow (import → edit → save → export) works and is tes
   keyframes for zoom, position and opacity with easing.
 - **Smart tools (local):** remove pauses, split at scene changes, transcribe speech (whisper.cpp),
   remove filler words, and burned-in captions that follow every edit.
+- **Music and photos:** audio tracks with waveforms, fades, volume up to 200% and automatic
+  ducking under speech; photos (JPEG/PNG/WebP, transparency, EXIF rotation) as clips with Ken Burns moves.
 - **AI control (MCP):** let Claude Desktop or Claude Code edit with you. See [docs/AI.md](docs/AI.md).
 
 See [docs/STATUS.md](docs/STATUS.md) for what works, what's planned and the known limitations.
@@ -58,6 +60,13 @@ npm start
 8. **Save** (⌘S) creates a `.cutroom` file; **Open…** reopens it.
 9. **Export…**: choose a file, resolution, frame rate and target bitrate in Mb/s, then **Export**.
 
+**Music:** import an MP3/M4A/WAV/FLAC and click **+ Add to timeline**. It goes on an audio track at
+the playhead. Drag it to move, drag its edges to trim, and drag the small squares at its top corners to
+fade. Click the track name for track volume, mute and **Lower under speech** (ducking).
+
+**Photos:** import JPEG/PNG/WebP files and add them like videos. Each becomes a 4-second clip; drag its
+end to change that. Try **Motion → Slow zoom in** in its Animation section.
+
 More, with a clip selected: the **Animation** section (presets and keyframes) and **Smart tools**
 (pauses, scenes, transcription, filler words, captions). Caption style is in **Project settings**
 (deselect with Esc).
@@ -78,8 +87,8 @@ It needs `ffmpeg`/`ffprobe` on your PATH.
 npm run test:e2e
 ```
 
-This launches the real app and clicks through the editing workflow and the Smart tools / captions
-workflow (native file dialogs are stubbed). Screenshots go to `tests/.output/`. On a Linux machine
+This launches the real app and clicks through the editing workflow, the Smart tools / captions
+workflow, music tracks and photos (native file dialogs are stubbed). Screenshots go to `tests/.output/`. On a Linux machine
 without a display, use `xvfb-run -a npm run test:e2e`.
 
 ```bash

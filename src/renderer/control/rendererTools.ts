@@ -18,6 +18,9 @@ import {
   layoutSequence,
   newId,
 } from '../../shared/model';
+import {
+  addAudioClip, deleteAudioClip, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip, setAudioClip, setAudioTrack, setSpeech, trimAudioClip,
+} from '../../shared/audio';
 import { buildCues, fillerRanges } from '../../shared/captions';
 import * as ops from '../../shared/ops';
 import { COMMON_FRAME_RATES, type Rational, frameDuration, rateLabel, secondsToTicks, ticksToSeconds } from '../../shared/time';
@@ -105,12 +108,20 @@ export function projectSummary(p: Project) {
       id: m.id,
       name: m.name,
       duration_s: sec(m.info.duration),
-      size: `${m.info.displayWidth}x${m.info.displayHeight}`,
+      kind: m.info.kind ?? 'video',
+      size: m.info.kind === 'audio' ? undefined : `${m.info.displayWidth}x${m.info.displayHeight}`,
       fps: rateLabel(m.info.frameRate),
       has_audio: m.info.hasAudio,
       has_transcript: !!m.transcript,
       offline: !!s.missing[m.id],
       warnings: m.warnings,
+    })),
+    audio_tracks: (p.audioTracks ?? []).map((t) => ({
+      id: t.id, name: t.name, volume: t.volume, muted: t.muted, duck: t.duck ? { db: t.duckDb } : false,
+      clips: t.clips.map((c) => ({
+        id: c.id, media_id: c.mediaId, media_name: findMedia(p, c.mediaId)?.name, start_s: sec(c.start), end_s: sec(c.start + c.sourceOut - c.sourceIn),
+        source_in_s: sec(c.sourceIn), source_out_s: sec(c.sourceOut), volume: c.volume, fade_in_s: sec(c.fadeIn), fade_out_s: sec(c.fadeOut),
+      })),
     })),
     timeline: lay.items.map((l) => {
       const base = { position: l.index, id: l.item.id, kind: l.item.kind, start_s: sec(l.start), end_s: sec(l.end) };
@@ -213,6 +224,63 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         edit(`split into ${r.parts} scenes`, () => r.project);
         return ok({ parts: r.parts, timeline: projectSummary(store.get().project).timeline });
       }
+      case '__set_speech': {
+        const sp = (args.speech as { start: number; end: number }[]).map((r) => ({ start: T(r.start), end: T(r.end) }));
+        store.set((st) => {
+          const next = setSpeech(st.project, args.media_id, sp);
+          return { project: next, savedProject: st.savedProject === st.project ? next : st.savedProject, past: st.past.map((x) => setSpeech(x, args.media_id, sp)), future: st.future.map((x) => setSpeech(x, args.media_id, sp)) };
+        });
+        return ok('ok');
+      }
+      case '__needs_speech':
+        return ok(JSON.stringify(mediaNeedingSpeechAnalysis(p).map((id) => ({ id, path: findMedia(p, id)!.path, duration_s: sec(findMedia(p, id)!.info.duration) }))));
+
+      // ---- audio tracks ----
+      case 'add_audio': {
+        const m = mediaOrThrow(p, args.media_id);
+        if (!m.info.hasAudio) throw new ToolError(`${m.name} has no audio.`);
+        if (args.track_id && !(p.audioTracks ?? []).some((t) => t.id === args.track_id)) throw new ToolError(`No audio track with id ${args.track_id}.`);
+        const r = addAudioClip(p, m.id, T(args.start ?? 0), args.track_id);
+        if (!r) throw new ToolError('Could not add that audio (too short?).');
+        let next = r.project;
+        if (args.source_in !== undefined || args.source_out !== undefined) {
+          const sIn = T(args.source_in ?? 0);
+          const sOut = T(args.source_out ?? ticksToSeconds(m.info.duration));
+          if (!(sOut > sIn)) throw new ToolError('source_out must be greater than source_in.');
+          next = trimAudioClip(next, r.clipId, 'start', sIn);
+          const c = findAudioClip(next, r.clipId)!.clip;
+          next = trimAudioClip(next, r.clipId, 'end', sOut - c.sourceOut);
+          next = moveAudioClip(next, r.clipId, T(args.start ?? 0));
+        }
+        next = setAudioClip(next, r.clipId, { volume: args.volume, fadeIn: args.fade_in !== undefined ? T(args.fade_in) : undefined, fadeOut: args.fade_out !== undefined ? T(args.fade_out) : undefined });
+        edit(`added ${m.name} to “${(next.audioTracks ?? []).find((t) => t.id === r.trackId)?.name}”`, () => next, { selection: { kind: 'audio', id: r.clipId } });
+        return ok({ clip_id: r.clipId, track_id: r.trackId, audio_tracks: projectSummary(store.get().project).audio_tracks });
+      }
+      case 'set_audio_clip': {
+        const hit = findAudioClip(p, args.clip_id);
+        if (!hit) throw new ToolError(`No audio clip with id ${args.clip_id}.`);
+        let next = p;
+        if (args.source_in !== undefined) next = trimAudioClip(next, hit.clip.id, 'start', T(args.source_in) - hit.clip.sourceIn);
+        if (args.source_out !== undefined) next = trimAudioClip(next, hit.clip.id, 'end', T(args.source_out) - findAudioClip(next, hit.clip.id)!.clip.sourceOut);
+        if (args.start !== undefined || args.track_id !== undefined) {
+          if (args.track_id && !(p.audioTracks ?? []).some((t) => t.id === args.track_id)) throw new ToolError(`No audio track with id ${args.track_id}.`);
+          next = moveAudioClip(next, hit.clip.id, args.start !== undefined ? T(args.start) : findAudioClip(next, hit.clip.id)!.clip.start, args.track_id);
+        }
+        next = setAudioClip(next, hit.clip.id, { volume: args.volume, fadeIn: args.fade_in !== undefined ? T(args.fade_in) : undefined, fadeOut: args.fade_out !== undefined ? T(args.fade_out) : undefined });
+        edit('changed an audio clip', () => next);
+        return ok({ audio_tracks: projectSummary(store.get().project).audio_tracks });
+      }
+      case 'remove_audio_clip': {
+        if (!findAudioClip(p, args.clip_id)) throw new ToolError(`No audio clip with id ${args.clip_id}.`);
+        edit('removed an audio clip', (pr) => deleteAudioClip(pr, args.clip_id), { selection: null });
+        return ok({ audio_tracks: projectSummary(store.get().project).audio_tracks });
+      }
+      case '__set_audio_track': {
+        if (!(p.audioTracks ?? []).some((t) => t.id === args.track_id)) throw new ToolError(`No audio track with id ${args.track_id}.`);
+        edit('changed an audio track', (pr) => setAudioTrack(pr, args.track_id, { name: args.name, volume: args.volume, muted: args.muted, duck: args.duck, duckDb: args.duck_db }));
+        return ok({ audio_tracks: projectSummary(store.get().project).audio_tracks });
+      }
+
       case 'remove_ranges': {
         clipOrThrow(p, args.clip_id);
         return runRendererTool('__remove_ranges_batch', { items: [{ clip_id: args.clip_id, ranges: args.ranges }], padding: args.padding ?? 0, label: 'cut ranges' });
@@ -272,6 +340,7 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
       // ---- timeline ----
       case 'add_clip': {
         const m = mediaOrThrow(p, args.media_id);
+        if (m.info.kind === 'audio') throw new ToolError(`${m.name} is an audio file: use add_audio to put it on an audio track.`);
         const r = ops.addClip(p, m.id, args.position);
         if (!r) throw new ToolError('That media is too short to add.');
         let next = r.project;
@@ -286,6 +355,7 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
         if (!clips.length) throw new ToolError('clips is empty.');
         const items: ClipItem[] = clips.map((c, i) => {
           const m = mediaOrThrow(p, c.media_id);
+          if (m.info.kind === 'audio') throw new ToolError(`clips[${i}]: ${m.name} is audio-only; add it with add_audio.`);
           if (!(c.source_out > c.source_in)) throw new ToolError(`clips[${i}]: source_out must be greater than source_in.`);
           const range = ops.legalRange(p, m, T(c.source_in), T(c.source_out), 'in');
           const animation: ClipAnimation = {};

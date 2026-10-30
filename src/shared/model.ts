@@ -14,11 +14,15 @@ import type { CaptionSettings } from './captions';
 import type { Rational, Ticks } from './time';
 
 export const PROJECT_FORMAT = 'cutroom-project';
-/** v2: clip animations (keyframes and presets). v3: transcripts and captions. */
-export const PROJECT_VERSION = 3;
+/** v2: clip animations. v3: transcripts and captions. v4: audio tracks and audio-only media. */
+export const PROJECT_VERSION = 4;
 export const PROJECT_EXTENSION = 'cutroom';
 
+export type MediaKind = 'video' | 'audio' | 'image';
+
 export interface MediaInfo {
+  /** Absent in older projects = 'video'. */
+  kind?: MediaKind;
   container: string; // ffprobe format_name, e.g. "mov,mp4,m4a,3gp,3g2,mj2"
   fileSize: number;
   duration: Ticks; // usable duration (video stream duration when present)
@@ -38,6 +42,8 @@ export interface MediaInfo {
   /** YUV matrix of the source (from its tag, else by size: < 720 lines = BT.601, as players and Chromium assume). */
   colorMatrix?: 'bt709' | 'bt601' | 'other';
   colorRange?: 'tv' | 'pc';
+  /** Photos with transparency (PNG/WebP): the background colour shows through. */
+  hasAlpha?: boolean;
   // Audio
   hasAudio: boolean;
   audioCodec: string | null;
@@ -65,6 +71,12 @@ export interface MediaRef {
   info: MediaInfo;
   warnings: string[];
   transcript?: Transcript;
+  /** Where the file's audio is not silent (SOURCE time); used to lower music under speech. */
+  speech?: { start: Ticks; end: Ticks }[];
+}
+
+export function mediaKind(m: MediaRef | undefined): MediaKind {
+  return m?.info.kind ?? 'video';
 }
 
 export type FramingMode = 'fit' | 'fill' | 'manual';
@@ -85,9 +97,32 @@ export interface ClipItem {
   sourceIn: Ticks;
   sourceOut: Ticks; // exclusive; timeline duration = sourceOut - sourceIn (speed is always 1 for now)
   framing: Framing;
-  volume: number; // 0..1
+  volume: number; // 0..2 (1 = original level)
   muted: boolean;
   animation?: ClipAnimation;
+}
+
+/** A clip on an audio track. Unlike the video track, audio clips are placed freely in time. */
+export interface AudioClip {
+  id: string;
+  mediaId: string;
+  start: Ticks; // timeline time
+  sourceIn: Ticks;
+  sourceOut: Ticks;
+  volume: number; // 0..2
+  fadeIn: Ticks;
+  fadeOut: Ticks;
+}
+
+export interface AudioTrack {
+  id: string;
+  name: string;
+  clips: AudioClip[]; // sorted by start, never overlapping
+  volume: number; // 0..2
+  muted: boolean;
+  /** Lower this track while the video track has sound (speech), by duckDb decibels. */
+  duck: boolean;
+  duckDb: number; // e.g. -14
 }
 
 /** Empty space on the timeline (renders as background colour + silence). */
@@ -115,6 +150,8 @@ export interface Project {
   sequence: { items: TrackItem[] };
   /** Burned-in captions built from media transcripts (absent = off). */
   captions?: CaptionSettings;
+  /** Music / voice-over tracks, mixed under the video track's audio. */
+  audioTracks?: AudioTrack[];
 }
 
 export const DEFAULT_FRAMING: Framing = { mode: 'fit', scale: 1, x: 0, y: 0 };

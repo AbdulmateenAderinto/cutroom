@@ -46,6 +46,26 @@ export function setupAnalysis(deps: () => Pick<MainToolDeps, 'callRenderer'>) {
     return deps().callRenderer('__remove_ranges_batch', { items: batch, padding: a.padding ?? 0.12, label: 'removed silences' });
   });
 
+  registerMainTool('set_audio_track', async (a) => {
+    if (a.duck) {
+      // Ducking needs to know where the video track has sound: analyse any media not done yet.
+      const r = await deps().callRenderer('__needs_speech', {});
+      const need = JSON.parse((r.content[0] as { text: string }).text) as { id: string; path: string; duration_s: number }[];
+      for (const m of need) {
+        const silence = await detectSilence(m.path, m.duration_s, { noiseDb: -35, minDuration: 0.3 });
+        const speech: { start: number; end: number }[] = [];
+        let cursor = 0;
+        for (const x of silence) {
+          if (x.start > cursor) speech.push({ start: cursor, end: x.start });
+          cursor = Math.max(cursor, x.end);
+        }
+        if (cursor < m.duration_s) speech.push({ start: cursor, end: m.duration_s });
+        await deps().callRenderer('__set_speech', { media_id: m.id, speech });
+      }
+    }
+    return deps().callRenderer('__set_audio_track', a);
+  });
+
   registerMainTool('detect_scenes', async (a) => {
     const { m } = await mediaFor(a.media_id);
     const times = await detectScenes(m.path, a.threshold ?? DEFAULT_SCENE_THRESHOLD);

@@ -19,11 +19,17 @@ export function allowMediaPath(p: string) {
 
 export function registerSchemePrivileges() {
   protocol.registerSchemesAsPrivileged([
-    { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
+    { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } },
   ]);
 }
 
-const MIME: Record<string, string> = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime' };
+const MIME: Record<string, string> = {
+  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime',
+  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.wav': 'audio/wav', '.flac': 'audio/flac',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
+};
+// The preview routes media through Web Audio (for volume above 100% and ducking), which requires CORS.
+const CORS = { 'Access-Control-Allow-Origin': '*' };
 
 export function handleMediaProtocol() {
   protocol.handle(MEDIA_SCHEME, (request) => {
@@ -58,13 +64,14 @@ export function handleMediaProtocol() {
           'Content-Length': String(end - start + 1),
           'Content-Range': `bytes ${start}-${end}/${size}`,
           'Accept-Ranges': 'bytes',
+          ...CORS,
         },
       });
     }
     const body = Readable.toWeb(createReadStream(file)) as ReadableStream;
     return new Response(body, {
       status: 200,
-      headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' },
+      headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes', ...CORS },
     });
   });
 }

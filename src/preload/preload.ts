@@ -15,6 +15,7 @@ const api: CutroomApi = {
   probeMedia: (path) => ipcRenderer.invoke('media:probe', path),
   thumbnail: (path, at) => ipcRenderer.invoke('media:thumbnail', path, at),
   filesExist: (paths) => ipcRenderer.invoke('media:exists', paths),
+  waveform: (path) => ipcRenderer.invoke('media:waveform', path),
   mediaUrl: (path) => `cutroom-media://file/${encodeURIComponent(path)}`,
   saveProject: (project, path) => ipcRenderer.invoke('project:save', project, path),
   openProject: (path) => ipcRenderer.invoke('project:open', path),

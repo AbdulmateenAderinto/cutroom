@@ -11,6 +11,7 @@ import { SpeechSetupDialog } from './components/SpeechSetupDialog';
 import { Timeline } from './components/Timeline';
 import { Toasts } from './components/Toasts';
 import { TopBar } from './components/TopBar';
+import { audioDebug } from './preview/audio';
 import { engine } from './preview/engine';
 import * as A from './state/actions';
 import { playhead } from './state/playhead';
@@ -161,4 +162,4 @@ export function App() {
 }
 
 // Expose a small hook for automated UI tests (no effect on normal use).
-(window as any).__cutroom = { store, playhead, engine, actions: A };
+(window as any).__cutroom = { store, playhead, engine, actions: A, audioDebug };

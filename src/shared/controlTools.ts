@@ -63,7 +63,7 @@ export const CONTROL_TOOLS: ToolDef[] = [
   {
     name: 'import_media',
     runs: 'main',
-    description: 'Import video files (absolute paths to MP4/MOV with H.264) into the Media panel. Files are referenced, never modified.',
+    description: 'Import files into the Media panel (absolute paths): video (MP4/MOV with H.264), audio for music tracks (MP3, M4A, WAV, FLAC) and photos (JPEG, PNG, WebP). Files are referenced, never modified.',
     inputSchema: obj({ paths: { type: 'array', items: { type: 'string' }, description: 'absolute file paths' } }, ['paths']),
   },
 
@@ -71,7 +71,7 @@ export const CONTROL_TOOLS: ToolDef[] = [
   {
     name: 'add_clip',
     runs: 'renderer',
-    description: 'Add a media file to the timeline (whole file, or source_in..source_out). Inserted at `position` (0-based) or at the end.',
+    description: 'Add a video or photo to the timeline (whole file, or source_in..source_out). Inserted at `position` (0-based) or at the end. A photo becomes a 4 s clip unless source_out is given. Use add_audio for music.',
     inputSchema: obj({ media_id: str('media id'), source_in: num('seconds into the file'), source_out: num('seconds into the file (exclusive)'), position: num('timeline index') }, ['media_id']),
   },
   {
@@ -168,6 +168,44 @@ export const CONTROL_TOOLS: ToolDef[] = [
     runs: 'renderer',
     description: 'Remove keyframes from a clip: one at `time`, or all of a property (omit time), or all (omit property and time).',
     inputSchema: obj({ clip_id: str('clip id'), property: str('property', { enum: ['scale', 'x', 'y', 'opacity'] }), time: num('timeline seconds') }, ['clip_id']),
+  },
+
+  // ---- Audio tracks (music, voice-over) ----
+  {
+    name: 'add_audio',
+    runs: 'renderer',
+    description: 'Put an audio file (music/voice-over; or a video\'s sound) on an audio track at a TIMELINE time. Creates a track if needed. Clips never overlap on a track: it moves to the next free spot. Audio past the end of the video is not exported.',
+    inputSchema: obj({
+      media_id: str('media id'),
+      start: num('timeline seconds (default 0)'),
+      track_id: str('audio track id (default: first track; a new one if none)'),
+      source_in: num('seconds into the file'),
+      source_out: num('seconds into the file'),
+      volume: num('0..2 (1 = original)'),
+      fade_in: num('seconds'),
+      fade_out: num('seconds'),
+    }, ['media_id']),
+  },
+  {
+    name: 'set_audio_clip',
+    runs: 'renderer',
+    description: 'Change an audio-track clip: move it (start, track_id), trim it (source_in/source_out in file seconds), volume (0..2), fades (seconds).',
+    inputSchema: obj({
+      clip_id: str('audio clip id'), start: num('timeline seconds'), track_id: str('move to this track'),
+      source_in: num('file seconds'), source_out: num('file seconds'), volume: num('0..2'), fade_in: num('seconds'), fade_out: num('seconds'),
+    }, ['clip_id']),
+  },
+  {
+    name: 'remove_audio_clip',
+    runs: 'renderer',
+    description: 'Delete a clip from an audio track.',
+    inputSchema: obj({ clip_id: str('audio clip id') }, ['clip_id']),
+  },
+  {
+    name: 'set_audio_track',
+    runs: 'main',
+    description: 'Audio track settings: name, volume (0..2), muted, and duck (automatically lower the track while the video has speech; duck_db how much, default -14).',
+    inputSchema: obj({ track_id: str('audio track id'), name: str('name'), volume: num('0..2'), muted: bool('mute'), duck: bool('lower under speech'), duck_db: num('-40..-1 dB') }, ['track_id']),
   },
 
   // ---- Analysis (local FFmpeg, nothing uploaded) ----

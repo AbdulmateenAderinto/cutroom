@@ -87,10 +87,10 @@ describe('animation ops', () => {
     let p = proj();
     p = ops.setAnimation(p, p.sequence.items[0].id, (a) => ({ ...a, in: { preset: 'pop', duration: S } }));
     const text = serializeProject(p);
-    expect(JSON.parse(text).version).toBe(3);
+    expect(JSON.parse(text).version).toBe(4);
     expect(parseProject(text).sequence.items[0]).toEqual(p.sequence.items[0]);
     const v1 = JSON.parse(serializeProject(proj()));
     v1.version = 1;
-    expect(parseProject(JSON.stringify(v1)).version).toBe(3);
+    expect(parseProject(JSON.stringify(v1)).version).toBe(4);
   });
 });

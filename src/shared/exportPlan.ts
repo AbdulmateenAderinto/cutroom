@@ -13,6 +13,7 @@
  * boundaries (keeps A/V in sync across any number of cuts).
  */
 import { animatesOpacity, evalAnimation, hasAnimation } from './animation';
+import { audioClipDuration, audioClipEnd, duckGainAt, speechIntervals, tracks } from './audio';
 import {
   type MediaRef,
   type Project,
@@ -29,6 +30,7 @@ import {
   frameDuration,
   frameToTicks,
   rateToFloat,
+  secondsToTicks,
   ticksToFrame,
   ticksToSamples,
   ticksToSeconds,
@@ -107,10 +109,11 @@ export function validateExportSettings(project: Project, s: ExportSettings, medi
   if (s.width % 2 || s.height % 2) errors.push('H.264 output needs even width and height.');
   if (!(s.videoBitrateMbps >= 0.1 && s.videoBitrateMbps <= 400)) errors.push('Video bitrate must be between 0.1 and 400 Mb/s.');
   const missing = new Set<string>();
-  for (const c of clips) {
-    if (c.kind !== 'clip') continue;
-    const m = findMedia(project, c.mediaId);
-    if (!m || !mediaAvailable(m)) missing.add(m?.name ?? c.mediaId);
+  const used = [...clips.map((c) => (c.kind === 'clip' ? c.mediaId : '')), ...tracks(project).flatMap((t) => t.clips.map((c) => c.mediaId))];
+  for (const id of used) {
+    if (!id) continue;
+    const m = findMedia(project, id);
+    if (!m || !mediaAvailable(m)) missing.add(m?.name ?? id);
   }
   if (missing.size) errors.push(`Some media files are offline: ${[...missing].join(', ')}. Relink them first.`);
   return errors;
@@ -197,16 +200,30 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     const info = media.info;
     // Convert the source's colour matrix/range to the BT.709 limited-range output, the same
     // interpretation the preview (Chromium) uses, so colours match.
+    const isImage = info.kind === 'image';
     const matrix = sourceMatrix(info);
-    const colour = `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${info.colorRange === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
-    // Start decoding half a source frame early so the frame at sourceIn is kept even if its
-    // timestamp is a hair below sourceIn; the audio is then trimmed back by exactly that amount.
-    const half = Math.floor(frameDuration(info.frameRate) / 2);
-    const ss = Math.max(0, item.sourceIn - half);
-    const lead = ticksToSeconds(item.sourceIn - ss);
-    const readFor = ticksToSeconds(item.sourceOut - item.sourceIn) + lead + 2 * ticksToSeconds(frameDuration(rate));
-    inputs.push('-ss', f6(ticksToSeconds(ss)), '-t', f6(readFor), '-i', mediaPath(media));
+    // Photos are first decoded to RGB (JPEG's full-range BT.601 is undone by that step), so the
+    // resizing scale converts RGB → BT.709 limited range, as for backgrounds and captions.
+    const colour = isImage
+      ? ':out_color_matrix=bt709:out_range=tv'
+      : `${matrix === 'bt601' ? ':in_color_matrix=bt601:out_color_matrix=bt709' : ''}${info.colorRange === 'pc' ? ':in_range=pc:out_range=tv' : ''}`;
+    // Transparent PNG/WebP keep their alpha so the background colour shows through.
+    const fgFormat = isImage && info.hasAlpha ? 'yuva420p' : 'yuv420p';
+    const readFor0 = ticksToSeconds(item.sourceOut - item.sourceIn) + 2 * ticksToSeconds(frameDuration(rate));
+    let lead = 0;
+    if (isImage) {
+      // A still image, repeated at the output frame rate for as long as the clip lasts.
+      inputs.push('-loop', '1', '-framerate', rateStr, '-t', f6(readFor0), '-i', mediaPath(media));
+    } else {
+      // Start decoding half a source frame early so the frame at sourceIn is kept even if its
+      // timestamp is a hair below sourceIn; the audio is then trimmed back by exactly that amount.
+      const half = Math.floor(frameDuration(info.frameRate) / 2);
+      const ss = Math.max(0, item.sourceIn - half);
+      lead = ticksToSeconds(item.sourceIn - ss);
+      inputs.push('-ss', f6(ticksToSeconds(ss)), '-t', f6(readFor0 + lead), '-i', mediaPath(media));
+    }
     const i = inputIndex++;
+    const decode = isImage ? 'format=rgba,' : '';
 
     // Video framing — identical maths to the preview, scaled into output pixels.
     const r0 = computeClipRect(info.displayWidth, info.displayHeight, cw, ch, item.framing);
@@ -246,7 +263,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       filters.push(
         // Pixel format is converted BEFORE the resizing scale: a format filter after it would
         // stop size changes from reaching the overlay (verified with FFmpeg 6.1).
-        `[${i}:v:0]setpts=PTS-STARTPTS,format=yuv420p,${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic${colour},setsar=1[fg${n}]`,
+        `[${i}:v:0]setpts=PTS-STARTPTS,${decode}${isImage ? `scale=${colour.slice(1)},` : ''}format=${fgFormat},${sendcmd(sizeCmds)}scale@s${n}=w=${first.w}:h=${first.h}:flags=bicubic${isImage ? '' : colour},setsar=1[fg${n}]`,
       );
       if (fade) filters.push(`[bg${n}]split[bga${n}][bgb${n}]`);
       const base = fade ? `bga${n}` : `bg${n}`;
@@ -269,7 +286,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       const rotated = info.rotation % 180 !== 0;
       const fw = rotated ? info.height : info.width;
       const fh = rotated ? info.width : info.height;
-      const chain = ['setpts=PTS-STARTPTS'];
+      const chain = ['setpts=PTS-STARTPTS', ...(isImage ? ['format=rgba'] : [])];
       const fullyVisible = R.x >= 0 && R.y >= 0 && R.x + R.w <= bw + 0.5 && R.y + R.h <= bh + 0.5;
       if (!fullyVisible) {
         // Source region that maps onto the visible part, clamped to the frame (rounding of the
@@ -282,7 +299,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
         const chei = Math.max(1, Math.min((oh / R.h) * fh, fh - cy));
         chain.push(`crop=w=${trunc3(cwid)}:h=${trunc3(chei)}:x=${trunc3(cx)}:y=${trunc3(cy)}:exact=1`);
       }
-      chain.push(`scale=w=${ow}:h=${oh}:flags=bicubic${colour}`, 'format=yuv420p', 'setsar=1');
+      chain.push(`scale=w=${ow}:h=${oh}:flags=bicubic${colour}`, `format=${fgFormat}`, 'setsar=1');
       filters.push(`[${i}:v:0]${chain.join(',')}[fg${n}]`);
       // overlay keeps going while the clip input lasts, so cut back to exactly N frames.
       filters.push(`[bg${n}][fg${n}]overlay=x=${ox}:y=${oy}:eof_action=repeat:format=auto,trim=end_frame=${frames},format=yuv420p[${v}]`);
@@ -324,6 +341,60 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     filters.push(`[obg][vcat]overlay=x=${x}:y=${y}:format=auto,setsar=1,format=yuv420p[vout]`);
   }
 
+  // ---- Audio tracks (music, voice-over), mixed under the video track's audio ----
+  const totalSamples = ticksToSamples(frameToTicks(totalFrames, rate), sr);
+  const projectEnd = frameToTicks(totalFrames, rate);
+  const speech = speechIntervals(project);
+  const trackPads: string[] = [];
+  tracks(project).forEach((track, ti) => {
+    if (track.muted || track.volume === 0) return;
+    const clipPads: string[] = [];
+    track.clips.forEach((c, ci) => {
+      const m = findMedia(project, c.mediaId);
+      if (!m || !m.info.hasAudio || c.volume === 0) return;
+      const startSample = ticksToSamples(c.start, sr);
+      if (startSample >= totalSamples) return; // starts after the video ends
+      const durSamples = Math.min(ticksToSamples(audioClipEnd(c), sr), totalSamples) - startSample;
+      const durSec = durSamples / sr;
+      inputs.push('-ss', f6(ticksToSeconds(c.sourceIn)), '-t', f6(durSec + 0.1), '-i', mediaPath(m));
+      const i = inputIndex++;
+      const chain = [`aresample=${sr}:async=1:first_pts=0`, 'aformat=sample_fmts=fltp:channel_layouts=stereo', `volume=${c.volume.toFixed(4)}`];
+      // Linear fades, matching clipGainAt() used by the preview. Fade-out is placed against the
+      // clip's own end even if the video ends first.
+      if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${f6(ticksToSeconds(c.fadeIn))}`);
+      if (c.fadeOut > 0) chain.push(`afade=t=out:st=${f6(ticksToSeconds(audioClipDuration(c) - c.fadeOut))}:d=${f6(ticksToSeconds(c.fadeOut))}`);
+      chain.push('apad', `atrim=end_sample=${durSamples}`, `adelay=delays=${startSample}S:all=1`);
+      filters.push(`[${i}:a:0]${chain.join(',')}[ac${ti}_${ci}]`);
+      clipPads.push(`[ac${ti}_${ci}]`);
+    });
+    if (!clipPads.length) return;
+    const bus = [clipPads.length > 1 ? `${clipPads.join('')}amix=inputs=${clipPads.length}:normalize=0:duration=longest` : `${clipPads[0]}anull`];
+    bus.push(`volume=${track.volume.toFixed(4)}`);
+    if (track.duck && speech.length) {
+      // Ducking envelope sampled every 20 ms (same function as the preview), applied as commands.
+      const step = 0.02;
+      const cmds: string[] = [];
+      let prev = 1;
+      for (let t = 0; t < ticksToSeconds(projectEnd); t += step) {
+        const g = Math.round(duckGainAt(speech, secondsToTicks(t), track.duckDb) * 10000) / 10000;
+        if (Math.abs(g - prev) > 0.0005) cmds.push(`${t.toFixed(3)} volume@duck${ti} volume ${g}`);
+        prev = g;
+      }
+      const g0 = Math.round(duckGainAt(speech, 0, track.duckDb) * 10000) / 10000;
+      if (cmds.length) bus.push(`asendcmd=c='${cmds.join(';')}'`);
+      bus.push(`volume@duck${ti}=${g0}`);
+    }
+    bus.push('apad', `atrim=end_sample=${totalSamples}`);
+    filters.push(`${bus.join(',')}[trk${ti}]`);
+    trackPads.push(`[trk${ti}]`);
+  });
+  let audioOut = '[acat]';
+  if (trackPads.length) {
+    // Sum (not average) the tracks, then a transparent limiter so loud overlaps cannot clip.
+    filters.push(`[acat]${trackPads.join('')}amix=inputs=${trackPads.length + 1}:normalize=0:duration=first,alimiter=limit=0.98:level=0:latency=1[amix]`);
+    audioOut = '[amix]';
+  }
+
   const kbps = Math.round(s.videoBitrateMbps * 1000);
   const args = [
     '-hide_banner', '-nostdin', '-y',
@@ -331,7 +402,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     '-progress', 'pipe:1', '-nostats',
     ...inputs,
     '-filter_complex', filters.join(';\n'),
-    '-map', '[vout]', '-map', '[acat]',
+    '-map', '[vout]', '-map', audioOut,
     '-c:v', 'libx264', '-preset', s.x264Preset, '-profile:v', 'high', '-pix_fmt', 'yuv420p',
     // Average-bitrate mode with a VBV cap: the encoder aims for this average; it is not constant
     // and the final size is approximate.

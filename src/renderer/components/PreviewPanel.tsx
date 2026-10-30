@@ -44,6 +44,7 @@ export function PreviewPanel() {
   const wrap = useRef<HTMLDivElement>(null);
   const va = useRef<HTMLVideoElement>(null);
   const vb = useRef<HTMLVideoElement>(null);
+  const im = useRef<HTMLImageElement>(null);
   const project = useStore((s) => s.project);
   const previewMediaId = useStore((s) => s.previewMediaId);
   const snapping = useStore((s) => s.snapping);
@@ -60,7 +61,7 @@ export function PreviewPanel() {
 
   useEffect(() => {
     engine.onOffline = setOffline;
-    engine.attach(va.current!, vb.current!);
+    engine.attach(va.current!, vb.current!, im.current!);
     return () => engine.detach();
   }, []);
 
@@ -151,6 +152,7 @@ export function PreviewPanel() {
           <div className="stage" style={{ background: sourceMedia ? '#000' : project.background }}>
             <video ref={va} className="stage-video" />
             <video ref={vb} className="stage-video" />
+            <img ref={im} className="stage-video" alt="" />
             {!sourceMedia && <CaptionLayer project={project} width={size.w} height={size.h} />}
             {offline && (
               <div className="stage-message">

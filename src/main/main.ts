@@ -15,6 +15,7 @@ import { cancelExport, startExport } from './export/exportJobs';
 import { checkFfmpeg, resolveBinaries } from './media/ffbin';
 import { SUPPORTED_EXTENSIONS, probeMedia } from './media/probe';
 import { thumbnailDataUrl } from './media/thumbnails';
+import { waveformPeaks } from './media/waveform';
 import { allowMediaPath, handleMediaProtocol, registerSchemePrivileges } from './mediaProtocol';
 import { loadProjectFile, saveProjectFile } from './project/projectFiles';
 import { RecoveryStore } from './project/recovery';
@@ -136,7 +137,7 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win!, {
       title: 'Import Media',
       properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Video (MP4, MOV)', extensions: SUPPORTED_EXTENSIONS }],
+      filters: [{ name: 'Media (video, audio, photos)', extensions: SUPPORTED_EXTENSIONS }],
     });
     return r.canceled ? [] : r.filePaths;
   });
@@ -150,6 +151,8 @@ function registerIpc() {
   ipcMain.handle('media:thumbnail', (_e, p: string, at: number) =>
     thumbnailDataUrl(path.join(app.getPath('userData'), 'thumbnails'), p, at),
   );
+
+  ipcMain.handle('media:waveform', (_e, p: string) => waveformPeaks(path.join(app.getPath('userData'), 'waveforms'), p).catch(() => null));
 
   ipcMain.handle('media:exists', (_e, paths: string[]) => paths.map((p) => existsSync(p)));
 
@@ -197,7 +200,7 @@ function registerIpc() {
     const r = await dialog.showOpenDialog(win!, {
       title: `Locate “${originalName}”`,
       properties: ['openFile'],
-      filters: [{ name: 'Video (MP4, MOV)', extensions: SUPPORTED_EXTENSIONS }],
+      filters: [{ name: 'Media (video, audio, photos)', extensions: SUPPORTED_EXTENSIONS }],
     });
     return r.canceled ? null : r.filePaths[0] ?? null;
   });

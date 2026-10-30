@@ -28,6 +28,7 @@ import {
 import { type Ticks, TICKS_PER_SECOND, frameDuration, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { evalAnimation } from '../../shared/animation';
 import { playhead } from '../state/playhead';
+import { attachVideoElement, setVideoGain, stopMusic, syncMusic } from './audio';
 import { store } from '../state/store';
 
 interface Seq {
@@ -51,10 +52,16 @@ class PreviewEngine {
   private unsub: (() => void) | null = null;
   onOffline: (mediaName: string | null) => void = () => {};
 
-  attach(a: HTMLVideoElement, b: HTMLVideoElement) {
+  private img: HTMLImageElement | null = null;
+  private imgMedia: string | null = null;
+
+  attach(a: HTMLVideoElement, b: HTMLVideoElement, img?: HTMLImageElement) {
     this.els = [a, b];
+    this.img = img ?? null;
+    if (this.img) this.img.style.display = 'none';
     for (const el of this.els) {
       el.preload = 'auto';
+      attachVideoElement(el); // Web Audio routing (volume above 100%), set before any src
       el.playsInline = true;
       el.style.display = 'none';
     }
@@ -94,6 +101,7 @@ class PreviewEngine {
           canvas: { width: m.info.displayWidth, height: m.info.displayHeight, preset: 'custom' },
           frameRate: m.info.frameRate,
           sequence: { items: [clip] },
+          audioTracks: [], // source preview: just the file
         };
         const lay = layoutSequence(vp);
         return { project: vp, items: lay.items, duration: lay.duration };
@@ -161,8 +169,8 @@ class PreviewEngine {
   }
 
   /** Position the element for clip `l` at timeline time t (framing + animation, as in export). */
-  private applyStyle(idx: number, l: LaidOutItem, t: Ticks) {
-    const el = this.els[idx];
+  private applyStyle(idx: number | HTMLImageElement, l: LaidOutItem, t: Ticks) {
+    const el = typeof idx === 'number' ? this.els[idx] : idx;
     if (l.item.kind !== 'clip') return;
     const clip = l.item;
     const m = findMedia(this.seq.project, clip.mediaId);
@@ -177,12 +185,12 @@ class PreviewEngine {
     el.style.top = `${(r.y / ch) * 100}%`;
     el.style.width = `${(r.w / cw) * 100}%`;
     el.style.height = `${(r.h / ch) * 100}%`;
-    el.volume = clip.volume;
-    el.muted = clip.muted;
+    if (el instanceof HTMLVideoElement) setVideoGain(el, clip.muted ? 0 : clip.volume);
   }
 
-  private show(idx: number) {
+  private show(idx: number, image = false) {
     this.els.forEach((el, i) => (el.style.display = i === idx ? 'block' : 'none'));
+    if (this.img) this.img.style.display = image ? 'block' : 'none';
     if (idx !== this.active && this.active >= 0) this.els[this.active]?.pause();
     this.active = idx;
   }
@@ -199,6 +207,7 @@ class PreviewEngine {
     t = Math.max(0, Math.min(t, this.seq.duration));
     this.current = this.itemAt(t);
     playhead.set({ time: t });
+    syncMusic(this.seq.project, t, false, store.get().missing);
     this.render(t, false);
   }
 
@@ -216,6 +225,17 @@ class PreviewEngine {
       return null;
     }
     this.onOffline(null);
+    const media = findMedia(this.seq.project, clip.mediaId);
+    if (media?.info.kind === 'image' && this.img) {
+      // Photos: an <img> positioned like a video; the wall clock drives playback.
+      if (this.imgMedia !== media.id) {
+        this.img.src = window.cutroom.mediaUrl(media.path);
+        this.imgMedia = media.id;
+      }
+      this.applyStyle(this.img, l, Math.min(t, l.end - this.frame()));
+      this.show(-1, true);
+      return null;
+    }
     const idx = this.elementFor(clip.mediaId);
     if (idx < 0) return null;
     const el = this.els[idx];
@@ -267,6 +287,7 @@ class PreviewEngine {
   }
 
   private stopLoop() {
+    stopMusic();
     cancelAnimationFrame(this.raf);
     this.raf = 0;
   }
@@ -299,7 +320,11 @@ class PreviewEngine {
       return;
     }
     playhead.set({ time: t });
-    if (l.item.kind === 'clip' && l.item.animation && this.active >= 0) this.applyStyle(this.active, l, t);
+    syncMusic(this.seq.project, t, true, store.get().missing);
+    if (l.item.kind === 'clip' && l.item.animation) {
+      if (this.img && this.img.style.display === 'block') this.applyStyle(this.img, l, t);
+      else if (this.active >= 0) this.applyStyle(this.active, l, t);
+    }
     this.preloadNext(l, t);
     this.raf = requestAnimationFrame(this.tick);
   };

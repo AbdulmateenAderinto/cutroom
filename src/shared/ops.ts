@@ -44,6 +44,7 @@ export function normalizeGaps(items: TrackItem[]): TrackItem[] {
 }
 
 const snapProject = (t: Ticks, rate: Rational, mode: 'floor' | 'round' = 'round') => snapToFrame(t, rate, mode);
+export const PHOTO_DEFAULT = 4 * 705_600_000;
 
 /**
  * Compute a legal (sourceIn, sourceOut) pair.
@@ -84,11 +85,21 @@ export function addMedia(project: Project, media: MediaRef[]): Project {
 
 /** Removes a media item and every clip that uses it (gaps closed). */
 export function removeMedia(project: Project, mediaId: string): Project {
-  const p = { ...project, media: project.media.filter((m) => m.id !== mediaId) };
+  const p: Project = {
+    ...project,
+    media: project.media.filter((m) => m.id !== mediaId),
+    ...(project.audioTracks ? { audioTracks: project.audioTracks.map((t) => ({ ...t, clips: t.clips.filter((c) => c.mediaId !== mediaId) })) } : {}),
+  };
   return withItems(p, project.sequence.items.filter((i) => !(i.kind === 'clip' && i.mediaId === mediaId)));
 }
 
 export function createClip(project: Project, media: MediaRef): ClipItem | null {
+  if (media.info.kind === 'audio') return null; // audio-only files go on audio tracks
+  if (media.info.kind === 'image') {
+    // Photos start as 4-second clips; drag the edge or type a duration to change it.
+    return { kind: 'clip', id: newId('clip'), mediaId: media.id, sourceIn: 0, sourceOut: snapProject(PHOTO_DEFAULT, project.frameRate),
+      framing: { ...DEFAULT_FRAMING }, volume: 1, muted: false };
+  }
   const dur = snapProject(media.info.duration, project.frameRate, 'floor');
   if (dur < frameDuration(project.frameRate)) return null;
   return {
@@ -326,7 +337,7 @@ export function setCaptions(project: Project, fn: (c: CaptionSettings) => Captio
 export function setClipAudio(project: Project, clipId: string, audio: { volume?: number; muted?: boolean }): Project {
   return updateClip(project, clipId, (c) => ({
     ...c,
-    volume: audio.volume !== undefined ? Math.max(0, Math.min(1, audio.volume)) : c.volume,
+    volume: audio.volume !== undefined ? Math.max(0, Math.min(2, audio.volume)) : c.volume,
     muted: audio.muted ?? c.muted,
   }));
 }

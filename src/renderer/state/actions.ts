@@ -4,7 +4,11 @@
 import type { MediaRef, Project } from '../../shared/model';
 import { createProject, evenDim, findMedia, layoutSequence, newId } from '../../shared/model';
 import * as ops from '../../shared/ops';
-import { TICKS_PER_SECOND, frameDuration, ticksToSeconds } from '../../shared/time';
+import {
+  addAudioClip, addAudioTrack, audioClipEnd, deleteAudioClip, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip,
+  removeAudioTrack, setSpeech, soundFromSilence, splitAudioClip, updateAudioClip,
+} from '../../shared/audio';
+import { TICKS_PER_SECOND, frameDuration, secondsToTicks, ticksToSeconds } from '../../shared/time';
 import { engine } from '../preview/engine';
 import { playhead } from './playhead';
 import { commit, isDirty, loadProject, redo, store, toast, undo } from './store';
@@ -58,11 +62,63 @@ export async function importFiles(paths: string[]) {
   });
   if (!added.length) return;
   commit((p) => ops.addMedia(p, added));
-  added.forEach(loadThumbnail);
+  added.filter((m) => m.info.kind !== 'audio').forEach(loadThumbnail);
+}
+
+export function notify(text: string) {
+  toast(text);
+}
+
+const waveLoading = new Set<string>();
+export async function loadWaveform(mediaId: string) {
+  const m = findMedia(store.get().project, mediaId);
+  if (!m || !m.info.hasAudio || waveLoading.has(mediaId) || store.get().missing[mediaId]) return;
+  waveLoading.add(mediaId);
+  try {
+    const peaks = await api().waveform(m.path);
+    if (peaks) store.set((s) => ({ waves: { ...s.waves, [mediaId]: peaks } }));
+  } finally {
+    waveLoading.delete(mediaId);
+  }
+}
+
+export function addAudioTrackAction() {
+  const r = addAudioTrack(store.get().project);
+  commit(() => r.project, { selection: { kind: 'audioTrack', id: r.trackId } });
+}
+
+/** Ducking needs to know where the video track has sound: analyse (locally) any media not yet analysed. */
+export async function ensureSpeechAnalysis(): Promise<boolean> {
+  const ids = mediaNeedingSpeechAnalysis(store.get().project);
+  if (!ids.length) return true;
+  toast(`Finding speech in ${ids.length} file${ids.length > 1 ? 's' : ''} so music can dip under it…`);
+  for (const id of ids) {
+    const m = findMedia(store.get().project, id);
+    if (!m) continue;
+    try {
+      const silence = await api().detectSilence(m.path, ticksToSeconds(m.info.duration), { noiseDb: -35, minDuration: 0.3 });
+      const speech = soundFromSilence(silence.map((x) => ({ start: secondsToTicks(x.start), end: secondsToTicks(x.end) })), m.info.duration);
+      // Analysis data, not an edit: applied to the whole undo history so undo never loses it.
+      store.set((st) => {
+        const next = setSpeech(st.project, id, speech);
+        return {
+          project: next,
+          savedProject: st.savedProject === st.project ? next : st.savedProject,
+          past: st.past.map((x) => setSpeech(x, id, speech)),
+          future: st.future.map((x) => setSpeech(x, id, speech)),
+        };
+      });
+    } catch (e) {
+      toast(`Could not analyse ${m.name}: ${(e as Error).message}`, 'error');
+      return false;
+    }
+  }
+  return true;
 }
 
 export async function loadThumbnail(media: MediaRef) {
-  const at = Math.min(1, ticksToSeconds(media.info.duration) * 0.1);
+  // Photos have a single frame; videos use a frame a little way in (first frames are often black).
+  const at = media.info.kind === 'image' ? 0 : Math.min(1, ticksToSeconds(media.info.duration) * 0.1);
   const url = await api().thumbnail(media.path, at);
   if (url) store.set((s) => ({ thumbs: { ...s.thumbs, [media.id]: url } }));
 }
@@ -73,6 +129,14 @@ export async function pickAndImport() {
 }
 
 export function addMediaToTimeline(mediaId: string, index?: number) {
+  const m = findMedia(store.get().project, mediaId);
+  if (m?.info.kind === 'audio') {
+    // Music / voice-over goes on an audio track at the playhead.
+    const r = addAudioClip(store.get().project, mediaId, playhead.get().time);
+    if (!r) return toast('This file is too short to add.', 'warn');
+    commit(() => r.project, { selection: { kind: 'audio', id: r.clipId }, previewMediaId: null });
+    return;
+  }
   const r = ops.addClip(store.get().project, mediaId, index);
   if (!r) return toast('This file is too short to add (less than one frame).', 'warn');
   commit(() => r.project, { selection: { kind: 'item', id: r.clipId }, previewMediaId: null });
@@ -109,12 +173,26 @@ export async function relink(mediaId: string) {
 // Timeline editing
 
 export function splitAtPlayhead() {
+  const sel = store.get().selection;
+  if (sel?.kind === 'audio') {
+    const ra = splitAudioClip(store.get().project, sel.id, playhead.get().time);
+    if (!ra) return toast('Move the playhead inside the selected audio clip to split it.');
+    commit(() => ra.project, { selection: { kind: 'audio', id: ra.rightId } });
+    return;
+  }
   const r = ops.splitAt(store.get().project, playhead.get().time);
   if (!r) return toast('Move the playhead inside a clip (not on its edge) to split it.');
   commit(() => r.project, { selection: { kind: 'item', id: r.rightId } });
 }
 
 export function deleteSelected(mode: ops.DeleteMode) {
+  const sel = store.get().selection;
+  if (sel?.kind === 'audio') return void commit((p) => deleteAudioClip(p, sel.id), { selection: null });
+  if (sel?.kind === 'audioTrack') {
+    const t = store.get().project.audioTracks?.find((x) => x.id === sel.id);
+    if (t && t.clips.length && !confirm(`Delete the track “${t.name}” and its ${t.clips.length} clip(s)?`)) return;
+    return void commit((p) => removeAudioTrack(p, sel.id), { selection: null });
+  }
   const id = selectedItemId();
   if (!id) return toast('Select a clip on the timeline first.');
   const items = store.get().project.sequence.items;
@@ -126,6 +204,17 @@ export function deleteSelected(mode: ops.DeleteMode) {
 }
 
 export function duplicateSelected() {
+  const sel = store.get().selection;
+  if (sel?.kind === 'audio') {
+    const p = store.get().project;
+    const hit = findAudioClip(p, sel.id);
+    if (!hit) return;
+    const r = addAudioClip(p, hit.clip.mediaId, audioClipEnd(hit.clip), hit.track.id);
+    if (!r) return;
+    let next = updateAudioClip(r.project, r.clipId, (c) => ({ ...c, sourceIn: hit.clip.sourceIn, sourceOut: hit.clip.sourceOut, volume: hit.clip.volume, fadeIn: hit.clip.fadeIn, fadeOut: hit.clip.fadeOut }));
+    next = moveAudioClip(next, r.clipId, audioClipEnd(hit.clip));
+    return void commit(() => next, { selection: { kind: 'audio', id: r.clipId } });
+  }
   const id = selectedItemId();
   if (!id) return toast('Select a clip on the timeline first.');
   const r = ops.duplicateItem(store.get().project, id);

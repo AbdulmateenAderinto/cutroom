@@ -15,7 +15,9 @@ import * as ops from '../../shared/ops';
 import { COMMON_FRAME_RATES, formatDuration, formatTimecode, frameDuration, rateLabel, sameRate } from '../../shared/time';
 import * as A from '../state/actions';
 import { beginGesture, commit, endGesture, gestureActive, store, updateGesture, useStore } from '../state/store';
+import { findAudioClip } from '../../shared/audio';
 import { AnimationSection } from './AnimationSection';
+import { AudioClipInspector, TrackSettings } from './AudioInspector';
 import { CaptionsSection } from './CaptionsSection';
 import { SmartTools } from './SmartTools';
 import { CanvasControl } from './TopBar';
@@ -45,13 +47,23 @@ function ProjectSlider(props: { value: number; min: number; max: number; label: 
 
 function MediaDetails({ m }: { m: MediaRef }) {
   const i = m.info;
+  const visual = i.kind !== 'audio';
   const rows: [string, string][] = [
     ['File', m.path],
     ['Container', i.container.split(',')[0]],
-    ['Video', `${i.videoCodec.toUpperCase()} · ${i.width}×${i.height}${i.rotation ? ` · rotated ${i.rotation}°` : ''} · ${i.pixFmt}`],
-    ['Shown as', `${i.displayWidth}×${i.displayHeight}`],
-    ['Frame rate', `${rateLabel(i.frameRate)} fps${i.isVFR ? ` (variable, avg ${rateLabel(i.avgFrameRate)})` : ''}`],
-    ['Duration', formatDuration(i.duration)],
+    ...(i.kind === 'image'
+      ? ([
+          ['Photo', `${i.videoCodec.toUpperCase()} · ${i.displayWidth}×${i.displayHeight}${i.rotation ? ` · rotated ${i.rotation}° (EXIF)` : ''}${i.hasAlpha ? ' · transparent' : ''}`],
+          ['Clip length', 'Any — 4 s when added; drag its end to change'],
+        ] as [string, string][])
+      : visual
+      ? ([
+          ['Video', `${i.videoCodec.toUpperCase()} · ${i.width}×${i.height}${i.rotation ? ` · rotated ${i.rotation}°` : ''} · ${i.pixFmt}`],
+          ['Shown as', `${i.displayWidth}×${i.displayHeight}`],
+          ['Frame rate', `${rateLabel(i.frameRate)} fps${i.isVFR ? ` (variable, avg ${rateLabel(i.avgFrameRate)})` : ''}`],
+        ] as [string, string][])
+      : []),
+    ...(i.kind === 'image' ? [] : ([['Duration', formatDuration(i.duration)]] as [string, string][])),
     ['Audio', i.hasAudio ? `${i.audioCodec?.toUpperCase()} · ${i.audioSampleRate} Hz · ${i.audioChannels} ch` : 'none'],
     ['Size', formatBytes(i.fileSize)],
   ];
@@ -210,14 +222,14 @@ function ClipInspector({ clip, project }: { clip: ClipItem; project: Project }) 
               <ProjectSlider
                 label="Volume"
                 min={0}
-                max={100}
+                max={200}
                 value={Math.round(clip.volume * 100)}
                 disabled={clip.muted}
                 edit={(p, v) => ops.setClipAudio(p, id, { volume: v / 100 })}
               />
               <span className="mono small">{Math.round(clip.volume * 100)}%</span>
             </div>
-            <p className="muted small">Volume up to 100% for now (boosting is planned).</p>
+            <p className="muted small">Up to 200% (boost).</p>
           </>
         ) : (
           <p className="muted small">This clip’s source file has no audio. Silence is exported for its duration.</p>
@@ -345,12 +357,16 @@ export function Inspector() {
   const selection = useStore((s) => s.selection);
   const item = selection?.kind === 'item' ? project.sequence.items.find((i) => i.id === selection.id) : undefined;
   const media = selection?.kind === 'media' ? findMedia(project, selection.id) : undefined;
-  const title = item?.kind === 'clip' ? 'Clip properties' : item?.kind === 'gap' ? 'Gap' : media ? 'Media' : 'Project settings';
+  const audioClip = selection?.kind === 'audio' ? findAudioClip(project, selection.id) : null;
+  const audioTrack = selection?.kind === 'audioTrack' ? project.audioTracks?.find((t) => t.id === selection.id) : undefined;
+  const title = item?.kind === 'clip' ? 'Clip properties' : item?.kind === 'gap' ? 'Gap' : media ? 'Media'
+    : audioClip ? 'Audio clip' : audioTrack ? 'Audio track' : 'Project settings';
+  const anything = item || media || audioClip || audioTrack;
   return (
     <aside className="panel inspector">
       <header className="panel-head">
         <h2>{title}</h2>
-        {(item || media) && (
+        {anything && (
           <button className="btn tiny ghost" onClick={() => store.set({ selection: null })} title="Deselect (Esc) to see project settings">
             Project settings
           </button>
@@ -360,7 +376,9 @@ export function Inspector() {
         {item?.kind === 'clip' && <ClipInspector clip={item} project={project} />}
         {item?.kind === 'gap' && <GapInspector gap={item} project={project} />}
         {media && <MediaInspector m={media} />}
-        {!item && !media && <ProjectSettings project={project} />}
+        {audioClip && <AudioClipInspector clipId={audioClip.clip.id} project={project} />}
+        {audioTrack && <TrackSettings track={audioTrack} />}
+        {!anything && <ProjectSettings project={project} />}
       </div>
     </aside>
   );

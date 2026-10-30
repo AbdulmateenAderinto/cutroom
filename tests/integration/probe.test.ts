@@ -50,6 +50,12 @@ describe('probe', () => {
     expect(r.warnings.join()).toMatch(/Rotation/);
   });
 
+  it('accepts audio-only files for audio tracks', async () => {
+    const r = await probeMedia(fx('audio-only.mp4'));
+    expect(r.ok && r.info.kind).toBe('audio');
+    if (r.ok) expect(r.info.hasAudio && r.info.audioCodec).toBe('aac');
+  });
+
   it('accepts video without audio', async () => {
     const r = await probeMedia(fx('silent.mp4'));
     expect(r.ok && !r.info.hasAudio).toBe(true);
@@ -71,9 +77,8 @@ describe('probe', () => {
     const mkv = await probeMedia(fx('video.mkv'));
     if (!mkv.ok) expect(mkv.error).toMatch(/\.mkv/);
     expect(mkv.ok).toBe(false);
-    const audio = await probeMedia(fx('audio-only.mp4'));
-    expect(audio.ok).toBe(false);
-    if (!audio.ok) expect(audio.error).toMatch(/No video stream/);
+    const garbageExt = await probeMedia(fx('prores.mov').replace('.mov', '.ogg'));
+    expect(garbageExt.ok).toBe(false);
     const garbage = await probeMedia(fx('garbage.mp4'));
     expect(garbage.ok).toBe(false);
     if (!garbage.ok) expect(garbage.error).toMatch(/Could not read/);

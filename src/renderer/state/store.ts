@@ -9,7 +9,12 @@ import { useSyncExternalStore } from 'react';
 import type { FfmpegStatus } from '../../preload/api';
 import { type Project, createProject } from '../../shared/model';
 
-export type Selection = { kind: 'item'; id: string } | { kind: 'media'; id: string } | null;
+export type Selection =
+  | { kind: 'item'; id: string } // video track item
+  | { kind: 'media'; id: string }
+  | { kind: 'audio'; id: string } // audio track clip
+  | { kind: 'audioTrack'; id: string }
+  | null;
 export type DialogName = 'export' | 'shortcuts' | 'ai' | 'speech' | null;
 
 export interface Toast {
@@ -36,6 +41,8 @@ export interface AppState {
   pxPerSecond: number;
   previewMediaId: string | null; // non-null while previewing a source file instead of the timeline
   thumbs: Record<string, string>;
+  /** Waveform peaks per media id (100 per second, 0..255). */
+  waves: Record<string, Uint8Array>;
   missing: Record<string, boolean>;
   importing: string[]; // names of files being inspected
   toasts: Toast[];
@@ -81,6 +88,7 @@ export const store = createStore<AppState>({
   pxPerSecond: 60,
   previewMediaId: null,
   thumbs: {},
+  waves: {},
   missing: {},
   importing: [],
   toasts: [],
@@ -155,6 +163,8 @@ export function redo() {
 function validSelection(p: Project, sel: Selection): Selection {
   if (!sel) return null;
   if (sel.kind === 'item') return p.sequence.items.some((i) => i.id === sel.id) ? sel : null;
+  if (sel.kind === 'audio') return (p.audioTracks ?? []).some((t) => t.clips.some((c) => c.id === sel.id)) ? sel : null;
+  if (sel.kind === 'audioTrack') return (p.audioTracks ?? []).some((t) => t.id === sel.id) ? sel : null;
   return p.media.some((m) => m.id === sel.id) ? sel : null;
 }
 
@@ -165,7 +175,7 @@ export function loadProject(project: Project, projectPath: string | null, opts: 
   const saved = opts.savedClean === false ? createProject() : project;
   store.set({
     project, projectPath, savedProject: saved, past: [], future: [], selection: null,
-    previewMediaId: null, missing, thumbs: {}, trimPreview: null, review: null,
+    previewMediaId: null, missing, thumbs: {}, waves: {}, trimPreview: null, review: null,
   });
 }
 

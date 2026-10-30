@@ -12,7 +12,9 @@ function MediaItem({ m }: { m: MediaRef }) {
   const missing = useStore((s) => !!s.missing[m.id]);
   const selected = useStore((s) => s.selection?.kind === 'media' && s.selection.id === m.id);
   const previewing = useStore((s) => s.previewMediaId === m.id);
-  const uses = useStore((s) => s.project.sequence.items.filter((i) => i.kind === 'clip' && i.mediaId === m.id).length);
+  const uses = useStore((s) =>
+    s.project.sequence.items.filter((i) => i.kind === 'clip' && i.mediaId === m.id).length +
+    (s.project.audioTracks ?? []).reduce((n, t) => n + t.clips.filter((c) => c.mediaId === m.id).length, 0));
   const i = m.info;
   return (
     <div
@@ -22,19 +24,28 @@ function MediaItem({ m }: { m: MediaRef }) {
         e.dataTransfer.setData(MEDIA_DRAG_TYPE, m.id);
         e.dataTransfer.effectAllowed = 'copy';
       }}
-      onClick={() => store.set({ selection: { kind: 'media', id: m.id }, previewMediaId: missing ? null : m.id })}
+      onClick={() => store.set({ selection: { kind: 'media', id: m.id }, previewMediaId: missing || i.kind === 'audio' ? null : m.id })}
       title={missing ? `Missing: ${m.path}` : `${m.path}\nClick to preview · drag to the timeline`}
     >
       <div className="thumb">
-        {thumb ? <img src={thumb} alt="" /> : <div className="thumb-placeholder">{missing ? 'Offline' : '…'}</div>}
-        <span className="thumb-duration">{formatDuration(i.duration)}</span>
+        {i.kind === 'audio' ? (
+          <div className="thumb-placeholder audio-thumb">♪</div>
+        ) : thumb ? (
+          <img src={thumb} alt="" />
+        ) : (
+          <div className="thumb-placeholder">{missing ? 'Offline' : '…'}</div>
+        )}
+        <span className="thumb-duration">{i.kind === 'image' ? 'Photo' : formatDuration(i.duration)}</span>
         {previewing && <span className="thumb-badge">Previewing</span>}
       </div>
       <div className="media-meta">
         <div className="media-name">{m.name}</div>
         <div className="muted small">
-          {i.displayWidth}×{i.displayHeight} · {rateLabel(i.frameRate)} fps{i.isVFR ? ' (VFR)' : ''} · {i.videoCodec.toUpperCase()}
-          {i.hasAudio ? '' : ' · no audio'}
+          {i.kind === 'image'
+            ? `Photo · ${i.displayWidth}×${i.displayHeight} · ${i.videoCodec.toUpperCase()}${i.hasAlpha ? ' · transparent' : ''}`
+            : i.kind === 'audio'
+            ? `Audio · ${i.audioCodec?.toUpperCase()} · ${i.audioChannels === 1 ? 'mono' : 'stereo'} · ${Math.round((i.audioSampleRate ?? 0) / 1000)} kHz`
+            : `${i.displayWidth}×${i.displayHeight} · ${rateLabel(i.frameRate)} fps${i.isVFR ? ' (VFR)' : ''} · ${i.videoCodec.toUpperCase()}${i.hasAudio ? '' : ' · no audio'}`}
         </div>
         <div className="muted small">
           {formatBytes(i.fileSize)}
@@ -49,7 +60,7 @@ function MediaItem({ m }: { m: MediaRef }) {
           {missing ? (
             <button className="btn tiny warn" onClick={(e) => { e.stopPropagation(); A.relink(m.id); }}>Relink…</button>
           ) : (
-            <button className="btn tiny" title="Add to the end of the timeline" onClick={(e) => { e.stopPropagation(); A.addMediaToTimeline(m.id); }}>
+            <button className="btn tiny" title={i.kind === 'audio' ? 'Add to an audio track at the playhead' : 'Add to the end of the timeline'} onClick={(e) => { e.stopPropagation(); A.addMediaToTimeline(m.id); }}>
               + Add to timeline
             </button>
           )}
@@ -92,7 +103,7 @@ export function MediaBin() {
           <div className="empty">
             <p>No media yet.</p>
             <p className="muted">Click <strong>Import…</strong> or drag MP4/MOV files here.</p>
-            <p className="muted small">Supported now: H.264 video in MP4/MOV, with AAC audio. Files stay where they are; Cutroom only references them.</p>
+            <p className="muted small">Supported now: H.264 video in MP4/MOV, and MP3/M4A/WAV/FLAC audio for music. Files stay where they are; Cutroom only references them.</p>
           </div>
         )}
         {media.map((m) => (

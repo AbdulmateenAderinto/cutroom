@@ -17,7 +17,9 @@ import { engine } from '../preview/engine';
 import * as A from '../state/actions';
 import { playhead, usePlayhead } from '../state/playhead';
 import { beginGesture, commit, endGesture, store, updateGesture, useStore } from '../state/store';
+import { AudioTracks } from './AudioTracks';
 import { MEDIA_DRAG_TYPE } from './MediaBin';
+import { audioClipEnd } from '../../shared/audio';
 
 const PAD = 16; // px before time zero
 const SNAP_PX = 8;
@@ -84,6 +86,9 @@ export function Timeline() {
     for (const l of lay.items) if (l.item.id !== exclude) pts.push(l.start, l.end);
     return pts;
   };
+
+  const audioEdges = (exclude?: string) =>
+    (project.audioTracks ?? []).flatMap((tr) => tr.clips.filter((c) => c.id !== exclude).flatMap((c) => [c.start, audioClipEnd(c)]));
 
   const insertionIndex = (t: Ticks) => lay.items.filter((l) => (l.start + l.end) / 2 < t).length;
 
@@ -211,7 +216,7 @@ export function Timeline() {
   const markerIndex = drag ? drag.index : dropIndex;
   const markerX = markerIndex === null ? null : tToX(markerIndex < lay.items.length ? lay.items[markerIndex].start : lay.duration);
   const selectedId = selection?.kind === 'item' ? selection.id : null;
-  const hasSelection = !!selectedId;
+  const hasSelection = !!selectedId || selection?.kind === 'audio';
   const previewIdx = trimPreview ? lay.items.findIndex((l) => l.item.id === trimPreview.id) : -1;
 
   return (
@@ -274,6 +279,14 @@ export function Timeline() {
             )}
             {markerX !== null && <div className="insert-marker" style={{ left: markerX - 1 }} />}
           </div>
+          <AudioTracks
+            pps={pps}
+            tToX={tToX}
+            xToT={xToT}
+            contentX={contentX}
+            duration={lay.duration}
+            snap={(t, alt, exclude) => snapTime(t, [...cutPoints(), playhead.get().time, ...audioEdges(exclude)], alt)}
+          />
           <Playhead pps={pps} scrollRef={scrollRef} />
         </div>
       </div>

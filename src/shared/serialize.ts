@@ -36,6 +36,8 @@ function migrate(data: any): Project {
   if (data.version === 1) data.version = 2;
   // v2 → v3: transcripts and captions were added as optional fields; nothing to convert.
   if (data.version === 2) data.version = 3;
+  // v3 → v4: audio tracks and media kinds were added as optional fields; nothing to convert.
+  if (data.version === 3) data.version = 4;
   return data as Project;
 }
 
@@ -60,6 +62,13 @@ function validate(p: Project) {
       check(Array.isArray(m.transcript.words) && m.transcript.words.every((w) => isInt(w.start) && isInt(w.end) && typeof w.text === 'string'), `bad transcript for ${m.name}`);
     }
     mediaIds.add(m.id);
+  }
+  for (const t of p.audioTracks ?? []) {
+    check(typeof t.id === 'string' && Array.isArray(t.clips), 'bad audio track');
+    for (const c of t.clips) {
+      check(mediaIds.has(c.mediaId), `audio clip ${c.id} refers to unknown media`);
+      check(isInt(c.start) && c.start >= 0 && isInt(c.sourceIn) && isInt(c.sourceOut) && c.sourceOut > c.sourceIn, `audio clip ${c.id} has bad timing`);
+    }
   }
   const ids = new Set<string>();
   for (const it of p.sequence.items) {

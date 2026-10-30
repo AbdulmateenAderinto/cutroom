@@ -91,6 +91,8 @@ export interface CutroomApi {
   probeMedia(path: string): Promise<ProbeResult>;
   thumbnail(path: string, atSeconds: number): Promise<string | null>;
   filesExist(paths: string[]): Promise<boolean[]>;
+  /** 100 peaks per second (0..255), or null if the file has no readable audio. */
+  waveform(path: string): Promise<Uint8Array | null>;
   mediaUrl(path: string): string;
   saveProject(project: Project, path: string | null): Promise<SaveResult>;
   openProject(path?: string): Promise<OpenResult>;

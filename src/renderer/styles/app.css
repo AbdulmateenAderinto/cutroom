@@ -161,9 +161,9 @@ input[type='color'] { width: 36px; height: 26px; border: 1px solid var(--line-2)
 .details dd { margin: 0; word-break: break-all; }
 
 /* Timeline */
-.timeline { height: 230px; flex: none; display: flex; flex-direction: column; background: var(--panel); border-top: 1px solid var(--line); }
+.timeline { height: 300px; flex: none; display: flex; flex-direction: column; background: var(--panel); border-top: 1px solid var(--line); }
 .tl-toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
-.tl-scroll { flex: 1; overflow-x: auto; overflow-y: hidden; position: relative; }
+.tl-scroll { flex: 1; overflow-x: auto; overflow-y: auto; position: relative; }
 .tl-content { position: relative; height: 100%; }
 .tl-ruler { position: relative; height: 26px; border-bottom: 1px solid var(--line); cursor: text; background: var(--panel-2); }
 .tick { position: absolute; bottom: 0; width: 1px; height: 6px; background: var(--line-2); }
@@ -272,3 +272,24 @@ kbd { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); b
 .grow { flex: 1; }
 .cue-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
 .cue-row { display: grid; grid-template-columns: 74px 1fr; gap: 4px; align-items: center; }
+
+/* Audio tracks */
+.tl-audio { position: relative; margin-top: 8px; }
+.tl-audio-row { position: relative; height: 70px; border-top: 1px solid var(--line); }
+.tl-audio-row.muted .aclip { opacity: 0.4; }
+.tl-audio-label { position: sticky; left: 0; z-index: 4; display: inline-flex; gap: 4px; padding: 3px 4px 0; height: 22px; pointer-events: auto; }
+.chip { background: rgba(20, 22, 26, 0.85); border: 1px solid var(--line-2); color: var(--text); border-radius: 10px; padding: 1px 8px; font: inherit; font-size: 11px; cursor: pointer; }
+.chip.on { border-color: var(--accent); color: var(--accent); }
+.chip.warn { border-color: var(--warn); color: var(--warn); }
+.chip.small { padding: 1px 6px; }
+.aclip { position: absolute; top: 24px; height: 42px; border-radius: 5px; background: #2b5d4d; border: 1px solid rgba(255, 255, 255, 0.15); overflow: hidden; cursor: grab; }
+.aclip.selected { border: 2px solid var(--accent); }
+.aclip .waveform { position: absolute; left: 0; top: 0; pointer-events: none; }
+.aclip .fade-shape { position: absolute; left: 0; top: 0; pointer-events: none; }
+.aclip .fade-shape polygon { fill: rgba(0, 0, 0, 0.45); }
+.aclip-label { position: absolute; left: 8px; bottom: 2px; font-size: 10.5px; color: #e8fff6; text-shadow: 0 1px 2px #000; pointer-events: none; white-space: nowrap; }
+.fade-handle { position: absolute; top: 0; width: 10px; height: 10px; background: #fff; border: 1px solid #000; cursor: ew-resize; z-index: 3; opacity: 0; }
+.aclip:hover .fade-handle, .aclip.selected .fade-handle { opacity: 0.9; }
+.tl-past-end { position: absolute; top: 0; bottom: 0; right: 0; background: repeating-linear-gradient(45deg, rgba(0,0,0,0.35), rgba(0,0,0,0.35) 6px, rgba(0,0,0,0.15) 6px, rgba(0,0,0,0.15) 12px); pointer-events: none; z-index: 2; }
+.tl-audio-add { display: flex; gap: 10px; align-items: center; padding: 8px 4px; border-top: 1px dashed var(--line); position: sticky; left: 0; }
+.audio-thumb { font-size: 26px; color: #8fe3c4; background: linear-gradient(135deg, #1f3a32, #12201c); }
