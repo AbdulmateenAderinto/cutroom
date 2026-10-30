@@ -27,6 +27,7 @@ import { beginGesture, commit, endGesture, gestureActive, store, updateGesture, 
 import { findAudioClip } from '../../shared/audio';
 import { NEUTRAL } from '../../shared/color';
 import { AnimationSection } from './AnimationSection';
+import { AudioFxSection } from './AudioFxSection';
 import { AudioClipInspector, TrackSettings } from './AudioInspector';
 import { TitleInspector } from './TitleInspector';
 import { MarkerInspector } from './MarkerInspector';
@@ -380,6 +381,7 @@ function ClipInspector({ clip, project, overlay }: { clip: ClipItem; project: Pr
               <span className="mono small">{Math.round(clip.volume * 100)}%</span>
             </div>
             <p className="muted small">Up to 200% (boost).</p>
+            <AudioFxSection fx={clip.audioFx} mediaId={clip.mediaId} edit={(p, patch) => ops.setClipAudioFx(p, id, patch)} />
             <div className="row gap center">
               <button
                 className="btn small"

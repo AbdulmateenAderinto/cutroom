@@ -31,6 +31,7 @@ import { type AnimProperty, type ClipAnimation, type Easing, clampAnimValue, rem
 import { type CaptionSettings, DEFAULT_CAPTIONS } from './captions';
 import { type ColorAdjust, NEUTRAL, isNeutral, legalColor } from './color';
 import { asClip, fromClip, updateOverlay } from './overlays';
+import { type AudioFx, NO_FX, legalFx } from './audioFx';
 import { type Rational, type Ticks, frameDuration, snapToFrame } from './time';
 
 function withItems(project: Project, items: TrackItem[]): Project {
@@ -583,4 +584,13 @@ export function setMediaInput(project: Project, mediaId: string, patch: Partial<
       return Object.keys(input).length ? { ...rest, input } : rest;
     }),
   };
+}
+
+/** EQ / noise reduction of a clip's sound (main track or overlay); neutral values remove it. */
+export function setClipAudioFx(project: Project, clipId: string, patch: Partial<AudioFx>): Project {
+  return updateClip(project, clipId, (c) => {
+    const fx = legalFx({ ...NO_FX, ...c.audioFx, ...patch });
+    const { audioFx: _old, ...rest } = c;
+    return fx ? { ...rest, audioFx: fx } : rest;
+  });
 }

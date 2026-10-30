@@ -95,6 +95,8 @@ export interface CutroomApi {
   filesExist(paths: string[]): Promise<boolean[]>;
   /** 100 peaks per second (0..255), or null if the file has no readable audio. */
   waveform(path: string): Promise<Uint8Array | null>;
+  /** Background noise level of a file's sound (dBFS), for noise reduction. */
+  noiseFloor(path: string): Promise<number | null>;
   mediaUrl(path: string): string;
   saveProject(project: Project, path: string | null): Promise<SaveResult>;
   openProject(path?: string): Promise<OpenResult>;
@@ -102,6 +104,8 @@ export interface CutroomApi {
   chooseExportPath(defaultName: string): Promise<string | null>;
   startExport(project: Project, settings: ExportSettings): Promise<ExportResult>;
   cancelExport(): Promise<void>;
+  /** Render `seconds` of the timeline from `start` (ticks) through the export, to listen to. */
+  audition(project: Project, start: number, seconds: number): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   /** Make (or reuse) the preview copy of a file the preview can't play directly. */
   makeProxy(path: string, info: MediaInfo, input?: MediaInput): Promise<{ ok: true; path: string } | { ok: false; error: string }>;
   /** Pick a .cube LUT; it is checked and copied into the app's LUT folder. null = cancelled. */

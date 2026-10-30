@@ -11,7 +11,8 @@ import { SpeechSetupDialog } from './components/SpeechSetupDialog';
 import { Timeline } from './components/Timeline';
 import { Toasts } from './components/Toasts';
 import { TopBar } from './components/TopBar';
-import { audioDebug } from './preview/audio';
+import { audioDebug, eqResponse } from './preview/audio';
+import { eqResponseDb } from '../shared/audioFx';
 import { engine } from './preview/engine';
 import * as A from './state/actions';
 import { installClipboardHandlers, runShortcut } from './shortcuts';
@@ -177,4 +178,4 @@ export function App() {
 }
 
 // Expose a small hook for automated UI tests (no effect on normal use).
-(window as any).__cutroom = { store, playhead, engine, actions: A, audioDebug };
+(window as any).__cutroom = { store, playhead, engine, actions: A, audioDebug, eqResponse, eqResponseDb };

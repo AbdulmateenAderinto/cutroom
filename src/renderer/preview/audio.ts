@@ -2,8 +2,11 @@
  * Preview audio through Web Audio, so it can do what the export does: volume above 100%, fades
  * and ducking. Gains come from the same functions the exporter uses (clipGainAt, duckGainAt).
  *
- *   video element A/B ──▶ gain (clip volume) ─────────────────────────────┐
- *   music <audio> per clip ──▶ gain (volume × fades) ──▶ track gain (× duck) ──▶ destination
+ *   video element A/B ──▶ EQ ──▶ gain (clip volume) ──────────────────────────┐
+ *   music <audio> per clip ──▶ EQ ──▶ gain (volume × fades) ──▶ track gain (× duck) ──▶ destination
+ *
+ * EQ: three BiquadFilterNodes with the bands of shared/audioFx.ts (the export uses the same
+ * coefficients). Noise reduction is export-only (see audioFx.ts).
  *
  * Music elements follow the timeline clock: started/stopped as clips begin and end, and re-synced
  * if they drift more than 80 ms.
@@ -11,11 +14,41 @@
 import { type AudioTrack, findMedia, type Project } from '../../shared/model';
 import { audioClipEnd, clipGainAt, duckGainAt, speechIntervals, tracks } from '../../shared/audio';
 import { type Ticks, ticksToSeconds } from '../../shared/time';
+import { type AudioFx, EQ_BANDS } from '../../shared/audioFx';
 import { previewUrl } from './mediaUrl';
 
 let ctx: AudioContext | null = null;
 const videoGains = new Map<HTMLMediaElement, GainNode>();
+const eqs = new Map<HTMLMediaElement, BiquadFilterNode[]>();
 const music = new Map<string, { el: HTMLAudioElement; gain: GainNode; mediaId: string }>();
+
+/** source → low shelf → mid peak → high shelf → `to` */
+function eqChain(c: AudioContext, el: HTMLMediaElement, to: AudioNode) {
+  const nodes = EQ_BANDS.map((b) => {
+    const n = c.createBiquadFilter();
+    n.type = b.type;
+    n.frequency.value = b.freq;
+    if (b.type === 'peaking') n.Q.value = b.q;
+    n.gain.value = 0;
+    return n;
+  });
+  const src = c.createMediaElementSource(el);
+  src.connect(nodes[0]);
+  nodes[0].connect(nodes[1]);
+  nodes[1].connect(nodes[2]);
+  nodes[2].connect(to);
+  eqs.set(el, nodes);
+}
+
+/** Set an element's EQ from a clip's sound settings. */
+export function setEq(el: HTMLMediaElement, fx: AudioFx | undefined) {
+  const nodes = eqs.get(el);
+  if (!nodes) return;
+  EQ_BANDS.forEach((b, i) => {
+    const g = fx?.[b.key] ?? 0;
+    if (nodes[i].gain.value !== g) nodes[i].gain.value = g;
+  });
+}
 const trackGains = new Map<string, GainNode>();
 let speechCache: { project: Project | null; intervals: { start: Ticks; end: Ticks }[] } = { project: null, intervals: [] };
 
@@ -30,7 +63,8 @@ export function attachVideoElement(el: HTMLMediaElement) {
   el.crossOrigin = 'anonymous'; // media is served with CORS so Web Audio may read it
   const c = audio();
   const gain = c.createGain();
-  c.createMediaElementSource(el).connect(gain).connect(c.destination);
+  gain.connect(c.destination);
+  eqChain(c, el, gain);
   videoGains.set(el, gain);
 }
 
@@ -38,6 +72,7 @@ export function attachVideoElement(el: HTMLMediaElement) {
 export function detachVideoElement(el: HTMLMediaElement) {
   videoGains.get(el)?.disconnect();
   videoGains.delete(el);
+  eqs.delete(el);
 }
 
 export function setVideoGain(el: HTMLMediaElement, value: number) {
@@ -67,7 +102,8 @@ function player(clipId: string, mediaId: string, src: string, track: AudioTrack)
     el.src = src;
     const c = audio();
     const gain = c.createGain();
-    c.createMediaElementSource(el).connect(gain).connect(trackGain(track));
+    gain.connect(trackGain(track));
+    eqChain(c, el, gain);
     p = { el, gain, mediaId };
     music.set(clipId, p);
   }
@@ -97,6 +133,7 @@ export function syncMusic(project: Project, t: Ticks, playing: boolean, missing:
       const p = player(c.id, c.mediaId, url, track);
       live.add(c.id);
       p.gain.gain.value = clipGainAt(c, t);
+      setEq(p.el, c.audioFx);
       const want = ticksToSeconds(c.sourceIn + Math.max(0, t - c.start));
       if (!active || !playing) {
         if (!p.el.paused) p.el.pause();
@@ -127,9 +164,24 @@ export function stopMusic() {
   for (const p of music.values()) p.el.pause();
 }
 
+/** For tests: the EQ's response (dB) at these frequencies on an element, from the Web Audio nodes. */
+export function eqResponse(el: HTMLMediaElement, freqs: number[]): number[] | null {
+  const nodes = eqs.get(el);
+  if (!nodes) return null;
+  const f = new Float32Array(freqs);
+  const db = freqs.map(() => 0);
+  for (const n of nodes) {
+    const mag = new Float32Array(freqs.length);
+    n.getFrequencyResponse(f, mag, new Float32Array(freqs.length));
+    mag.forEach((m, i) => (db[i] += 20 * Math.log10(m)));
+  }
+  return db;
+}
+
 /** For tests: what the preview audio graph is doing right now. */
 export function audioDebug() {
   return {
+    eq: [...eqs.values()].map((ns) => ns.map((n) => n.gain.value)),
     music: [...music.entries()].map(([id, p]) => ({ id, playing: !p.el.paused, time: p.el.currentTime, gain: p.gain.gain.value })),
     tracks: [...trackGains.entries()].map(([id, g]) => ({ id, gain: g.gain.value })),
     video: [...videoGains.values()].map((g) => g.gain.value),

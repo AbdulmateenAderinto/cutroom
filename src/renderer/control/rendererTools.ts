@@ -23,7 +23,7 @@ import {
   timelineAt,
 } from '../../shared/model';
 import {
-  addAudioClip, deleteAudioClip, detachAudio, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip, setAudioClip, setAudioTrack, setSpeech, trimAudioClip,
+  addAudioClip, deleteAudioClip, detachAudio, setAudioClipFx, findAudioClip, mediaNeedingSpeechAnalysis, moveAudioClip, setAudioClip, setAudioTrack, setSpeech, trimAudioClip,
 } from '../../shared/audio';
 import { buildCues, fillerRanges } from '../../shared/captions';
 import { addTitle, deleteTitle, findTitle, moveTitle, removeTitleKeyframe, setTitleKeyframe, updateTitle } from '../../shared/titles';
@@ -31,6 +31,7 @@ import { addMarker, deleteMarker, findMarker, updateMarker } from '../../shared/
 import { addOverlay, asClip, clipLayout, deleteOverlay, findOverlay, moveOverlay, overlayLayout, pipFraming, updateOverlay } from '../../shared/overlays';
 import { transitionInfo } from '../../shared/transitions';
 import { NEUTRAL } from '../../shared/color';
+import type { AudioFx } from '../../shared/audioFx';
 import * as ops from '../../shared/ops';
 import { COMMON_FRAME_RATES, type Rational, frameDuration, rateLabel, secondsToTicks, snapToFrame, ticksToSeconds } from '../../shared/time';
 import { renderOverlayTrack } from '../captions/draw';
@@ -188,6 +189,22 @@ function clipSummary(p: Project, c: ClipItem, l: LaidOutItem) {
 function clipInfo(id: string) {
   const s = projectSummary(store.get().project);
   return s.timeline.find((x) => x.id === id) ?? s.overlays.find((x) => x.id === id);
+}
+
+/** EQ / noise reduction from tool arguments; the background level is measured when needed. */
+async function fxPatch(args: Args, mediaId: string, cur: AudioFx | undefined): Promise<Partial<AudioFx> | null> {
+  const patch: Partial<AudioFx> = {};
+  for (const [k, key] of [['eq_low', 'low'], ['eq_mid', 'mid'], ['eq_high', 'high'], ['noise_reduction', 'denoise']] as const) {
+    if (args[k] === undefined) continue;
+    if (!Number.isFinite(args[k])) throw new ToolError(`${k} must be a number.`);
+    patch[key] = Number(args[k]);
+  }
+  if (!Object.keys(patch).length) return null;
+  if (patch.denoise && cur?.noiseFloor === undefined) {
+    const m = findMedia(store.get().project, mediaId);
+    patch.noiseFloor = (m && (await window.cutroom.noiseFloor(m.path))) ?? -50;
+  }
+  return patch;
 }
 
 /** Apply an edit; returns false (and nothing changes) if it had no effect. */
@@ -457,6 +474,8 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
           next = moveAudioClip(next, hit.clip.id, args.start !== undefined ? T(args.start) : findAudioClip(next, hit.clip.id)!.clip.start, args.track_id);
         }
         next = setAudioClip(next, hit.clip.id, { volume: args.volume, fadeIn: args.fade_in !== undefined ? T(args.fade_in) : undefined, fadeOut: args.fade_out !== undefined ? T(args.fade_out) : undefined });
+        const fxA = await fxPatch(args, hit.clip.mediaId, hit.clip.audioFx);
+        if (fxA) next = setAudioClipFx(next, hit.clip.id, fxA);
         edit('changed an audio clip', () => next);
         return ok({ audio_tracks: projectSummary(store.get().project).audio_tracks });
       }
@@ -600,9 +619,13 @@ export async function runRendererTool(name: string, args: Args): Promise<ToolRes
       }
       case 'set_clip_audio': {
         const c = clipOrThrow(p, args.clip_id);
-        edit('changed clip audio', (pr) => ops.setClipAudio(pr, c.id, { volume: args.volume, muted: args.muted }));
+        const fx = await fxPatch(args, c.mediaId, c.audioFx);
+        edit('changed clip audio', (pr) => {
+          const q = ops.setClipAudio(pr, c.id, { volume: args.volume, muted: args.muted });
+          return fx ? ops.setClipAudioFx(q, c.id, fx) : q;
+        });
         const n = clipOrThrow(store.get().project, c.id);
-        return ok({ volume: n.volume, muted: n.muted });
+        return ok({ volume: n.volume, muted: n.muted, audio_fx: n.audioFx ?? 'none' });
       }
 
       case 'set_color': {

@@ -43,7 +43,7 @@ function readyProxies(): string {
 }
 import { type LayerFx, type ResolvedTransition, dipColour, isDip, resolveTransitions, transitionLook, transitionMix } from '../../shared/transitions';
 import { playhead } from '../state/playhead';
-import { attachVideoElement, detachVideoElement, setVideoGain, stopMusic, syncMusic } from './audio';
+import { attachVideoElement, detachVideoElement, setEq, setVideoGain, stopMusic, syncMusic } from './audio';
 import { store } from '../state/store';
 
 interface Seq {
@@ -291,7 +291,10 @@ class PreviewEngine {
     // Rotation around the picture's centre (CSS rotates clockwise, like FFmpeg's rotate).
     const transform = angle % 360 !== 0 ? `rotate(${angle}deg)` : '';
     if (el.style.transform !== transform) el.style.transform = transform;
-    if (el instanceof HTMLVideoElement) setVideoGain(el, clip.muted ? 0 : clip.volume * mix);
+    if (el instanceof HTMLVideoElement) {
+      setVideoGain(el, clip.muted ? 0 : clip.volume * mix);
+      setEq(el, clip.audioFx);
+    }
     this.colorFilter(el, clip);
   }
 

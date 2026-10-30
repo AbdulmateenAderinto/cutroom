@@ -438,6 +438,40 @@ export async function chooseLut(mediaId: string) {
   toast(`LUT “${r.lut.name}” applied. A preview copy with it is being made.`);
 }
 
+/** Measure a file's background noise level and store it with the noise reduction setting. */
+export async function measureNoiseFloor(mediaId: string, apply: (p: Project, nf: number) => Project) {
+  const m = findMedia(store.get().project, mediaId);
+  if (!m || store.get().working.includes(`noise:${mediaId}`)) return;
+  setWorking(`noise:${mediaId}`, true);
+  try {
+    const nf = await api().noiseFloor(m.path);
+    // Analysis data: applied to the current state (no extra undo step).
+    store.set((s) => ({ project: apply(s.project, nf ?? -50) }));
+  } finally {
+    setWorking(`noise:${mediaId}`, false);
+  }
+}
+
+let auditionEl: HTMLAudioElement | null = null;
+/** Render 5 s from the playhead through the export and play it (to hear export-only sound processing). */
+export async function listenToExport(seconds = 5) {
+  const s = store.get();
+  const dur = layoutSequence(s.project).duration;
+  const start = Math.max(0, Math.min(playhead.get().time, dur - secondsToTicks(seconds)));
+  if (dur <= 0) return toast('The timeline is empty.');
+  setWorking('audition', true);
+  try {
+    const r = await api().audition(s.project, start, Math.min(seconds, ticksToSeconds(dur)));
+    if (!r.ok) return toast(`Could not render the sound: ${r.error}`, 'error');
+    engine.pause();
+    auditionEl?.pause();
+    auditionEl = new Audio(api().mediaUrl(r.path));
+    void auditionEl.play().catch(() => {});
+  } finally {
+    setWorking('audition', false);
+  }
+}
+
 /** M: add a marker at the playhead (or select the one already there). */
 export function addMarkerAction() {
   const r = addMarker(store.get().project, playhead.get().time);

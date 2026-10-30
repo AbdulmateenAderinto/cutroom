@@ -71,6 +71,10 @@ Legend: ✅ works and has automated tests · ☑️ works, checked by hand or in
 | Track volume, mute | ✅ | |
 | Ducking: lower a track under speech in the video, by N dB | ✅ | Speech found locally (silence detection); measured in preview and export |
 | Audio after the end of the video is shaded and not exported | ✅ | |
+| 3-band EQ per clip (video clips' sound and audio-track clips), heard in the preview | ✅ | The export uses FFmpeg `biquad` with the coefficients the Web Audio spec defines, so preview and export filter alike: measured tone changes within 0.7 dB of the shared response; the preview's Web Audio response within 0.03 dB of it |
+| Noise reduction per clip (FFT denoiser, `afftdn`) | ✅ | **Export only** (the preview plays the original sound); the recording's background level is measured when it is turned on. Measured: background −10 dB or more, tone within 1.5 dB |
+| “Listen to the export sound”: renders 5 s from the playhead through the export and plays it | ✅ | To hear export-only processing |
+| Loudness normalization in the export: −14 / −16 / −23 LUFS, peaks under −1.5 dBTP | ✅ | Two-pass `loudnorm` (measure, then a linear gain). Checked with FFmpeg's `ebur128` meter: within 1 LU for quiet and loud mixes and for a range |
 | Photos (JPEG, PNG, WebP) as clips: 4 s by default, any length by trimming | ✅ | |
 | EXIF rotation, transparent PNG/WebP over the background colour | ✅ | Pixel-checked in export; preview vs export compared |
 | Fit/Fill/Manual framing and all animations (Ken Burns etc.) on photos | ✅ | Pan measured per exported frame |
@@ -301,7 +305,7 @@ progress/result screens, missing-media state and the gap rendering.
   and with picture-in-picture (two videos decoding at once).
 - Real phone footage (VFR, HDR, Dolby Vision, rotation variants), MOV files from cameras, 44.1 kHz or 5.1 audio.
   HDR tone mapping was only tried with a synthetic PQ clip.
-- Listening tests for audio quality, and volume levels in the export.
+- Listening tests for audio quality, and volume levels in the export (noise reduction on real voices especially).
 - **Speech recognition quality.** whisper.cpp and its models couldn't be downloaded in this
   environment, so a stand-in replaced it in tests. Verify on a Mac: `brew install whisper-cpp`,
   download a model in the app, and transcribe a real clip.

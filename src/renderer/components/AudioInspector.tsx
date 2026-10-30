@@ -3,7 +3,8 @@
  */
 import { useState } from 'react';
 import { type AudioTrack, type Project, findMedia } from '../../shared/model';
-import { audioClipDuration, findAudioClip, setAudioClip, setAudioTrack, trimAudioClip, updateAudioClip } from '../../shared/audio';
+import { audioClipDuration, findAudioClip, setAudioClip, setAudioClipFx, setAudioTrack, trimAudioClip, updateAudioClip } from '../../shared/audio';
+import { AudioFxSection } from './AudioFxSection';
 import { TICKS_PER_SECOND as S, formatTimecode, frameDuration, secondsToTicks } from '../../shared/time';
 import { engine } from '../preview/engine';
 import * as A from '../state/actions';
@@ -117,6 +118,7 @@ export function AudioClipInspector({ clipId, project }: { clipId: string; projec
             onCommit={(v) => commit((p) => setAudioClip(p, clipId, { fadeOut: secondsToTicks(v) }))} />
         </div>
         <p className="muted small">Tip: drag the small squares at the clip’s top corners on the timeline.</p>
+        <AudioFxSection fx={clip.audioFx} mediaId={clip.mediaId} edit={(p, patch) => setAudioClipFx(p, clipId, patch)} />
       </Section>
       <TrackSettings track={track} />
       <button className="btn tiny ghost" onClick={() => store.set({ selection: null })}>Project settings</button>

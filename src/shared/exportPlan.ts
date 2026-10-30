@@ -34,6 +34,7 @@ import {
 } from './model';
 import { type ResolvedTransition, dipColour, isDip, resolveTransitions, transitionMix, xfadeName, zoomScale } from './transitions';
 import { clipColor, ffmpegCurves, ffmpegMixer } from './color';
+import { ffmpegAudioFx } from './audioFx';
 import { overlayLayout, overlays } from './overlays';
 import {
   type Rational,
@@ -76,6 +77,25 @@ export interface ExportSettings {
   range?: { start: Ticks; end: Ticks } | null;
   /** Write the timeline markers as chapters (MP4/MOV chapter marks). */
   chapters?: boolean;
+  /** Normalize the loudness of the whole mix to this integrated level (LUFS), e.g. −14; null = off. */
+  loudness?: number | null;
+}
+
+export const LOUDNESS_TARGETS: { lufs: number; label: string }[] = [
+  { lufs: -14, label: '−14 LUFS (YouTube, Spotify, Instagram)' },
+  { lufs: -16, label: '−16 LUFS (Apple Music, podcasts)' },
+  { lufs: -23, label: '−23 LUFS (broadcast, EBU R128)' },
+];
+/** True-peak ceiling used with loudness normalization (dBTP). */
+export const TRUE_PEAK = -1.5;
+
+/** What FFmpeg's loudnorm measured in the first pass. */
+export interface LoudnessMeasurement {
+  input_i: string;
+  input_tp: string;
+  input_lra: string;
+  input_thresh: string;
+  target_offset: string;
 }
 
 export type VideoEncoder = 'x264' | 'videotoolbox';
@@ -226,6 +246,12 @@ export interface ExportExtras {
   previewPlatform?: PreviewPlatform;
   /** FFmpeg metadata file with chapters (markers.chapterMetadata), written by the runner. */
   chaptersFile?: string;
+  /**
+   * Loudness normalization (settings.loudness), in two passes: 'measure' builds a plan that only
+   * measures the finished mix (output discarded; loudnorm prints JSON), then the real export
+   * applies a linear gain with the measured values.
+   */
+  loudness?: 'measure' | LoudnessMeasurement;
 }
 
 /**
@@ -554,7 +580,7 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       filters.push(
         `[${i}:a:0]atrim=start=${f6(lead)},asetpts=PTS-${f6(lead)}/TB,${tempoFilter(speed, extras.timeStretch ?? 'atempo')}` +
           `aresample=${sr}:async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo,` +
-          `volume=${item.volume.toFixed(4)},apad,atrim=end_sample=${samples}[${a}]`,
+          `volume=${item.volume.toFixed(4)},${ffmpegAudioFx(item.audioFx, sr)}apad,atrim=end_sample=${samples}[${a}]`,
       );
     } else filters.push(silence);
     return [`[${v}]`, `[${a}]`];
@@ -706,6 +732,8 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
       inputs.push('-ss', f6(ticksToSeconds(c.sourceIn)), '-t', f6(durSec + 0.1), '-i', mediaPath(m));
       const i = inputIndex++;
       const chain = [`aresample=${sr}:async=1:first_pts=0`, 'aformat=sample_fmts=fltp:channel_layouts=stereo', `volume=${c.volume.toFixed(4)}`];
+      const fx = ffmpegAudioFx(c.audioFx, sr);
+      if (fx) chain.push(fx.slice(0, -1));
       // Linear fades, matching clipGainAt() used by the preview. Fade-out is placed against the
       // clip's own end even if the video ends first.
       if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${f6(ticksToSeconds(c.fadeIn))}`);
@@ -750,6 +778,20 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
     audioOut = '[arange]';
   }
 
+  // Loudness normalization of the finished mix (EBU R128 loudnorm, two passes, linear gain).
+  if (s.loudness !== undefined && s.loudness !== null && extras.loudness) {
+    const base = `loudnorm=I=${s.loudness}:TP=${TRUE_PEAK}:LRA=11`;
+    const L = extras.loudness;
+    filters.push(
+      L === 'measure'
+        ? `${audioOut}${base}:print_format=json[aloud]`
+        : `${audioOut}${base}:measured_I=${L.input_i}:measured_TP=${L.input_tp}:measured_LRA=${L.input_lra}:measured_thresh=${L.input_thresh}:offset=${L.target_offset}:linear=true,` +
+            // loudnorm works at 192 kHz; back to the project rate, same length.
+            `aresample=${sr},atrim=end_sample=${ticksToSamples(rangeEndT - rangeStartT, sr)}[aloud]`,
+    );
+    audioOut = '[aloud]';
+  }
+
   const kbps = Math.round(s.videoBitrateMbps * 1000);
   const codec = s.codec ?? 'h264';
   const crf = String(s.crf ?? CRF_RANGE.default);
@@ -781,6 +823,22 @@ export function buildExportPlan(project: Project, s: ExportSettings, outputFile:
   // Chapters come only from the markers (never copied from a source file).
   const chapterInput = extras.chaptersFile ? inputIndex++ : -1;
   if (extras.chaptersFile) inputs.push('-f', 'ffmetadata', '-i', extras.chaptersFile);
+  if (extras.loudness === 'measure') {
+    // Measuring pass: render everything, encode nothing, keep loudnorm's report (info level).
+    return {
+      args: [
+        '-hide_banner', '-nostdin', '-y', '-loglevel', 'info', '-progress', 'pipe:1', '-nostats',
+        ...inputs, '-filter_complex', filters.join(';\n'), '-map', '[vout]', '-map', audioOut,
+        '-c:v', 'wrapped_avframe', '-c:a', 'pcm_f32le', '-f', 'null', '-',
+      ],
+      totalFrames: outB - outA,
+      timelineFrames: totalFrames,
+      durationSeconds: ticksToSeconds(frameToTicks(outB - outA, rate)),
+      span: { start: rangeStartT, end: rangeEndT },
+      width: s.width,
+      height: s.height,
+    };
+  }
   const args = [
     '-hide_banner', '-nostdin', '-y',
     '-loglevel', 'error',

@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { MediaRef, PreviewPlatform, Project } from '../../shared/model';
 import { chapterMetadata } from '../../shared/markers';
+import type { LoudnessMeasurement } from '../../shared/exportPlan';
 import { ensureLut, getLutDir } from '../media/luts';
 import { type CaptionTrack, type ExportSettings, buildExportPlan, canvasInOutput, validateExportSettings } from '../../shared/exportPlan';
 import { type Rational, parseRational, rateToFloat } from '../../shared/time';
@@ -168,6 +169,47 @@ export async function runExport(project: Project, settings: ExportSettings, opts
       writeFileSync(chaptersFile, meta);
     }
   }
+  /** Run FFmpeg, reporting progress mapped into [from, to] of the bar; cancellable. */
+  function runFfmpeg(bin: string, args: string[], durationSeconds: number, from: number, to: number) {
+    return new Promise<{ code: number | null; cancelled: boolean; stderr: string }>((resolve) => {
+      const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], cwd: lutCwd });
+      let stderr = '';
+      let cancelled = false;
+      let buf = '';
+      let speed: string | null = null;
+      child.stdout.on('data', (chunk: Buffer) => {
+        buf += chunk.toString();
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          const [k, v] = line.split('=');
+          if (k === 'speed') speed = v?.trim() ?? null;
+          if (k === 'out_time_us' || k === 'out_time_ms') {
+            const sec = Number(v) / 1e6; // both keys are in microseconds in FFmpeg's progress output
+            if (Number.isFinite(sec) && sec >= 0) {
+              opts.onProgress?.({ fraction: from + (to - from) * Math.min(0.999, sec / durationSeconds), outTimeSeconds: sec, speed });
+            }
+          }
+        }
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr = (stderr + chunk.toString()).slice(-16_000);
+      });
+      const onAbort = () => {
+        cancelled = true;
+        child.kill('SIGTERM');
+        setTimeout(() => { if (child.exitCode === null) child.kill('SIGKILL'); }, 3000);
+      };
+      if (opts.signal?.aborted) onAbort();
+      else opts.signal?.addEventListener('abort', onAbort, { once: true });
+      child.on('error', (e) => { stderr += `\n${e.message}`; });
+      child.on('close', (code) => {
+        opts.signal?.removeEventListener('abort', onAbort);
+        resolve({ code, cancelled, stderr });
+      });
+    });
+  }
+
   try {
     return await encode();
   } finally {
@@ -177,48 +219,33 @@ export async function runExport(project: Project, settings: ExportSettings, opts
   async function encode(): Promise<ExportResult> {
   const timeStretch = opts.timeStretch ?? (project.sequence.items.some((i) => i.kind === 'clip' && i.speed) ? await timeStretchFilter() : 'atempo');
   const previewPlatform = opts.previewPlatform ?? (process.platform === 'darwin' ? 'mac' : 'other');
-  const plan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path), { captionTrack, timeStretch, previewPlatform, chaptersFile });
+  const extras = { captionTrack, timeStretch, previewPlatform, chaptersFile };
 
   let bin: string;
   try { bin = ffmpegPath(); } catch (e) { return fail((e as Error).message); }
 
-  const outcome = await new Promise<{ code: number | null; cancelled: boolean; stderr: string }>((resolve) => {
-    const child = spawn(bin, plan.args, { stdio: ['ignore', 'pipe', 'pipe'], cwd: lutCwd });
-    let stderr = '';
-    let cancelled = false;
-    let buf = '';
-    let speed: string | null = null;
-    child.stdout.on('data', (chunk: Buffer) => {
-      buf += chunk.toString();
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const line of lines) {
-        const [k, v] = line.split('=');
-        if (k === 'speed') speed = v?.trim() ?? null;
-        if (k === 'out_time_us' || k === 'out_time_ms') {
-          const sec = Number(v) / 1e6; // both keys are in microseconds in FFmpeg's progress output
-          if (Number.isFinite(sec) && sec >= 0) {
-            opts.onProgress?.({ fraction: Math.min(0.999, sec / plan.durationSeconds), outTimeSeconds: sec, speed });
-          }
-        }
-      }
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr = (stderr + chunk.toString()).slice(-16_000);
-    });
-    const onAbort = () => {
-      cancelled = true;
-      child.kill('SIGTERM');
-      setTimeout(() => { if (child.exitCode === null) child.kill('SIGKILL'); }, 3000);
-    };
-    if (opts.signal?.aborted) onAbort();
-    else opts.signal?.addEventListener('abort', onAbort, { once: true });
-    child.on('error', (e) => { stderr += `\n${e.message}`; });
-    child.on('close', (code) => {
-      opts.signal?.removeEventListener('abort', onAbort);
-      resolve({ code, cancelled, stderr });
-    });
-  });
+  // Loudness normalization: measure the finished mix first (first half of the progress bar).
+  const loud = settings.loudness !== undefined && settings.loudness !== null;
+  let measured: LoudnessMeasurement | undefined;
+  if (loud) {
+    const mPlan = buildExportPlan(project, settings, partial, opts.mediaPath ?? ((m) => m.path), { ...extras, loudness: 'measure' });
+    const m = await runFfmpeg(bin, mPlan.args, mPlan.durationSeconds, 0, 0.5);
+    if (m.cancelled) return { status: 'cancelled' };
+    if (m.code !== 0) return fail(humanizeFfmpegError(m.stderr), m.stderr);
+    const json = /\{[^{}]*"input_i"[^{}]*\}/.exec(m.stderr)?.[0];
+    try {
+      measured = JSON.parse(json ?? '');
+    } catch {
+      return fail('Could not measure the loudness of the mix.', m.stderr);
+    }
+    if (!measured || !Number.isFinite(Number(measured.input_i))) {
+      // Silence (−inf): nothing to normalize.
+      measured = undefined;
+    }
+  }
+  const plan = buildExportPlan(project, measured ? settings : { ...settings, loudness: null }, partial, opts.mediaPath ?? ((m) => m.path), { ...extras, loudness: measured });
+
+  const outcome = await runFfmpeg(bin, plan.args, plan.durationSeconds, loud ? 0.5 : 0, 1);
 
   if (outcome.cancelled) {
     tryUnlink(partial);

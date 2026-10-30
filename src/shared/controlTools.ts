@@ -157,8 +157,8 @@ export const CONTROL_TOOLS: ToolDef[] = [
   {
     name: 'set_clip_audio',
     runs: 'renderer',
-    description: 'Set a clip\'s volume (0..2, 1 = original) and/or mute it.',
-    inputSchema: obj({ clip_id: str('clip id'), volume: num('0..2'), muted: bool('mute') }, ['clip_id']),
+    description: 'Set a clip\'s volume (0..2, 1 = original), mute it, set its 3-band EQ (heard in the preview too) and noise reduction (applied in the export; the recording\'s background level is measured automatically).',
+    inputSchema: obj({ clip_id: str('clip id'), volume: num('0..2'), muted: bool('mute'), eq_low: num('dB, -12..12 (low shelf, 120 Hz)'), eq_mid: num('dB, -12..12 (1 kHz)'), eq_high: num('dB, -12..12 (high shelf, 6 kHz)'), noise_reduction: num('0 (off) .. 1 (strong); export only') }, ['clip_id']),
   },
   {
     name: 'set_color',
@@ -351,10 +351,11 @@ export const CONTROL_TOOLS: ToolDef[] = [
   {
     name: 'set_audio_clip',
     runs: 'renderer',
-    description: 'Change an audio-track clip: move it (start, track_id), trim it (source_in/source_out in file seconds), volume (0..2), fades (seconds).',
+    description: 'Change an audio-track clip: move it (start, track_id), trim it (source_in/source_out in file seconds), volume (0..2), fades (seconds), EQ and noise reduction (as set_clip_audio).',
     inputSchema: obj({
       clip_id: str('audio clip id'), start: num('timeline seconds'), track_id: str('move to this track'),
       source_in: num('file seconds'), source_out: num('file seconds'), volume: num('0..2'), fade_in: num('seconds'), fade_out: num('seconds'),
+      eq_low: num('dB, -12..12 (low shelf, 120 Hz)'), eq_mid: num('dB, -12..12 (1 kHz)'), eq_high: num('dB, -12..12 (high shelf, 6 kHz)'), noise_reduction: num('0 (off) .. 1 (strong); export only'),
     }, ['clip_id']),
   },
   {
@@ -486,6 +487,7 @@ export const CONTROL_TOOLS: ToolDef[] = [
       end: num('export only up to this timeline time (seconds)'),
       fit: str('when the output shape differs from the canvas: fit (bars) or fill (crop)', { enum: ['fit', 'fill'] }),
       chapters: bool('write the timeline markers as chapters (default: true when there are markers)'),
+      loudness: num('normalize the whole mix to this integrated loudness in LUFS, e.g. -14 (YouTube/Spotify), -16 (Apple/podcasts), -23 (broadcast); two passes, so it takes about twice as long'),
       overwrite: bool('replace an existing file'),
     }, ['path']),
   },

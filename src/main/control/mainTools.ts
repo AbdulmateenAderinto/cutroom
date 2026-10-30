@@ -128,6 +128,7 @@ export async function runMainTool(tool: ToolDef, args: Record<string, any>, deps
           ? { start: secondsToTicks(args.start ?? 0), end: Math.min(secondsToTicks(args.end ?? Infinity), layoutSequence(project).duration) }
           : null,
         chapters: args.chapters ?? (project.markers?.length ?? 0) > 0,
+        loudness: Number.isFinite(args.loudness) ? Math.min(-5, Math.max(-40, Number(args.loudness))) : null,
       };
       if (settings.encoder === 'videotoolbox') {
         const hw = await encoderAvailability();

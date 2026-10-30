@@ -2,11 +2,12 @@
  * UI test for the editing tools added in Phase 1: markers (M, the ruler, the inspector, ↑/↓,
  * chapters in the export), multi-select (⌘-click, Shift-click, ⌘A; delete, copy/paste), and
  * detaching a clip's sound for an L-cut, a speed ramp (preview vs export, playback rates), a
- * freeze frame and a reversed clip (both: preview vs export).
+ * freeze frame and a reversed clip (both: preview vs export), EQ (the preview's Web Audio response vs
+ * the shared formula), noise reduction with “Listen”, and a loudness-normalized export.
  *
  * Run: npm run test:e2e   (Linux without a display: xvfb-run -a npm run test:e2e)
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { TPS, assert, compareFrames, ff, fixture, launch, makeSteps, outputDir } from './harness.mjs';
 
@@ -268,6 +269,56 @@ await step('reverse a clip: a reversed copy is made and used; preview matches ex
   await page.click('.inspector button:has-text("Play forwards again")');
   const back = (await h.state()).sequence.items[0];
   assert(back.mediaId === before.mediaId && back.sourceIn === before.sourceIn && back.sourceOut === before.sourceOut, JSON.stringify(back));
+});
+
+await step('EQ: the preview filters with the same response as the export; noise reduction measures the background; Listen', async () => {
+  await page.keyboard.press('Escape');
+  await h.seekFrame(1);
+  await page.click('.tl-track .clip >> nth=0');
+  await page.locator('.inspector input[aria-label^="Low"]').scrollIntoViewIfNeeded();
+  const slide = (label, v) => page.locator(`.inspector input[aria-label^="${label}"]`).evaluate((el, val) => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(el, String(val));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, v);
+  await slide('Low', 9);
+  await slide('Mid', -6);
+  await slide('High', 4.5);
+  const fx = (await h.state()).sequence.items[0].audioFx;
+  assert(fx?.low === 9 && fx.mid === -6 && fx.high === 4.5, JSON.stringify(fx));
+  await h.seekFrame(2);
+  const cmp = await page.evaluate((f) => {
+    const v = [...document.querySelectorAll('video.stage-video')].find((e) => e.style.display === 'block');
+    const freqs = [50, 120, 400, 1000, 3000, 6000, 12000];
+    return { preview: window.__cutroom.eqResponse(v, freqs), shared: freqs.map((x) => window.__cutroom.eqResponseDb(f, x, 48000)), sr: new AudioContext().sampleRate };
+  }, fx);
+  const worst = Math.max(...cmp.preview.map((d, i) => Math.abs(d - cmp.shared[i])));
+  console.log(`      EQ response, preview (Web Audio at ${cmp.sr} Hz) vs export coefficients: max ${worst.toFixed(3)} dB`);
+  assert(worst < (cmp.sr === 48000 ? 0.05 : 0.5), `preview EQ differs from the export by ${worst.toFixed(3)} dB`);
+  await slide('Noise reduction', 0.6);
+  await page.waitForFunction(() => window.__cutroom.store.get().project.sequence.items[0].audioFx?.noiseFloor !== undefined, null, { timeout: 15000 });
+  await page.click('.inspector button:has-text("Listen to the export sound")');
+  await page.waitForFunction(() => !window.__cutroom.store.get().working.includes('audition'), null, { timeout: 30000 });
+  const errs = await page.locator('.toast.error').count();
+  assert(errs === 0, 'listening failed');
+});
+
+await step('export with loudness normalized to −16 LUFS', async () => {
+  await page.keyboard.press('Escape');
+  const file = path.join(out, 'loud.mp4');
+  await page.click('.topbar button:has-text("Export…")');
+  await page.waitForSelector('.modal.export');
+  await h.stubSave(file);
+  await page.click('.modal.export button:has-text("Choose…")');
+  await page.selectOption('select[aria-label="Loudness normalization"]', '-16');
+  await page.click('.modal.export button:has-text("Export")');
+  await page.waitForSelector('text=/Export complete and verified|Export failed/', { timeout: 180000 });
+  assert(!(await page.locator('text=Export failed').isVisible()), 'export failed');
+  await page.click('.modal.export button:has-text("Close")');
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-af', 'ebur128', '-f', 'null', '-'], { encoding: 'utf8' });
+  const I = Number(/Integrated loudness:\s+I:\s+(-?[\d.]+) LUFS/.exec(r.stderr)?.[1]);
+  console.log(`      integrated loudness ${I} LUFS`);
+  assert(Math.abs(I + 16) < 1, `loudness ${I} LUFS`);
 });
 
 await h.close();

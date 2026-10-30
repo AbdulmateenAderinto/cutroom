@@ -10,6 +10,7 @@
  *   - timeline time: a position in the edited sequence (derived by layoutSequence)
  */
 import { type AnimState, type ClipAnimation, type Keyframe } from './animation';
+import type { AudioFx } from './audioFx';
 import type { CaptionSettings } from './captions';
 import type { Rational, Ticks } from './time';
 
@@ -142,6 +143,8 @@ export interface ClipItem {
   volume: number; // 0..2 (1 = original level)
   muted: boolean;
   animation?: ClipAnimation;
+  /** EQ and noise reduction of the clip's sound (absent = none). */
+  audioFx?: AudioFx;
 }
 
 /**
@@ -164,6 +167,8 @@ export interface AudioClip {
   volume: number; // 0..2
   fadeIn: Ticks;
   fadeOut: Ticks;
+  /** EQ and noise reduction (absent = none). */
+  audioFx?: AudioFx;
 }
 
 export interface AudioTrack {

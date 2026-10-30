@@ -2,7 +2,7 @@
  * Electron main process: window, menus, file dialogs, and the bridge to FFmpeg.
  * All heavy work (ffprobe, thumbnails, export) runs in child processes, never on the UI thread.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { BrowserWindow, Menu, type MenuItemConstructorOptions, app, dialog, ipcMain, shell } from 'electron';
 import type { MenuAction } from '../preload/api';
@@ -12,6 +12,7 @@ import { setupAnalysis } from './analysis/analysisTools';
 import { setupAiControl } from './control/aiControl';
 import { setupTranscription } from './transcribe/transcribeService';
 import { cancelExport, startExport } from './export/exportJobs';
+import { runExport } from './export/exportRunner';
 import { encoderAvailability } from './export/encoders';
 import { checkFfmpeg, resolveBinaries } from './media/ffbin';
 import { SUPPORTED_EXTENSIONS, probeMedia } from './media/probe';
@@ -20,7 +21,7 @@ import { setConvertDir } from './media/heic';
 import { makeFreezeFrame, makeReversed } from './media/derived';
 import { importLut, setLutDir } from './media/luts';
 import { thumbnailDataUrl } from './media/thumbnails';
-import { waveformPeaks } from './media/waveform';
+import { noiseFloor, waveformPeaks } from './media/waveform';
 import { allowMediaPath, handleMediaProtocol, registerSchemePrivileges } from './mediaProtocol';
 import { loadProjectFile, saveProjectFile } from './project/projectFiles';
 import { RecoveryStore } from './project/recovery';
@@ -206,6 +207,7 @@ function registerIpc() {
     wrap(makeReversed(derivedDir(projectPath), p, info, sourceIn, sourceOut, (fraction) => e.sender.send('media:reverseProgress', { path: p, fraction }))),
   );
 
+  ipcMain.handle('media:noiseFloor', (_e, p: string) => noiseFloor(p));
   ipcMain.handle('media:waveform', (_e, p: string) => waveformPeaks(path.join(app.getPath('userData'), 'waveforms'), p).catch(() => null));
 
   ipcMain.handle('media:exists', (_e, paths: string[]) => paths.map((p) => existsSync(p)));
@@ -299,6 +301,21 @@ function registerIpc() {
     startExport(project, settings, 'user', (p) => win?.webContents.send('export:progress', p), () => ai.renderCaptions(project, settings)),
   );
   ipcMain.handle('export:cancel', () => cancelExport());
+  // A few seconds rendered by the export (small picture), to hear export-only sound processing.
+  ipcMain.handle('export:audition', async (_e, project: Project, start: number, seconds: number) => {
+    const dir = path.join(app.getPath('userData'), 'audition');
+    mkdirSync(dir, { recursive: true });
+    const out = path.join(dir, `listen-${Date.now()}.mp4`);
+    const w = 160;
+    const h = 2 * Math.max(1, Math.round((w * project.canvas.height) / project.canvas.width / 2));
+    const r = await runExport(project, {
+      outputPath: out, width: w, height: h, frameRate: project.frameRate, canvasMapping: 'fit', videoBitrateMbps: 0.3, x264Preset: 'veryfast',
+      audioBitrateKbps: 256, range: { start, end: start + Math.round(seconds * 705_600_000) },
+    });
+    if (r.status !== 'done') return { ok: false as const, error: r.status === 'failed' ? r.message : 'cancelled' };
+    allowMediaPath(out);
+    return { ok: true as const, path: out };
+  });
   ipcMain.handle('export:encoders', () => encoderAvailability());
 
   ipcMain.handle('shell:showInFolder', (_e, p: string) => shell.showItemInFolder(p));

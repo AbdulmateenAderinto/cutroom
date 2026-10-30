@@ -63,7 +63,7 @@ copy the config again.
 | Titles | `add_title` (presets + any style), `set_title`, `set_title_keyframe` (move, zoom, opacity, rotate), `remove_title` |
 | Speed | `speed_ramp` (stepped ramp from one speed to another), `set_speed`, `freeze_frame`, `reverse_clip` |
 | Picture | `set_media_picture` (HDR tone mapping, .cube LUT per media file) |
-| Sound | `detach_audio` (clip sound → audio track, for J/L-cuts) |
+| Sound | `detach_audio` (clip sound → audio track, for J/L-cuts); EQ and noise reduction via `set_clip_audio` / `set_audio_clip`; `export_video` `loudness` |
 | Markers | `add_marker`, `set_marker`, `remove_marker` (exported as chapters; `export_video` `chapters`) |
 | Overlays | `add_overlay` (picture-in-picture: position preset, size, track), `set_overlay`, `remove_overlay`; the clip tools (`set_framing`, `set_color`, `set_speed`, `set_animation`, `set_keyframe`, `set_clip_audio`) also take overlay ids |
 | Audio | `add_audio` (music/voice-over on a track), `set_audio_clip` (move, trim, volume, fades), `remove_audio_clip`, `set_audio_track` (volume, mute, ducking) |

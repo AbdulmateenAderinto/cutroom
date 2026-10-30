@@ -45,3 +45,33 @@ export async function waveformPeaks(cacheDir: string, file: string): Promise<Uin
   writeFileSync(cached, out);
   return out;
 }
+
+/**
+ * The background noise level of a file's sound (dBFS): the 10th percentile of the levels of
+ * 50 ms windows (the quiet parts), over at most the first 2 minutes. Used to set up noise reduction.
+ * Read at full bandwidth (48 kHz): resampling lower would hide high-frequency hiss.
+ */
+export function noiseFloor(file: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const p = spawn(ffmpegPath(), ['-hide_banner', '-nostdin', '-loglevel', 'error', '-t', '120', '-i', file, '-vn', '-map', '0:a:0', '-ac', '1', '-ar', '48000', '-f', 'f32le', '-'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const chunks: Buffer[] = [];
+    p.stdout.on('data', (d) => chunks.push(d));
+    p.on('error', () => resolve(null));
+    p.on('close', () => {
+      const buf = Buffer.concat(chunks);
+      const n = Math.floor(buf.length / 4);
+      if (n < 24000) return resolve(null);
+      const pcm = new Float32Array(buf.buffer, buf.byteOffset, n);
+      const levels: number[] = [];
+      for (let i = 0; i + 2400 <= n; i += 2400) {
+        let s = 0;
+        for (let k = i; k < i + 2400; k++) s += pcm[k] * pcm[k];
+        const rms = Math.sqrt(s / 2400);
+        if (rms > 1e-6) levels.push(20 * Math.log10(rms));
+      }
+      if (!levels.length) return resolve(null);
+      levels.sort((a, b) => a - b);
+      resolve(Math.round(levels[Math.floor(levels.length * 0.1)] * 10) / 10);
+    });
+  });
+}

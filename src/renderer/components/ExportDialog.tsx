@@ -4,6 +4,8 @@ import {
   AUDIO_BITRATES,
   CRF_RANGE,
   type ExportSettings,
+  LOUDNESS_TARGETS,
+  TRUE_PEAK,
   VIDEO_CODECS,
   type VideoCodec,
   type VideoEncoder,
@@ -76,6 +78,7 @@ export function ExportDialog() {
   const range = useMemo(() => markedRange(), []);
   const [useRange, setUseRange] = useState(!!range);
   const markerCount = project.markers?.length ?? 0;
+  const [loudness, setLoudness] = useState<number | null>(remembered?.loudness ?? null);
   const [chapters, setChapters] = useState(markerCount > 0);
   const [presetId, setPresetId] = useState(remembered.presetId ?? '');
   const [saved, setSaved] = useState<ExportPreset[]>(loadSavedPresets);
@@ -120,6 +123,7 @@ export function ExportDialog() {
     proresProfile,
     range: activeRange,
     chapters: chapters && markerCount > 0,
+    loudness,
   };
   const errors = validateExportSettings(project, settings, (m) => !missing[m.id]);
   if (aspectMismatch && !mapping) errors.push('Choose how the canvas fits the different output shape.');
@@ -297,6 +301,21 @@ export function ExportDialog() {
                   <input type="checkbox" disabled={!markerCount} checked={chapters && markerCount > 0} onChange={(e) => setChapters(e.target.checked)} aria-label="Chapters from markers" />
                   {markerCount ? `Chapters from the ${markerCount} marker${markerCount > 1 ? 's' : ''}` : 'Chapters from markers — none (press M on the timeline)'}
                 </label>
+              </div>
+            </div>
+
+            <div className="export-row">
+              <span className="field-label">Loudness</span>
+              <div className="col gap">
+                <select className="input" aria-label="Loudness normalization" value={loudness ?? ''} onChange={(e) => setLoudness(e.target.value === '' ? null : Number(e.target.value))}>
+                  <option value="">As mixed (no normalization)</option>
+                  {LOUDNESS_TARGETS.map((t) => <option key={t.lufs} value={t.lufs}>{t.label}</option>)}
+                </select>
+                {loudness !== null && (
+                  <span className="muted small">
+                    The finished mix is measured first, then raised or lowered as a whole to {loudness} LUFS (peaks kept under {TRUE_PEAK} dBTP). The export takes about twice as long. The preview plays the mix as it is.
+                  </span>
+                )}
               </div>
             </div>
 

@@ -7,6 +7,7 @@
  */
 import { type AudioClip, type AudioTrack, type Project, clipSpeed, findMedia, layoutSequence, mediaKind, newId, timelineAt } from './model';
 import { updateClip } from './ops';
+import { type AudioFx, NO_FX, legalFx } from './audioFx';
 import { clipLayout } from './overlays';
 import { type Ticks, TICKS_PER_SECOND, frameDuration, snapToFrame } from './time';
 
@@ -285,4 +286,13 @@ export function detachAudio(p: Project, clipId: string): { project: Project; aud
   project = mapTrack(project, track.id, (t) => ({ ...t, clips: sortClips([...t.clips, clip]) }));
   project = updateClip(project, clipId, (x) => ({ ...x, muted: true }));
   return { project, audioClipId: clip.id };
+}
+
+/** EQ / noise reduction of an audio-track clip; neutral values remove it. */
+export function setAudioClipFx(p: Project, clipId: string, patch: Partial<AudioFx>): Project {
+  return updateAudioClip(p, clipId, (c) => {
+    const fx = legalFx({ ...NO_FX, ...c.audioFx, ...patch });
+    const { audioFx: _old, ...rest } = c;
+    return fx ? { ...rest, audioFx: fx } : rest;
+  });
 }
